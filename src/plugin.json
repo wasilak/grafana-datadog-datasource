@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/master/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "datasource",
+  "name": "Datadog",
+  "id": "wasilak-dd-plugin",
+  "metrics": true,
+  "routes": [
+    {
+      "path": "wasilak-dd-plugin",
+      "method": "GET",
+      "url": "https://api.{{ .JsonData.site }}",
+      "headers": [
+        {
+          "name": "DD-API-KEY",
+          "content": "{{ .SecureJsonData.apiKey }}"
+        },
+        {
+          "name": "DD-APPLICATION-KEY",
+          "content": "{{ .SecureJsonData.appKey }}"
+        },
+        {
+          "name": "Content-Type",
+          "content": "application/json"
+        }
+      ]
+    }
+  ],
+  "info": {
+    "description": "Datadog datasource",
+    "author": {
+      "name": "Piotr Boruc",
+      "url": "https://github.com/wasilak/grafana-dd-plugin"
+    },
+    "keywords": [
+      "datadog",
+      "metrics"
+    ],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Website",
+        "url": "https://github.com/grafana/grafana-starter-datasource"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/grafana/grafana-starter-datasource/blob/master/LICENSE"
+      }
+    ],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=7.0.0",
+    "plugins": []
+  }
+}
