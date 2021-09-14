@@ -44,7 +44,7 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
     const promises = options.targets.map((query) => {
       const frames: MutableDataFrame[] = [];
 
-      if (query.queryText === '') {
+      if (!('queryText' in query)) {
         return frames;
       }
 
@@ -52,46 +52,54 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
         return frames;
       }
 
-      return this.doRequest(from, to, query, options).then((datadogData: any) => {
-        if ('error' in datadogData.data) {
-          throw new Error(datadogData.data.error);
-        }
+      return this.doRequest(from, to, query, options)
+        .then((datadogData: any) => {
+          if ('error' in datadogData.data) {
+            throw new Error(datadogData.data.error);
+          }
 
-        for (const s of datadogData.data.series) {
-          let seriesName: string = s.metric + ' {' + s.tag_set.join(', ') + '}';
+          for (const s of datadogData.data.series) {
+            let seriesName: string = s.metric + ' {' + s.tag_set.join(', ') + '}';
 
-          if ('label' in query && query.label.length > 0) {
-            seriesName = query.label;
+            if ('label' in query && query.label.length > 0) {
+              seriesName = query.label;
 
-            for (let i in s.tag_set) {
-              let tag = s.tag_set[i];
+              for (let i in s.tag_set) {
+                let tag = s.tag_set[i];
 
-              const splitTag = tag.split(':');
+                const splitTag = tag.split(':');
 
-              if (seriesName.includes('$' + splitTag[0])) {
-                seriesName = seriesName.split('$' + splitTag[0]).join(splitTag[1]);
+                if (seriesName.includes('$' + splitTag[0])) {
+                  seriesName = seriesName.split('$' + splitTag[0]).join(splitTag[1]);
+                }
               }
             }
+
+            const frame = new MutableDataFrame({
+              refId: query.refId,
+              name: seriesName,
+              fields: [
+                { name: 'Time', type: FieldType.time },
+                { name: 'Value', type: FieldType.number },
+              ],
+            });
+
+            for (const point of s.pointlist) {
+              frame.appendRow(point);
+            }
+
+            frames.push(frame);
           }
 
-          const frame = new MutableDataFrame({
-            refId: query.refId,
-            name: seriesName,
-            fields: [
-              { name: 'Time', type: FieldType.time },
-              { name: 'Value', type: FieldType.number },
-            ],
-          });
-
-          for (const point of s.pointlist) {
-            frame.appendRow(point);
+          return frames;
+        })
+        .catch((error: any) => {
+          if ('data' in error && 'errors' in error.data) {
+            throw new Error(error.data.errors.join('; '));
+          } else {
+            throw new Error(error);
           }
-
-          frames.push(frame);
-        }
-
-        return frames;
-      });
+        });
     });
 
     return Promise.all(promises).then((targetData) => {
