@@ -36,6 +36,10 @@
       "datadog",
       "metrics"
     ],
+    "screenshots": [
+      {"name": "query", "path": "img/datasource.jpg"},
+      {"name": "datasource", "path": "img/datasource.jpg"}
+    ],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
