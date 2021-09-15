@@ -1,6 +1,6 @@
 {
   "name": "wasilak-datadog-datasource",
-  "version": "0.1.1",
+  "version": "v0.1.0",
   "description": "Datadog datasource",
   "scripts": {
     "build": "grafana-toolkit plugin:build",
