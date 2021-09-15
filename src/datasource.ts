@@ -16,7 +16,7 @@ import { getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   url?: string;
 
-  routePath = '/wasilak-dd-plugin';
+  routePath = '/wasilak-datadog-datasource';
 
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
