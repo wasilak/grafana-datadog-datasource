@@ -7,7 +7,7 @@
   "category": "tsdb",
   "routes": [
     {
-      "path": "wasilak-datadog",
+      "path": "wasilak-datadog-datasource",
       "method": "GET",
       "url": "https://api.{{ .JsonData.site }}",
       "headers": [
@@ -50,7 +50,6 @@
         "url": "https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE"
       }
     ],
-    "screenshots": [],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
