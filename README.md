@@ -1,5 +1,4 @@
-# wasilak-datadog-plugin
-## Grafana Data Source Plugin
+# Grafana Data Source Plugin for Datadog (metrics only)
 
 ## Getting started
 

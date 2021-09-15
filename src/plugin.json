@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/master/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
   "name": "Datadog",
-  "id": "wasilak-dd-plugin",
+  "id": "wasilak-datadog-datasource",
   "metrics": true,
   "category": "tsdb",
   "routes": [
     {
-      "path": "wasilak-dd-plugin",
+      "path": "wasilak-datadog",
       "method": "GET",
       "url": "https://api.{{ .JsonData.site }}",
       "headers": [
@@ -30,7 +30,7 @@
     "description": "Datadog datasource",
     "author": {
       "name": "Piotr Boruc",
-      "url": "https://github.com/wasilak/grafana-dd-plugin"
+      "url": "https://github.com/wasilak/grafana-datadog-datasource"
     },
     "keywords": [
       "datadog",
@@ -43,11 +43,11 @@
     "links": [
       {
         "name": "Website",
-        "url": "https://github.com/wasilak/grafana-dd-plugin"
+        "url": "https://github.com/wasilak/grafana-datadog-datasource"
       },
       {
         "name": "License",
-        "url": "https://github.com/wasilak/grafana-dd-plugin/blob/main/LICENSE"
+        "url": "https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE"
       }
     ],
     "screenshots": [],
