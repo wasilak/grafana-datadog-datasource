@@ -22,7 +22,7 @@ It is an **unofficial** Datadog plugin utilising Datadog API for metrics queries
    ```
 2. Install either by unpacking to plugin dir or by using env variable i.e.:
    ```
-   GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.1.1/wasilak-datadog-datasource-0.1.1.zip;Datadog
+   GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.1.0/wasilak-datadog-datasource-0.1.0.zip;Datadog
    ```
 Or
 
