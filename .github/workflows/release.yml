@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js environment
         uses: actions/setup-node@v4
         with:
-          node-version: '14.x'
+          node-version: '22.x'
 
       - name: Setup Go environment
         uses: actions/setup-go@v5
@@ -79,7 +79,7 @@ jobs:
       - name: Sign plugin
         run: yarn sign --rootUrls http://localhost:3000
         env:
-          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }} # Requires a Grafana API key from Grafana.com.
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_API_KEY }} # Requires a Grafana API key from Grafana.com.
 
       - name: Get plugin metadata
         id: metadata
