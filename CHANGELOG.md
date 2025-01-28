@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Code cleanup
+- Fixed Explore table data model
+- Fixed label templating
+
 ## 0.2.0
 
 - Upgraded to current grafana plugin development tooling.
