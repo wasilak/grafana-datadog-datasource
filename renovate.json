@@ -1,8 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
+  "extends": ["config:recommended"],
   "labels": [
     "renovate::dependencies",
     "{{#if category}}renovate::{{category}}{{/if}}",
@@ -18,9 +16,7 @@
   "automerge": true,
   "packageRules": [
     {
-      "matchManagers": [
-        "gomod"
-      ],
+      "matchManagers": ["gomod"],
       "postUpdateOptions": [
         {
           "gomodTidy": true

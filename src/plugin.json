@@ -32,13 +32,10 @@
       "name": "Piotr Boruc",
       "url": "https://github.com/wasilak/grafana-datadog-datasource"
     },
-    "keywords": [
-      "datadog",
-      "metrics"
-    ],
+    "keywords": ["datadog", "metrics"],
     "screenshots": [
-      {"name": "query", "path": "img/datasource.jpg"},
-      {"name": "datasource", "path": "img/datasource.jpg"}
+      { "name": "query", "path": "img/datasource.jpg" },
+      { "name": "datasource", "path": "img/datasource.jpg" }
     ],
     "logos": {
       "small": "img/logo.svg",
