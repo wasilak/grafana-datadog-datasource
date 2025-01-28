@@ -84,36 +84,60 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
           }
 
           for (const s of datadogData.data.series) {
-            let seriesName: string = s.metric + ' {' + s.tag_set.join(', ') + '}';
+            const labels = Object.fromEntries(s.tag_set.map((tag: string) => tag.split(':')));
 
+            const timeValues = s.pointlist.map((point: any) => point[0]); // Extract timestamps
+            const valueValues = s.pointlist.map((point: any) => point[1]); // Extract values
+
+            let seriesName: string = s.metric + ' {' + s.tag_set.join(', ') + '}';
             if ('label' in query && query.label.length > 0) {
               seriesName = query.label;
 
-              for (let i in s.tag_set) {
-                let tag = s.tag_set[i];
+              // Normalize {{host}} to $host
+              seriesName = seriesName.replace(/\{\{(.+?)\}\}/g, '$$$1');
 
-                const splitTag = tag.split(':');
-
-                if (seriesName.includes('$' + splitTag[0])) {
-                  seriesName = seriesName.split('$' + splitTag[0]).join(splitTag[1]);
-                }
+              // Build a scoped variable object for the tags
+              const scopedVars: Record<string, any> = {};
+              for (const tag of s.tag_set) {
+                const [key, value] = tag.split(':');
+                scopedVars[key] = { value };
               }
+
+              // Replace placeholders in the label using getTemplateSrv().replace()
+              seriesName = getTemplateSrv().replace(seriesName, scopedVars);
             }
 
-            const frame: DataFrame = {
-              refId: query.refId,
-              name: seriesName,
+            const frame = {
+              schema: {
+                refId: query.refId,
+                meta: {
+                  type: 'timeseries-multi',
+                  typeVersion: [0, 1],
+                  custom: {
+                    resultType: 'matrix',
+                  },
+                  executedQueryString: query.queryText,
+                },
+              },
               fields: [
-                { name: 'Time', type: FieldType.time, values: [], config: {} },
-                { name: 'Value', type: FieldType.number, values: [], config: {} },
+                {
+                  name: 'Time',
+                  type: FieldType.time,
+                  config: { interval: s.interval * 1000 },
+                  values: timeValues,
+                },
+                {
+                  name: seriesName,
+                  type: FieldType.number,
+                  labels: labels,
+                  config: {
+                    displayNameFromDS: seriesName,
+                  },
+                  values: valueValues,
+                },
               ],
-              length: 0,
+              length: timeValues.length, // Add the length property
             };
-
-            for (const point of s.pointlist) {
-              frame.fields[0].values.push(point[0]);
-              frame.fields[1].values.push(point[1]);
-            }
 
             frames.push(frame);
           }
