@@ -11,6 +11,7 @@
   - Dashboard variables
   - Most of visualisations, at least stock ones
   - Custom graph series names/labels (including variables), e.g. `$host` or `{{host}}`
+  - Inline comments in query field: lines starting with `#` + toggling using `cmd+/` or `ctrl+/`
 - Requirements:
   - Site name i.e. `datadoghq.eu`
   - (Probably) paid Datadog subscription in order to get:
@@ -40,8 +41,17 @@
 
 You can test it out e.g. with following:
 
-- query: `avg:datadog.apis.usage.per_user{*} by {rate_limit_status,limit_name}`
-- label: `{{limit_name}}: {{rate_limit_status}}`
+- query:
+
+  ```plain
+  sum:datadog.apis.usage.per_user{*} by {rate_limit_status,limit_name}
+  ```
+
+- label:
+
+  ```plain
+  {{limit_name}}: {{rate_limit_status}}
+  ```
 
 ## Screenshots
 
