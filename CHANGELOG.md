@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Query field
+  - auto-sizing
+  - support for comments: lines starting with `#` + toggling using `cmd+/` or `ctrl+/`
+- bumped deps
+
 ## 0.3.1
 
 - bumped deps
