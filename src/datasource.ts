@@ -47,7 +47,7 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   }
 
   async doRequest(from: number, to: number, query: MyQuery, options: any) {
-    const parsedQuery = getTemplateSrv().replace(query.queryText, options.scopedVars, 'csv');
+    const parsedQuery = encodeURIComponent(getTemplateSrv().replace(query.queryText, options.scopedVars, 'csv'));
 
     const response = await firstValueFrom(
       getBackendSrv().fetch({
