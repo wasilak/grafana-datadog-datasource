@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3
+
+- fixed query URI encoding
+
 ## 0.3.2
 
 - Query field
