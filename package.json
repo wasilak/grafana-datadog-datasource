@@ -39,7 +39,7 @@
     "eslint-plugin-jsdoc": "~50",
     "eslint-plugin-react": "^7.33.0",
     "eslint-plugin-react-hooks": "~5",
-    "eslint-webpack-plugin": "^4.0.1",
+    "eslint-webpack-plugin": "^5.0.0",
     "fork-ts-checker-webpack-plugin": "~9",
     "glob": "~11",
     "identity-obj-proxy": "3.0.0",
