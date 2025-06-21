@@ -4011,9 +4011,9 @@ eslint-plugin-deprecation@~3:
     tslib "^2.3.1"
 
 eslint-plugin-jsdoc@~51.1.0:
-  version "51.1.0"
-  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-51.1.0.tgz#b671fdd074486550df53b3c35fb6c1b667bdaaa8"
-  integrity sha512-dWyjRvQcAuFHZUTUaJEw7OQ6XziNlbz2wZNt6QuLUHwYMnOWzs6vGSikR/ZSeh+IFHjdH+91AKf+CwYjlJ4kVA==
+  version "51.1.1"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-51.1.1.tgz#6da673b94e7e4ce96464a7abd3adbdd5025bfd6a"
+  integrity sha512-MU+7rYK2r4frl6Rb/5ebchjBN/jk6iXRMMOd/n3RyAHfaRL+jDfrvXi7b776p5qGaW7dAo8Fxc/s3pwNab9SEw==
   dependencies:
     "@es-joy/jsdoccomment" "~0.51.1"
     are-docs-informative "^0.0.2"
