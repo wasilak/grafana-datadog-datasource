@@ -36,7 +36,7 @@
     "eslint": "~9",
     "eslint-config-prettier": "~10",
     "eslint-plugin-deprecation": "~3",
-    "eslint-plugin-jsdoc": "~60.2.0",
+    "eslint-plugin-jsdoc": "~60.3.0",
     "eslint-plugin-react": "^7.33.0",
     "eslint-plugin-react-hooks": "~5",
     "eslint-webpack-plugin": "^5.0.0",
