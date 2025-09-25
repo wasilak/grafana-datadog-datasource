@@ -42,7 +42,9 @@ export class QueryEditor extends PureComponent<Props> {
   onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key === '/') {
       event.preventDefault();
-      if (!this.queryTextRef.current) return;
+      if (!this.queryTextRef.current) {
+        return;
+      }
 
       const textArea = this.queryTextRef.current;
       const { selectionStart, selectionEnd } = textArea;
@@ -92,11 +94,7 @@ export class QueryEditor extends PureComponent<Props> {
         </div>
         <div className="gf-form max-width">
           <label className="gf-form-label">Label</label>
-          <Input
-            value={label || ''}
-            onChange={this.onQueryLabelChange}
-            className="max-width"
-          />
+          <Input value={label || ''} onChange={this.onQueryLabelChange} className="max-width" />
         </div>
       </div>
     );
