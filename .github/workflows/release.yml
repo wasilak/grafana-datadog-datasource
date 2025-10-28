@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js environment
         uses: actions/setup-node@v6
         with:
-          node-version: '22.x'
+          node-version: '24.x'
 
       - name: Setup Go environment
         uses: actions/setup-go@v6
