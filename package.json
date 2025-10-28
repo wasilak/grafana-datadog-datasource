@@ -27,7 +27,7 @@
     "@testing-library/react": "~16",
     "@types/jest": "^30.0.0",
     "@types/lodash": "^4.17.10",
-    "@types/node": "~22",
+    "@types/node": "~24.9.0",
     "@types/testing-library__jest-dom": "~6",
     "@typescript-eslint/eslint-plugin": "~8",
     "@typescript-eslint/parser": "~8",
