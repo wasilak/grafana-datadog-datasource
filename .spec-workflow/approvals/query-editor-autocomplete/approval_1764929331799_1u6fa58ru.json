@@ -1,0 +1,21 @@
+{
+  "id": "approval_1764929331799_1u6fa58ru",
+  "title": "Query Editor Autocomplete - Tasks Document",
+  "filePath": ".spec-workflow/specs/query-editor-autocomplete/tasks.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-12-05T10:08:51.799Z",
+  "category": "spec",
+  "categoryName": "query-editor-autocomplete",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. shouldn't task 15 -> api client be the first task? I think that moving to package first, and introducing new features later might be a solid way to go\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"shouldn't task 15 -> api client be the first task? I think that moving to package first, and introducing new features later might be a solid way to go\",\n      \"timestamp\": \"2025-12-05T10:11:28.799Z\",\n      \"id\": \"comment_1764929488799_ncdykz0h7\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. shouldn't task 15 -> api client be the first task? I think that moving to package first, and introducing new features later might be a solid way to go\\n\\n\",\n  \"timestamp\": \"2025-12-05T10:11:30.947Z\"\n}",
+  "respondedAt": "2025-12-05T10:11:30.956Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "shouldn't task 15 -> api client be the first task? I think that moving to package first, and introducing new features later might be a solid way to go",
+      "timestamp": "2025-12-05T10:11:28.799Z",
+      "id": "comment_1764929488799_ncdykz0h7"
+    }
+  ]
+}

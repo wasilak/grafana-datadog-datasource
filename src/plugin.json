@@ -3,29 +3,10 @@
   "type": "datasource",
   "name": "Datadog",
   "id": "wasilak-datadog-datasource",
+  "backend": true,
+  "executable": "gpx_wasilak_datadog_datasource",
   "metrics": true,
   "category": "tsdb",
-  "routes": [
-    {
-      "path": "wasilak-datadog-datasource",
-      "method": "GET",
-      "url": "https://api.{{ .JsonData.site }}",
-      "headers": [
-        {
-          "name": "DD-API-KEY",
-          "content": "{{ .SecureJsonData.apiKey }}"
-        },
-        {
-          "name": "DD-APPLICATION-KEY",
-          "content": "{{ .SecureJsonData.appKey }}"
-        },
-        {
-          "name": "Content-Type",
-          "content": "application/json"
-        }
-      ]
-    }
-  ],
   "info": {
     "description": "Datadog datasource",
     "author": {
@@ -55,7 +36,7 @@
     "updated": "%TODAY%"
   },
   "dependencies": {
-    "grafanaDependency": ">=7.0.0",
+    "grafanaDependency": ">=12.3.0",
     "plugins": []
   }
 }

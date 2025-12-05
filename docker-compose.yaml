@@ -1,15 +1,15 @@
 services:
   grafana:
     user: root
-    container_name: 'wasilak-datadog-datasource'
+    container_name: "wasilak-datadog-datasource"
 
     build:
       context: ./.config
       args:
-        grafana_image: ${GRAFANA_IMAGE:-grafana-enterprise}
-        grafana_version: ${GRAFANA_VERSION:-11.3.2}
-        development: ${DEVELOPMENT:-false}
-        anonymous_auth_enabled: ${ANONYMOUS_AUTH_ENABLED:-true}
+        grafana_image: ${GRAFANA_IMAGE:-grafana}
+        grafana_version: ${GRAFANA_VERSION:-12.3.0}
+        development: true
+        anonymous_auth_enabled: true
     ports:
       - 3000:3000/tcp
     volumes:

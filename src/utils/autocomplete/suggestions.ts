@@ -1,0 +1,244 @@
+import { CompletionItem } from '@grafana/data';
+import { QueryContext } from '../../types';
+
+// Static list of Datadog aggregation functions
+const AGGREGATIONS = [
+  'avg',
+  'max',
+  'min',
+  'sum',
+  'count',
+  'last',
+  'percentile',
+  'cardinality',
+  'pct_95',
+  'pct_99',
+];
+
+/**
+ * Generates autocomplete suggestions based on query context and available data
+ *
+ * @param context - Parsed query context with cursor position info
+ * @param metrics - Array of available metric names from Datadog API
+ * @param tagsForMetric - Array of available tags/tag values for the current metric
+ * @returns Array of CompletionItem suggestions (max 100 items)
+ */
+export function generateSuggestions(
+  context: QueryContext,
+  metrics: string[] = [],
+  tagsForMetric: string[] = []
+): CompletionItem[] {
+  let suggestions: CompletionItem[] = [];
+
+  switch (context.contextType) {
+    case 'metric':
+      suggestions = generateMetricSuggestions(context, metrics);
+      break;
+    case 'aggregation':
+      suggestions = generateAggregationSuggestions(context);
+      break;
+    case 'tag':
+      suggestions = generateTagSuggestions(context, tagsForMetric);
+      break;
+    case 'tag_value':
+      suggestions = generateTagValueSuggestions(context, tagsForMetric);
+      break;
+    default:
+      suggestions = [];
+  }
+
+  // Remove duplicates and limit to 100 items
+  return deduplicateAndLimit(suggestions, 100);
+}
+
+/**
+ * Generates metric name suggestions
+ * Note: For now returns empty as full metric listing requires backend support
+ */
+function generateMetricSuggestions(context: QueryContext, metrics: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  if (metrics.length === 0) {
+    // If no metrics provided, return helpful message
+    return [
+      {
+        label: 'No metrics available',
+        kind: 'value',
+        insertText: '',
+        documentation: 'Metric suggestions require backend support',
+        sortText: 'z_nomatch',
+      },
+    ];
+  }
+
+  return metrics
+    .filter(metric => metric.toLowerCase().includes(currentToken))
+    .slice(0, 100)
+    .map(metric => ({
+      label: metric,
+      kind: 'metric',
+      insertText: metric,
+      documentation: `Datadog metric: ${metric}`,
+      sortText: metric,
+    }));
+}
+
+/**
+ * Generates aggregation function suggestions
+ */
+function generateAggregationSuggestions(context: QueryContext): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  return AGGREGATIONS.filter(agg => agg.toLowerCase().startsWith(currentToken)).map(agg => ({
+    label: agg,
+    kind: 'aggregation',
+    insertText: agg,
+    documentation: `Datadog aggregation function: ${agg}`,
+    sortText: agg,
+  }));
+}
+
+/**
+ * Generates tag key suggestions
+ * Filters out already-used tags and the current token
+ */
+function generateTagSuggestions(context: QueryContext, tagsForMetric: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  // Extract tag keys (part before ':') from available tags
+  const tagKeys = extractTagKeys(tagsForMetric);
+
+  return tagKeys
+    .filter(tag => {
+      // Filter by current token match
+      if (!tag.toLowerCase().includes(currentToken)) {
+        return false;
+      }
+      // Exclude already-used tags
+      if (context.existingTags.has(tag)) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 100)
+    .map(tag => ({
+      label: tag,
+      kind: 'tag',
+      insertText: `${tag}:`,
+      documentation: `Tag key: ${tag}`,
+      sortText: tag,
+    }));
+}
+
+/**
+ * Generates tag value suggestions
+ * Filters tag values for the current tag being edited
+ */
+function generateTagValueSuggestions(context: QueryContext, tagsForMetric: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  // Extract the current tag key being edited
+  const currentTagKey = extractCurrentTagKey(context.lineContent, context.cursorPosition);
+  if (!currentTagKey) {
+    return [];
+  }
+
+  // Find values for this tag
+  const tagValues = extractTagValues(tagsForMetric, currentTagKey);
+
+  return tagValues
+    .filter(value => value.toLowerCase().includes(currentToken))
+    .slice(0, 100)
+    .map(value => ({
+      label: value,
+      kind: 'tag_value',
+      insertText: value,
+      documentation: `Value for tag ${currentTagKey}: ${value}`,
+      sortText: value,
+    }));
+}
+
+/**
+ * Extract unique tag keys from a list of tag entries
+ * Expected format: "tag_key:tag_value" or just "tag_key"
+ */
+function extractTagKeys(tags: string[]): string[] {
+  const keys = new Set<string>();
+
+  for (const tag of tags) {
+    const colonIndex = tag.indexOf(':');
+    if (colonIndex !== -1) {
+      keys.add(tag.substring(0, colonIndex).trim());
+    } else {
+      keys.add(tag.trim());
+    }
+  }
+
+  return Array.from(keys);
+}
+
+/**
+ * Extract values for a specific tag key
+ */
+function extractTagValues(tags: string[], tagKey: string): string[] {
+  const values: string[] = [];
+
+  for (const tag of tags) {
+    const colonIndex = tag.indexOf(':');
+    if (colonIndex !== -1) {
+      const key = tag.substring(0, colonIndex).trim();
+      const value = tag.substring(colonIndex + 1).trim();
+      if (key === tagKey) {
+        values.push(value);
+      }
+    }
+  }
+
+  return values;
+}
+
+/**
+ * Extract the current tag key being edited (e.g., "host" in "host:web-")
+ */
+function extractCurrentTagKey(lineContent: string, cursorPosition: number): string | null {
+  // Find the opening brace
+  const openBrace = lineContent.lastIndexOf('{', cursorPosition);
+  if (openBrace === -1) {
+    return null;
+  }
+
+  // Find content from opening brace to cursor
+  const tagSection = lineContent.substring(openBrace + 1, cursorPosition);
+
+  // Find the last complete or incomplete tag
+  // Look for the last comma to find the start of current tag
+  const lastComma = tagSection.lastIndexOf(',');
+  const currentTagStart = lastComma === -1 ? 0 : lastComma + 1;
+  const currentTagStr = tagSection.substring(currentTagStart).trim();
+
+  // Extract key (part before ':')
+  const colonIndex = currentTagStr.indexOf(':');
+  if (colonIndex !== -1) {
+    return currentTagStr.substring(0, colonIndex).trim();
+  }
+
+  // If no colon found, the whole token is the key so far
+  return currentTagStr || null;
+}
+
+/**
+ * Remove duplicates from suggestions and limit to maxItems
+ */
+function deduplicateAndLimit(suggestions: CompletionItem[], maxItems: number): CompletionItem[] {
+  const seen = new Set<string>();
+  const result: CompletionItem[] = [];
+
+  for (const suggestion of suggestions) {
+    if (!seen.has(suggestion.label) && result.length < maxItems) {
+      seen.add(suggestion.label);
+      result.push(suggestion);
+    }
+  }
+
+  return result;
+}

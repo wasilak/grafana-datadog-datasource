@@ -1,0 +1,21 @@
+{
+  "id": "approval_1764928910433_ckv92bqyv",
+  "title": "Query Editor Autocomplete - Design Document",
+  "filePath": ".spec-workflow/specs/query-editor-autocomplete/design.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-12-05T10:01:50.433Z",
+  "category": "spec",
+  "categoryName": "query-editor-autocomplete",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. I'm missing usage of official package instead of \"bare\" http calls to API: https://github.com/DataDog/datadog-api-client-typescript\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"I'm missing usage of official package instead of \\\"bare\\\" http calls to API: https://github.com/DataDog/datadog-api-client-typescript\",\n      \"timestamp\": \"2025-12-05T10:05:14.854Z\",\n      \"id\": \"comment_1764929114855_mu4rosllz\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. I'm missing usage of official package instead of \\\"bare\\\" http calls to API: https://github.com/DataDog/datadog-api-client-typescript\\n\\n\",\n  \"timestamp\": \"2025-12-05T10:05:17.558Z\"\n}",
+  "respondedAt": "2025-12-05T10:05:17.568Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "I'm missing usage of official package instead of \"bare\" http calls to API: https://github.com/DataDog/datadog-api-client-typescript",
+      "timestamp": "2025-12-05T10:05:14.854Z",
+      "id": "comment_1764929114855_mu4rosllz"
+    }
+  ]
+}

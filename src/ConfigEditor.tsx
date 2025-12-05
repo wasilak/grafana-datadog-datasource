@@ -16,7 +16,12 @@ export class ConfigEditor extends PureComponent<Props, State> {
       ...options.jsonData,
       site: event.target.value,
     };
-    onOptionsChange({ ...options, jsonData });
+    // Mark site as non-secure field
+    const secureJsonFields = {
+      ...options.secureJsonFields,
+      site: false,
+    };
+    onOptionsChange({ ...options, jsonData, secureJsonFields });
   };
 
   // Secure field (only sent to the backend)

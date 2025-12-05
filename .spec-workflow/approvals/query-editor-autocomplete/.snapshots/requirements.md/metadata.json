@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/query-editor-autocomplete/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-05T09:59:47.583Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764928787577_t5bssvpkd",
+      "approvalTitle": "Query Editor Autocomplete - Requirements Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-05T10:00:56.540Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764928787577_t5bssvpkd",
+      "approvalTitle": "Query Editor Autocomplete - Requirements Document"
+    }
+  ]
+}

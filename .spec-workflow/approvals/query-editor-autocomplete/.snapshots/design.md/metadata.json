@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/query-editor-autocomplete/design.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-05T10:01:50.439Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764928910433_ckv92bqyv",
+      "approvalTitle": "Query Editor Autocomplete - Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-05T10:05:17.567Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764928910433_ckv92bqyv",
+      "approvalTitle": "Query Editor Autocomplete - Design Document"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-12-05T10:07:55.925Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764929242128_7cx90as69",
+      "approvalTitle": "Query Editor Autocomplete - Design Document (Revised with Datadog TypeScript Client)"
+    }
+  ]
+}

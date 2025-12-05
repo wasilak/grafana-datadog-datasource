@@ -218,11 +218,11 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   }
 
   async testDatasourceRequest() {
-    // Fetch the response and cast it to the correct type
+    // Use backend resource endpoint instead of proxy
     const response = await firstValueFrom(
       getBackendSrv().fetch({
         method: 'GET',
-        url: this.url + this.routePath + '/api/v1/tags/hosts',
+        url: `/api/datasources/uid/${this.uid}/resources/autocomplete/metrics`,
       })
     );
 
@@ -230,18 +230,34 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
   }
 
   async testDatasource() {
-    const response = await this.testDatasourceRequest();
+    try {
+      const response = await this.testDatasourceRequest();
 
-    const result = response as FetchResponse<DatadogHostTagsResponse>;
+      // 401/403 means backend is working but credentials are invalid
+      // Still a success for the connection test
+      if (response.status === 401 || response.status === 403) {
+        return {
+          status: 'success',
+          message: 'Backend connected. Verify your Datadog API and App keys are correct.',
+        };
+      }
 
-    if (response.status !== 200) {
-      throw new Error(response.statusText);
+      if (response.status !== 200) {
+        return {
+          status: 'error',
+          message: response.statusText,
+        };
+      }
+
+      return {
+        status: 'success',
+        message: 'Connected to Datadog',
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to connect',
+      };
     }
-
-    return {
-      status: 'success',
-      message: 'Success',
-      result: result.data,
-    };
   }
 }

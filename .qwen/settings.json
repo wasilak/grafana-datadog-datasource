@@ -1,0 +1,65 @@
+{
+  "context": {
+    "loadFromIncludeDirectories": true
+  },
+  "mcpServers": {
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "timeout": 5000,
+      "trust": true
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "timeout": 5000,
+      "trust": true
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git"],
+      "timeout": 120000,
+      "trust": true
+    },
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant",
+        "--project",
+        "/Users/piotrek/git/grafana-datadog-datasource"
+      ],
+      "timeout": 120000,
+      "trust": true
+    },
+    "spec-workflow": {
+      "command": "npx",
+      "args": ["-y", "@pimzino/spec-workflow-mcp@latest", "/Users/piotrek/git/grafana-datadog-datasource"],
+      "timeout": 5000,
+      "trust": true
+    },
+    "mcp-mermaid": {
+      "command": "npx",
+      "args": ["-y", "mcp-mermaid"],
+      "timeout": 5000,
+      "trust": true
+    }
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "ui": {
+    "theme": "GitHub"
+  },
+  "privacy": {
+    "usageStatisticsEnabled": false
+  },
+  "experimental": {
+    "visionModelPreview": false
+  },
+  "$version": 2
+}
