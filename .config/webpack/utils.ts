@@ -46,6 +46,11 @@ export async function getEntries(): Promise<Record<string, string>> {
   const plugins = await Promise.all(
     pluginsJson.map((pluginJson) => {
       const folder = path.dirname(pluginJson);
+      // Skip directories marked with .skipbuild (check parent of src directory)
+      const pluginRoot = path.dirname(folder);
+      if (fs.existsSync(path.join(pluginRoot, '.skipbuild'))) {
+        return [];
+      }
       return glob(`${folder}/module.{ts,tsx,js,jsx}`, { absolute: true });
     })
   );

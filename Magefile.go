@@ -39,7 +39,7 @@ func (Build) Backend() error {
 	fmt.Printf("Building Go backend for %s/%s -> %s\n", runtime.GOOS, runtime.GOARCH, output)
 
 	// Build the Go binary
-	return sh.RunWith(
+	if err := sh.RunWith(
 		map[string]string{
 			"GO111MODULE": "on",
 		},
@@ -48,7 +48,18 @@ func (Build) Backend() error {
 		"-o", output,
 		"-ldflags", "-s -w",
 		"./pkg",
-	)
+	); err != nil {
+		return err
+	}
+
+	// Create a generic named executable that matches plugin.json
+	genericOutput := filepath.Join("dist", "gpx_wasilak_datadog_datasource")
+	if runtime.GOOS == "windows" {
+		genericOutput += ".exe"
+	}
+
+	fmt.Printf("Creating generic executable: %s\n", genericOutput)
+	return sh.Copy(genericOutput, output)
 }
 
 // BackendLinux builds the Linux backend binary for x86-64

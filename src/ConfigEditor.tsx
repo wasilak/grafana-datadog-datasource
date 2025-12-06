@@ -1,131 +1,107 @@
-import React, { ChangeEvent, PureComponent } from 'react';
-import { LegacyForms } from '@grafana/ui';
+import React, { ChangeEvent } from 'react';
+import { InlineField, Input, SecretInput } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { MyDataSourceOptions, MySecureJsonData } from './types';
 
-const { SecretFormField, FormField } = LegacyForms;
+interface Props extends DataSourcePluginOptionsEditorProps<MyDataSourceOptions, MySecureJsonData> {}
 
-interface Props extends DataSourcePluginOptionsEditorProps<MyDataSourceOptions, MySecureJsonData> { }
+export function ConfigEditor(props: Props) {
+  const { onOptionsChange, options } = props;
+  const { jsonData, secureJsonFields, secureJsonData } = options;
 
-interface State { }
-
-export class ConfigEditor extends PureComponent<Props, State> {
-  onSiteChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { onOptionsChange, options } = this.props;
-    const jsonData = {
-      ...options.jsonData,
-      site: event.target.value,
-    };
-    // Mark site as non-secure field
-    const secureJsonFields = {
-      ...options.secureJsonFields,
-      site: false,
-    };
-    onOptionsChange({ ...options, jsonData, secureJsonFields });
-  };
-
-  // Secure field (only sent to the backend)
-  onAPPKeyChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { onOptionsChange, options } = this.props;
+  const onSiteChange = (event: ChangeEvent<HTMLInputElement>) => {
     onOptionsChange({
       ...options,
-      secureJsonData: {
-        ...options.secureJsonData,
-        appKey: event.target.value,
+      jsonData: {
+        ...jsonData,
+        site: event.target.value,
       },
     });
   };
 
-  onResetAPPKey = () => {
-    const { onOptionsChange, options } = this.props;
-    onOptionsChange({
-      ...options,
-      secureJsonFields: {
-        ...options.secureJsonFields,
-        appKey: false,
-      },
-      secureJsonData: {
-        ...options.secureJsonData,
-        appKey: '',
-      },
-    });
-  };
-
-  // Secure field (only sent to the backend)
-  onAPIKeyChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { onOptionsChange, options } = this.props;
+  const onAPIKeyChange = (event: ChangeEvent<HTMLInputElement>) => {
     onOptionsChange({
       ...options,
       secureJsonData: {
-        ...options.secureJsonData,
+        ...secureJsonData,
         apiKey: event.target.value,
       },
     });
   };
 
-  onResetAPIKey = () => {
-    const { onOptionsChange, options } = this.props;
+  const onResetAPIKey = () => {
     onOptionsChange({
       ...options,
       secureJsonFields: {
-        ...options.secureJsonFields,
+        ...secureJsonFields,
         apiKey: false,
       },
       secureJsonData: {
-        ...options.secureJsonData,
+        ...secureJsonData,
         apiKey: '',
       },
     });
   };
 
-  render() {
-    const { options } = this.props;
-    const { jsonData, secureJsonFields } = options;
-    const secureJsonData = (options.secureJsonData || {}) as MySecureJsonData;
+  const onAPPKeyChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onOptionsChange({
+      ...options,
+      secureJsonData: {
+        ...secureJsonData,
+        appKey: event.target.value,
+      },
+    });
+  };
 
-    return (
-      <div className="gf-form-group">
-        <div className="gf-form">
-          <FormField
-            label="Site"
-            labelWidth={6}
-            inputWidth={20}
-            onChange={this.onSiteChange}
-            value={jsonData.site || ''}
-            placeholder="Datadog site"
-          />
-        </div>
+  const onResetAPPKey = () => {
+    onOptionsChange({
+      ...options,
+      secureJsonFields: {
+        ...secureJsonFields,
+        appKey: false,
+      },
+      secureJsonData: {
+        ...secureJsonData,
+        appKey: '',
+      },
+    });
+  };
 
-        <div className="gf-form-inline">
-          <div className="gf-form">
-            <SecretFormField
-              isConfigured={(secureJsonFields && secureJsonFields.apiKey) as boolean}
-              value={secureJsonData.apiKey || ''}
-              label="API Key"
-              placeholder="secure json field (backend only)"
-              labelWidth={6}
-              inputWidth={20}
-              onReset={this.onResetAPIKey}
-              onChange={this.onAPIKeyChange}
-            />
-          </div>
-        </div>
-
-        <div className="gf-form-inline">
-          <div className="gf-form">
-            <SecretFormField
-              isConfigured={(secureJsonFields && secureJsonFields.appKey) as boolean}
-              value={secureJsonData.appKey || ''}
-              label="APP Key"
-              placeholder="Datadog application key"
-              labelWidth={6}
-              inputWidth={20}
-              onReset={this.onResetAPPKey}
-              onChange={this.onAPPKeyChange}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  return (
+    <>
+      <InlineField label="Site" labelWidth={14} interactive tooltip="Datadog site (e.g., datadoghq.com or datadoghq.eu)">
+        <Input
+          id="config-editor-site"
+          onChange={onSiteChange}
+          value={jsonData.site || ''}
+          placeholder="datadoghq.com"
+          width={40}
+        />
+      </InlineField>
+      <InlineField label="API Key" labelWidth={14} interactive tooltip="Secure json field (backend only)">
+        <SecretInput
+          required
+          id="config-editor-api-key"
+          isConfigured={secureJsonFields?.apiKey}
+          value={secureJsonData?.apiKey}
+          placeholder="Enter your API key"
+          width={40}
+          onReset={onResetAPIKey}
+          onChange={onAPIKeyChange}
+        />
+      </InlineField>
+      <InlineField label="APP Key" labelWidth={14} interactive tooltip="Secure json field (backend only)">
+        <SecretInput
+          required
+          id="config-editor-app-key"
+          isConfigured={secureJsonFields?.appKey}
+          value={secureJsonData?.appKey}
+          placeholder="Enter your application key"
+          width={40}
+          onReset={onResetAPPKey}
+          onChange={onAPPKeyChange}
+        />
+      </InlineField>
+    </>
+  );
 }
