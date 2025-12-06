@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
@@ -113,8 +115,15 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		site = "datadoghq.com" // Default to US
 	}
 
-	// Initialize Datadog API client
-	ctx = context.WithValue(ctx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+	logger.Info("QueryData called", "site", site)
+	logger.Info("Using API Key and App Key for authentication", "apiKey", apiKey, "appKey", appKey)
+
+	// Set the site and API keys in context
+	// Don't use NewDefaultContext - just set values directly on the context
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
 		"apiKeyAuth": {
 			Key: apiKey,
 		},
@@ -123,14 +132,15 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		},
 	})
 
-	client := datadog.NewAPIClient(datadog.NewConfiguration())
-	metricsApi := datadogV1.NewMetricsApi(client)
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
 
-	// Datadog time range in seconds - Get from first query if available
+	// Datadog time range in milliseconds - Get from first query if available
 	var from, to int64
 	if len(req.Queries) > 0 {
-		from = req.Queries[0].TimeRange.From.Unix()
-		to = req.Queries[0].TimeRange.To.Unix()
+		from = req.Queries[0].TimeRange.From.UnixMilli()
+		to = req.Queries[0].TimeRange.To.UnixMilli()
 	}
 
 	// Process each query
@@ -156,7 +166,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		}
 
 		// Create context with timeout
-		queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		queryCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
 
 		// Execute query
 		frames, err := d.queryDatadog(queryCtx, metricsApi, from, to, &qm)
@@ -179,12 +189,57 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 }
 
 // queryDatadog executes a Datadog query and returns Grafana DataFrames
-func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV1.MetricsApi, from, to int64, qm *QueryModel) (data.Frames, error) {
+func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi, from, to int64, qm *QueryModel) (data.Frames, error) {
 	logger := log.New()
 
+	body := datadogV2.TimeseriesFormulaQueryRequest{
+		Data: datadogV2.TimeseriesFormulaRequest{
+			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
+			Attributes: datadogV2.TimeseriesFormulaRequestAttributes{
+				From: from,
+				To:   to,
+				Queries: []datadogV2.TimeseriesQuery{
+					{
+						MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
+							DataSource: datadogV2.METRICSDATASOURCE_METRICS,
+							Query:      qm.QueryText,
+						}},
+				},
+			},
+		},
+	}
+
 	// Call Datadog Metrics API
-	resp, _, err := api.QueryMetrics(ctx, from, to, qm.QueryText)
+	resp, r, err := api.QueryTimeseriesData(ctx, body)
 	if err != nil {
+		// Log request body for debugging
+		requestBody, _ := json.MarshalIndent(body, "", "  ")
+		logger.Error("QueryTimeseriesData request body",
+			"request", string(requestBody))
+
+		// Log HTTP response details
+		httpStatus := 0
+		var responseBody string
+		if r != nil {
+			httpStatus = r.StatusCode
+			if r.Body != nil {
+				bodyBytes, _ := io.ReadAll(r.Body)
+				responseBody = string(bodyBytes)
+				// Restore body for potential future reads (though it's exhausted here)
+				r.Body = io.NopCloser(strings.NewReader(responseBody))
+			}
+		}
+
+		logger.Error("QueryTimeseriesData API call failed",
+			"error", err,
+			"errorString", err.Error(),
+			"httpStatus", httpStatus,
+			"responseBody", responseBody)
+
+		fmt.Fprintf(os.Stderr, "Error when calling `MetricsApi.QueryTimeseriesData`: %v\n", err)
+		fmt.Fprintf(os.Stderr, "HTTP Status: %d\n", httpStatus)
+		fmt.Fprintf(os.Stderr, "Response Body: %s\n", responseBody)
+
 		// Check for authentication errors
 		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
 			return nil, fmt.Errorf("invalid Datadog API credentials")
@@ -192,37 +247,46 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV1.MetricsApi
 		if strings.Contains(err.Error(), "timeout") {
 			return nil, fmt.Errorf("query timeout")
 		}
-		logger.Error("failed to query metrics", "error", err)
 		return nil, fmt.Errorf("failed to query metrics: %w", err)
 	}
+
+	// responseContent, _ := json.MarshalIndent(resp, "", "  ")
 
 	// Build frames from response
 	var frames data.Frames
 
 	// Check if response has series data
-	series := resp.GetSeries()
-	if series == nil || len(series) == 0 {
+	series := resp.GetData()
+	if len(series.Attributes.Series) == 0 {
 		return frames, nil
 	}
 
-	for i := range series {
-		s := &series[i]
-		if s == nil {
+	times := resp.GetData().Attributes.GetTimes()
+	values := resp.GetData().Attributes.GetValues()
+
+	for i := range series.Attributes.GetSeries() {
+		s := &series.Attributes.Series[i]
+
+		index := *s.QueryIndex
+
+		// Check if we have data for this query index
+		if index >= int32(len(values)) {
 			continue
 		}
 
-		pointlist := s.GetPointlist()
-		if pointlist == nil || len(pointlist) == 0 {
+		pointlist := values[index]
+		if len(pointlist) == 0 {
 			continue
 		}
 
-		// Extract metric name
-		metric := s.GetMetric()
+		// Extract metric name and build series label
+		// The metric name comes from the query, group_tags identify the specific series
+		metric := qm.QueryText
 
-		// Parse tags into labels
+		// Parse group tags (dimensions) into labels
 		labels := map[string]string{}
-		tagSet := s.GetTagSet()
-		if tagSet != nil && len(tagSet) > 0 {
+		tagSet := s.GetGroupTags()
+		if len(tagSet) > 0 {
 			for _, tag := range tagSet {
 				parts := strings.SplitN(tag, ":", 2)
 				if len(parts) == 2 {
@@ -235,18 +299,17 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV1.MetricsApi
 		timeValues := make([]int64, 0)
 		numberValues := make([]float64, 0)
 
-		for _, point := range pointlist {
-			if point == nil || len(point) < 2 {
-				continue
+		// pointlist is []*float64, and times is []int64 (in milliseconds from Datadog API)
+		// Zip them together - Grafana expects milliseconds
+		for j, timeVal := range times {
+			if j >= len(pointlist) {
+				break
 			}
-
-			// Datadog returns [timestamp, value] where both are pointers to float64
-			timestamp := point[0]
-			value := point[1]
-			if timestamp != nil && value != nil {
-				// Convert timestamp from seconds to milliseconds for Grafana
-				timeValues = append(timeValues, int64(*timestamp)*1000)
-				numberValues = append(numberValues, *value)
+			point := pointlist[j]
+			if point != nil {
+				// Timestamps are already in milliseconds from Datadog API v2
+				timeValues = append(timeValues, timeVal)
+				numberValues = append(numberValues, *point)
 			}
 		}
 
@@ -286,7 +349,7 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV1.MetricsApi
 // CallResource handles resource calls (autocomplete endpoints)
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
-	
+
 	// Route requests to appropriate handlers
 	switch {
 	case req.Method == "GET" && req.Path == "autocomplete/metrics":
@@ -306,7 +369,7 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
 	ttl := 30 * time.Second
-	
+
 	// Check cache first
 	if cached := d.GetCachedEntry("metrics", ttl); cached != nil {
 		logger.Debug("Returning cached metrics")
@@ -316,7 +379,7 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 			Body:   respData,
 		})
 	}
-	
+
 	// Get API credentials
 	apiKey, ok := d.SecureJSONData["apiKey"]
 	if !ok {
@@ -326,7 +389,7 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
-	
+
 	appKey, ok := d.SecureJSONData["appKey"]
 	if !ok {
 		logger.Error("Missing appKey")
@@ -335,17 +398,23 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
-	
+
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
-	
-	// Create context with timeout
-	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	
-	// Initialize Datadog API client
-	authCtx := context.WithValue(fetchCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Initialize Datadog API client with credentials and site
+	// Don't use NewDefaultContext - just set values directly on the context
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
 		"apiKeyAuth": {
 			Key: apiKey,
 		},
@@ -353,13 +422,18 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 			Key: appKey,
 		},
 	})
-	
-	client := datadog.NewAPIClient(datadog.NewConfiguration())
-	metricsApi := datadogV1.NewMetricsApi(client)
-	
-	// Fetch metrics from Datadog - ListMetrics requires a query string parameter
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 2*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	// Fetch metrics from Datadog - ListTagConfigurations returns available metrics
 	// Note: This requires the "metrics_read" scope on the API key
-	resp, _, err := metricsApi.ListMetrics(authCtx, "*")
+	resp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
 	if err != nil {
 		// Log detailed error for debugging
 		if err.Error() == "401 Unauthorized" {
@@ -376,20 +450,40 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 			Body:   respData,
 		})
 	}
-	
+
 	// Extract metric names from response
-	results := resp.GetResults()
-	metrics := results.GetMetrics()
-	if metrics == nil {
-		metrics = []string{}
+	// ListTagConfigurations returns MetricsAndMetricTagConfigurationsResponse
+	data := resp.GetData()
+	if data == nil {
+		respData, _ := json.Marshal([]string{})
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
 	}
-	
+
+	metrics := []string{}
+	for _, config := range data {
+		// MetricsAndMetricTagConfigurations is a OneOf type - check which field is populated
+		if config.Metric != nil {
+			metricName := config.Metric.GetId()
+			if metricName != "" {
+				metrics = append(metrics, metricName)
+			}
+		} else if config.MetricTagConfiguration != nil {
+			metricName := config.MetricTagConfiguration.GetId()
+			if metricName != "" {
+				metrics = append(metrics, metricName)
+			}
+		}
+	}
+
 	// Cache the result
 	d.SetCachedEntry("metrics", metrics)
-	
+
 	// Return metrics as JSON
 	respData, _ := json.Marshal(metrics)
-	
+
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
 		Body:   respData,
@@ -400,7 +494,7 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
 	ttl := 30 * time.Second
-	
+
 	// Extract metric name from path: "autocomplete/tags/{metric}"
 	metric := req.Path[len("autocomplete/tags/"):]
 	if metric == "" {
@@ -409,9 +503,9 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Body:   []byte(`{"error": "metric name required"}`),
 		})
 	}
-	
+
 	cacheKey := "tags:" + metric
-	
+
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
 		logger.Debug("Returning cached tags", "metric", metric)
@@ -421,7 +515,7 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Body:   respData,
 		})
 	}
-	
+
 	// Get API credentials
 	apiKey, ok := d.SecureJSONData["apiKey"]
 	if !ok {
@@ -431,7 +525,7 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
-	
+
 	appKey, ok := d.SecureJSONData["appKey"]
 	if !ok {
 		logger.Error("Missing appKey")
@@ -440,17 +534,23 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
-	
+
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
-	
-	// Create context with timeout
-	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	
-	// Initialize Datadog API client
-	authCtx := context.WithValue(fetchCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	// Don't use NewDefaultContext - just set values directly on the context
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
 		"apiKeyAuth": {
 			Key: apiKey,
 		},
@@ -458,14 +558,18 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Key: appKey,
 		},
 	})
-	
-	client := datadog.NewAPIClient(datadog.NewConfiguration())
-	tagsApi := datadogV1.NewTagsApi(client)
-	
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 2*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
 	// Fetch tags from Datadog for this metric
-	// Using ListHostTags as a way to get tags (note: in real scenario, 
-	// you might want to query specific tags for a metric using custom queries)
-	resp, _, err := tagsApi.ListHostTags(authCtx)
+	// ListTagsByMetricName returns all tags associated with a specific metric
+	resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
 	if err != nil {
 		logger.Error("Failed to fetch tags", "error", err)
 		// Return empty array on timeout or error
@@ -475,33 +579,22 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			Body:   respData,
 		})
 	}
-	
-	// Extract and deduplicate tags from response
-	tagSet := make(map[string]bool)
-	var tags []string
-	
-	respTags := resp.GetTags()
-	if respTags != nil {
-		for _, hostTags := range respTags {
-			if hostTags != nil {
-				for _, tag := range hostTags {
-					if tag != "" {
-						if _, exists := tagSet[tag]; !exists {
-							tagSet[tag] = true
-							tags = append(tags, tag)
-						}
-					}
-				}
-			}
-		}
+
+	// Extract tags from response
+	// ListTagsByMetricName returns MetricAllTagsResponse with Data.Attributes.Tags
+	tags := []string{}
+	data := resp.GetData()
+	if (data.Id) != nil { // Check if pointer is not nil
+		attributes := data.GetAttributes()
+		tags = attributes.GetTags()
 	}
-	
+
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tags)
-	
+
 	// Return tags as JSON
 	respData, _ := json.Marshal(tags)
-	
+
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
 		Body:   respData,
@@ -510,9 +603,12 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 
 // CheckHealth checks the health of the datasource connection
 func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+	logger := log.New()
+
 	// Get API credentials from secure JSON data
 	apiKey, ok := d.SecureJSONData["apiKey"]
 	if !ok {
+		logger.Error("CheckHealth: apiKey not found in SecureJSONData")
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: "Missing API key",
@@ -521,21 +617,151 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 
 	appKey, ok := d.SecureJSONData["appKey"]
 	if !ok {
+		logger.Error("CheckHealth: appKey not found in SecureJSONData")
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: "Missing App key",
 		}, nil
 	}
 
-	// TODO: Implement actual API call to Datadog to validate credentials
-	// For now, just verify keys exist
 	if len(apiKey) == 0 || len(appKey) == 0 {
+		logger.Error("CheckHealth: credentials are empty", "apiKeyLen", len(apiKey), "appKeyLen", len(appKey))
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: "API key or App key is empty",
 		}, nil
 	}
 
+	// Get Datadog site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Log credentials info (without exposing full keys)
+	apiKeyPrefix := ""
+	if len(apiKey) >= 8 {
+		apiKeyPrefix = apiKey[:8]
+	} else if len(apiKey) > 0 {
+		apiKeyPrefix = apiKey
+	}
+	appKeyPrefix := ""
+	if len(appKey) >= 8 {
+		appKeyPrefix = appKey[:8]
+	} else if len(appKey) > 0 {
+		appKeyPrefix = appKey
+	}
+
+	logger.Info("CheckHealth: starting health check",
+		"site", site,
+		"apiKeyLen", len(apiKey),
+		"appKeyLen", len(appKey),
+		"apiKeyPrefix", apiKeyPrefix,
+		"appKeyPrefix", appKeyPrefix)
+
+	// Set up context with credentials and site
+	// Don't use NewDefaultContext - just set values directly on the context
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create timeout context for health check
+	healthCtx, cancel := context.WithTimeout(ddCtx, 5*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	// Use v2 QueryTimeseriesData endpoint for health check (same as production queries)
+	now := time.Now()
+	fromMs := now.Add(-1 * time.Hour).UnixMilli()
+	toMs := now.UnixMilli()
+
+	interval := int64(5000)
+	formula := "a"
+	queryName := "a"
+
+	body := datadogV2.TimeseriesFormulaQueryRequest{
+		Data: datadogV2.TimeseriesFormulaRequest{
+			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
+			Attributes: datadogV2.TimeseriesFormulaRequestAttributes{
+				From:     fromMs,
+				To:       toMs,
+				Interval: &interval,
+				Formulas: []datadogV2.QueryFormula{
+					{
+						Formula: formula,
+					},
+				},
+				Queries: []datadogV2.TimeseriesQuery{
+					{
+						MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
+							DataSource: datadogV2.METRICSDATASOURCE_METRICS,
+							Query:      "avg:datadog.estimated_usage.metrics.custom{*}",
+							Name:       &queryName,
+						}},
+				},
+			},
+		},
+	}
+
+	logger.Info("CheckHealth: calling QueryTimeseriesData (v2 API)")
+	
+	// Log the request body
+	requestBody, _ := json.MarshalIndent(body, "", "  ")
+	logger.Debug("CheckHealth: request body", "request", string(requestBody))
+	
+	resp, httpResp, err := metricsApi.QueryTimeseriesData(healthCtx, body)
+	if err != nil {
+		httpStatus := 0
+		var responseBody string
+		if httpResp != nil {
+			httpStatus = httpResp.StatusCode
+			if httpResp.Body != nil {
+				bodyBytes, _ := io.ReadAll(httpResp.Body)
+				responseBody = string(bodyBytes)
+				// Restore body for potential future reads
+				httpResp.Body = io.NopCloser(strings.NewReader(responseBody))
+			}
+		}
+		
+		logger.Error("CheckHealth: API call failed",
+			"error", err,
+			"errorString", err.Error(),
+			"httpStatus", httpStatus,
+			"responseBody", responseBody)
+
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Unauthorized") {
+			logger.Error("Health check failed - authentication error", "error", err)
+			return &backend.CheckHealthResult{
+				Status:  backend.HealthStatusError,
+				Message: "Invalid Datadog API credentials",
+			}, nil
+		}
+		if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+			logger.Error("Health check failed - permission error", "error", err)
+			return &backend.CheckHealthResult{
+				Status:  backend.HealthStatusError,
+				Message: "API key missing required permissions",
+			}, nil
+		}
+		logger.Error("Health check failed", "error", err)
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusError,
+			Message: "Failed to connect to Datadog: " + err.Error(),
+		}, nil
+	}
+
+	logger.Info("CheckHealth: API call succeeded", "seriesCount", len(resp.GetData().Attributes.GetSeries()))
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
 		Message: "Connected to Datadog",
