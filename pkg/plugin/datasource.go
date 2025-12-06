@@ -148,9 +148,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		var qm QueryModel
 		if err := json.Unmarshal(q.JSON, &qm); err != nil {
 			logger.Error("failed to parse query", "error", err)
-			response.Responses[q.RefID] = backend.DataResponse{
-				Error: fmt.Errorf("failed to parse query: %w", err),
-			}
+			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("failed to parse query: %v", err))
 			continue
 		}
 
@@ -169,14 +167,13 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		queryCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
 
 		// Execute query
-		frames, err := d.queryDatadog(queryCtx, metricsApi, from, to, &qm)
+		frames, err := d.queryDatadog(queryCtx, metricsApi, from, to, &qm, q.RefID)
 		cancel()
 
 		if err != nil {
 			logger.Error("query execution failed", "error", err, "refID", q.RefID)
-			response.Responses[q.RefID] = backend.DataResponse{
-				Error: err,
-			}
+			// Use ErrDataResponse to create a proper error response that Grafana can display
+			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
 			continue
 		}
 
@@ -188,8 +185,133 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
+// parseDatadogErrorResponse extracts detailed error information from Datadog API error responses
+func parseDatadogErrorResponse(responseBody string, queryText string) string {
+	if responseBody == "" {
+		return "Invalid query syntax"
+	}
+
+	// Try to parse JSON response
+	var errResp map[string]interface{}
+	if err := json.Unmarshal([]byte(responseBody), &errResp); err != nil {
+		// If not JSON, return the raw response (trimmed)
+		if len(responseBody) > 200 {
+			return fmt.Sprintf("Invalid query: %s...", responseBody[:200])
+		}
+		return fmt.Sprintf("Invalid query: %s", responseBody)
+	}
+
+	// Extract error messages from different possible formats
+	var errorMessages []string
+
+	// Handle "errors" field (array of errors)
+	if errorsField, ok := errResp["errors"]; ok {
+		switch errors := errorsField.(type) {
+		case []interface{}:
+			for _, errItem := range errors {
+				if errMsg, ok := errItem.(string); ok {
+					errorMessages = append(errorMessages, errMsg)
+				} else if errObj, ok := errItem.(map[string]interface{}); ok {
+					// Handle error object with message field
+					if msg, ok := errObj["message"]; ok {
+						if msgStr, ok := msg.(string); ok {
+							errorMessages = append(errorMessages, msgStr)
+						}
+					} else if detail, ok := errObj["detail"]; ok {
+						if detailStr, ok := detail.(string); ok {
+							errorMessages = append(errorMessages, detailStr)
+						}
+					}
+				}
+			}
+		case string:
+			errorMessages = append(errorMessages, errors)
+		}
+	}
+
+	// Handle "error" field (single error)
+	if len(errorMessages) == 0 {
+		if errorField, ok := errResp["error"]; ok {
+			switch errValue := errorField.(type) {
+			case string:
+				errorMessages = append(errorMessages, errValue)
+			case map[string]interface{}:
+				if msg, ok := errValue["message"]; ok {
+					if msgStr, ok := msg.(string); ok {
+						errorMessages = append(errorMessages, msgStr)
+					}
+				}
+			}
+		}
+	}
+
+	// Handle "message" field directly
+	if len(errorMessages) == 0 {
+		if msgField, ok := errResp["message"]; ok {
+			if msgStr, ok := msgField.(string); ok {
+				errorMessages = append(errorMessages, msgStr)
+			}
+		}
+	}
+
+	// If we found error messages, combine them
+	if len(errorMessages) > 0 {
+		// Combine multiple errors
+		errorText := strings.Join(errorMessages, "; ")
+
+		// Provide context-aware suggestions
+		suggestion := suggestQueryFix(errorText, queryText)
+		if suggestion != "" {
+			return fmt.Sprintf("Invalid query: %s\n%s", errorText, suggestion)
+		}
+		return fmt.Sprintf("Invalid query: %s", errorText)
+	}
+
+	// Fallback if no recognizable error format
+	return "Invalid query syntax"
+}
+
+// suggestQueryFix provides helpful suggestions based on error messages
+func suggestQueryFix(errorMsg string, queryText string) string {
+	lowerError := strings.ToLower(errorMsg)
+
+	// Check for specific error patterns and provide suggestions
+	if strings.Contains(lowerError, "metric") || strings.Contains(lowerError, "unknown") {
+		return "Suggestion: Verify the metric name exists. Common formats: 'system.cpu', 'datadog.estimated_usage.metrics.custom', 'avg:system.cpu{*}'"
+	}
+
+	if strings.Contains(lowerError, "tag") || strings.Contains(lowerError, "filter") || strings.Contains(lowerError, "syntax") {
+		return "Suggestion: Use tag syntax 'tag_key:tag_value' (e.g., 'host:web-01'). Multiple tags: 'host:web-01,env:prod'"
+	}
+
+	if strings.Contains(lowerError, "aggregation") || strings.Contains(lowerError, "function") {
+		return "Suggestion: Use valid aggregation functions with 'by' keyword. Examples: 'by avg', 'by max', 'by sum'"
+	}
+
+	if strings.Contains(lowerError, "formula") || strings.Contains(lowerError, "expression") {
+		return "Suggestion: Ensure query follows Datadog format: 'metric{tags} by aggregation'"
+	}
+
+	if strings.Contains(lowerError, "brace") || strings.Contains(lowerError, "bracket") {
+		return "Suggestion: Ensure braces are balanced in tag section: '{...}'"
+	}
+
+	return ""
+}
+
+// replaceTemplateVariables replaces template variables like {{keyName}} with actual values from labels
+func replaceTemplateVariables(template string, labels map[string]string) string {
+	result := template
+	for key, value := range labels {
+		// Replace {{keyName}} with actual value
+		placeholder := "{{" + key + "}}"
+		result = strings.ReplaceAll(result, placeholder, value)
+	}
+	return result
+}
+
 // queryDatadog executes a Datadog query and returns Grafana DataFrames
-func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi, from, to int64, qm *QueryModel) (data.Frames, error) {
+func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi, from, to int64, qm *QueryModel, refID string) (data.Frames, error) {
 	logger := log.New()
 
 	body := datadogV2.TimeseriesFormulaQueryRequest{
@@ -240,14 +362,26 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		fmt.Fprintf(os.Stderr, "HTTP Status: %d\n", httpStatus)
 		fmt.Fprintf(os.Stderr, "Response Body: %s\n", responseBody)
 
+		// Build detailed error message based on HTTP status and response
+		var errorMsg string
+
 		// Check for authentication errors
-		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
-			return nil, fmt.Errorf("invalid Datadog API credentials")
+		if httpStatus == 401 || strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Unauthorized") {
+			errorMsg = "Invalid Datadog API credentials"
+		} else if httpStatus == 403 || strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+			errorMsg = "API key missing required permissions (need 'metrics_read' scope)"
+		} else if httpStatus == 400 || strings.Contains(err.Error(), "400") {
+			// Parse error response for specific validation issues
+			errorMsg = parseDatadogErrorResponse(responseBody, qm.QueryText)
+		} else if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
+			errorMsg = "Query timeout - Datadog API took too long to respond"
+		} else if httpStatus >= 500 {
+			errorMsg = fmt.Sprintf("Datadog API error (%d) - service may be unavailable", httpStatus)
+		} else {
+			errorMsg = fmt.Sprintf("Datadog API error: %s", err.Error())
 		}
-		if strings.Contains(err.Error(), "timeout") {
-			return nil, fmt.Errorf("query timeout")
-		}
-		return nil, fmt.Errorf("failed to query metrics: %w", err)
+
+		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
 	// responseContent, _ := json.MarshalIndent(resp, "", "  ")
@@ -296,19 +430,20 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		}
 
 		// Extract timestamps and values
-		timeValues := make([]int64, 0)
+		timeValues := make([]time.Time, 0)
 		numberValues := make([]float64, 0)
 
 		// pointlist is []*float64, and times is []int64 (in milliseconds from Datadog API)
-		// Zip them together - Grafana expects milliseconds
+		// Zip them together - Grafana expects time.Time objects
 		for j, timeVal := range times {
 			if j >= len(pointlist) {
 				break
 			}
 			point := pointlist[j]
 			if point != nil {
-				// Timestamps are already in milliseconds from Datadog API v2
-				timeValues = append(timeValues, timeVal)
+				// Convert milliseconds timestamp to time.Time
+				timestamp := time.UnixMilli(timeVal)
+				timeValues = append(timeValues, timestamp)
 				numberValues = append(numberValues, *point)
 			}
 		}
@@ -317,9 +452,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 			continue
 		}
 
-		// Build series name with labels
-		seriesName := metric
-		if len(labels) > 0 {
+		// Build series name - if custom label is provided, use it as template; otherwise use default format
+		seriesName := metric // Default to the query text if no labels and no custom label
+		if qm.Label != "" {
+			// Use custom label as template, replacing variables with label values
+			seriesName = replaceTemplateVariables(qm.Label, labels)
+		} else if len(labels) > 0 {
+			// Use default format: metric + labels
 			var labelStrings []string
 			for k, v := range labels {
 				labelStrings = append(labelStrings, k+":"+v)
@@ -327,19 +466,24 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 			seriesName = metric + " {" + strings.Join(labelStrings, ", ") + "}"
 		}
 
-		// Use custom label if provided
-		if qm.Label != "" {
-			seriesName = qm.Label
-		}
-
-		// Create data frame
+		// Create data frame with proper timeseries format
 		frame := data.NewFrame(
-			metric,
-			data.NewField("time", nil, timeValues),
-			data.NewField(seriesName, labels, numberValues),
+			seriesName, // Use the correctly formatted series name as frame name
+			data.NewField("Time", nil, timeValues),
+			data.NewField("Value", labels, numberValues), // Attach labels to the field for filtering/grouping
 		)
 
-		frame.RefID = metric
+		// Configure the display name to ensure it shows the formatted name
+		frame.Fields[1].Config = &data.FieldConfig{
+			DisplayName: seriesName, // Explicitly set display name to our formatted series name
+		}
+
+		// Set metadata to indicate this is timeseries data
+		frame.Meta = &data.FrameMeta{
+			Type: data.FrameTypeTimeSeriesMulti,
+		}
+
+		frame.RefID = refID // Use the query's RefID instead of metric name
 		frames = append(frames, frame)
 	}
 
@@ -715,11 +859,11 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 	}
 
 	logger.Info("CheckHealth: calling QueryTimeseriesData (v2 API)")
-	
+
 	// Log the request body
 	requestBody, _ := json.MarshalIndent(body, "", "  ")
 	logger.Debug("CheckHealth: request body", "request", string(requestBody))
-	
+
 	resp, httpResp, err := metricsApi.QueryTimeseriesData(healthCtx, body)
 	if err != nil {
 		httpStatus := 0
@@ -733,7 +877,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 				httpResp.Body = io.NopCloser(strings.NewReader(responseBody))
 			}
 		}
-		
+
 		logger.Error("CheckHealth: API call failed",
 			"error", err,
 			"errorString", err.Error(),
@@ -744,14 +888,21 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 			logger.Error("Health check failed - authentication error", "error", err)
 			return &backend.CheckHealthResult{
 				Status:  backend.HealthStatusError,
-				Message: "Invalid Datadog API credentials",
+				Message: "Invalid Datadog API credentials - check your API key and App key",
 			}, nil
 		}
 		if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
 			logger.Error("Health check failed - permission error", "error", err)
 			return &backend.CheckHealthResult{
 				Status:  backend.HealthStatusError,
-				Message: "API key missing required permissions",
+				Message: "API key missing required permissions - need 'metrics_read' scope",
+			}, nil
+		}
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
+			logger.Error("Health check failed - timeout", "error", err)
+			return &backend.CheckHealthResult{
+				Status:  backend.HealthStatusError,
+				Message: "Connection timeout - Datadog API is not responding",
 			}, nil
 		}
 		logger.Error("Health check failed", "error", err)

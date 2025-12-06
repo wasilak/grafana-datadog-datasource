@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AutocompleteState, QueryContext } from '../types';
+import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery } from '../utils/autocomplete/parser';
 import { generateSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
-import { CompletionItem } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 
 const DEFAULT_DEBOUNCE_MS = 400; // 300-500ms as per design
@@ -59,10 +58,18 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    */
   const fetchAndUpdateSuggestions = useCallback(
     async (context: QueryContext, queryText: string) => {
-      setState(prev => ({ ...prev, isLoading: true, error: undefined }));
+      setState((prev: AutocompleteState) => ({ ...prev, isLoading: true, error: undefined }));
 
-      const abortController = new AbortController();
-      const timeoutHandle = setTimeout(() => abortController.abort(), 2000); // 2-second timeout
+      const timeoutHandle = setTimeout(() => {
+        // Timeout - abort the fetch
+        setState((prev: AutocompleteState) => ({
+          ...prev,
+          isLoading: false,
+          error: 'Suggestions request timeout',
+          suggestions: [],
+          isOpen: true,
+        }));
+      }, 2000); // 2-second timeout
 
       try {
         // Validate query
@@ -71,20 +78,19 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         // Fetch metric names from backend
         let metrics: string[] = [];
         try {
-          const metricsResponse = await getBackendSrv().fetch({
-            url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/metrics`,
-            method: 'GET',
-            signal: abortController.signal,
-          });
-          metrics = metricsResponse.data as string[];
+          const metricsResponse = await getBackendSrv()
+            .fetch({
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/metrics`,
+              method: 'GET',
+            })
+            .toPromise();
+          metrics = (metricsResponse as any).data as string[];
         } catch (metricsError) {
           const err = metricsError as any;
           if (err.status === 401) {
             throw new Error('Datadog credentials invalid');
           } else if (err.status === 404) {
             throw new Error('Endpoint not found (backend not available)');
-          } else if (err.name === 'AbortError') {
-            throw new Error('Suggestions request timeout');
           } else {
             console.warn('Failed to fetch metrics:', metricsError);
             // Continue with empty metrics if backend call fails
@@ -96,20 +102,19 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let tags: string[] = [];
         if ((context.contextType === 'tag' || context.contextType === 'tag_value') && context.metricName) {
           try {
-            const tagsResponse = await getBackendSrv().fetch({
-              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/tags/${context.metricName}`,
-              method: 'GET',
-              signal: abortController.signal,
-            });
-            tags = tagsResponse.data as string[];
+            const tagsResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/tags/${context.metricName}`,
+                method: 'GET',
+              })
+              .toPromise();
+            tags = (tagsResponse as any).data as string[];
           } catch (tagsError) {
             const err = tagsError as any;
             if (err.status === 401) {
               throw new Error('Datadog credentials invalid');
             } else if (err.status === 404) {
               throw new Error('Endpoint not found (backend not available)');
-            } else if (err.name === 'AbortError') {
-              throw new Error('Suggestions request timeout');
             } else {
               console.warn('Failed to fetch tags:', tagsError);
               // Continue with metrics-only suggestions if tags fail
@@ -118,10 +123,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           }
         }
 
+        clearTimeout(timeoutHandle);
+
         // Generate suggestions based on context
         const suggestions = generateSuggestions(context, metrics, tags);
 
-        setState(prev => ({
+        setState((prev: AutocompleteState) => ({
           ...prev,
           isLoading: false,
           suggestions,
@@ -130,16 +137,15 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           validationError: validationResult.isValid ? undefined : validationResult.errors[0]?.message,
         }));
       } catch (error) {
+        clearTimeout(timeoutHandle);
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch suggestions';
-        setState(prev => ({
+        setState((prev: AutocompleteState) => ({
           ...prev,
           isLoading: false,
           error: errorMessage,
           suggestions: [],
           isOpen: true, // Keep open to show error
         }));
-      } finally {
-        clearTimeout(timeoutHandle);
       }
     },
     [datasourceUid]
@@ -183,7 +189,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
       switch (event.key) {
         case 'ArrowDown':
           event.preventDefault();
-          setState(prev => ({
+          setState((prev: AutocompleteState) => ({
             ...prev,
             selectedIndex: (prev.selectedIndex + 1) % prev.suggestions.length,
           }));
@@ -191,7 +197,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         case 'ArrowUp':
           event.preventDefault();
-          setState(prev => ({
+          setState((prev: AutocompleteState) => ({
             ...prev,
             selectedIndex:
               prev.selectedIndex === 0 ? prev.suggestions.length - 1 : prev.selectedIndex - 1,
@@ -209,7 +215,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         case 'Escape':
           event.preventDefault();
-          setState(prev => ({ ...prev, isOpen: false }));
+          setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
           break;
 
         default:
@@ -227,14 +233,14 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
   const onItemSelect = useCallback((item: CompletionItem) => {
     // This will be wired to the query editor to update the query text
     // The actual insertion logic depends on how QueryEditor uses this hook
-    setState(prev => ({ ...prev, isOpen: false }));
+    setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
   }, []);
 
   /**
    * Close autocomplete menu
    */
   const onClose = useCallback(() => {
-    setState(prev => ({ ...prev, isOpen: false }));
+    setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
   }, []);
 
   /**

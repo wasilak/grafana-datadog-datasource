@@ -33,3 +33,5 @@ data
 .env
 
 wasilak-datadog-datasource*
+.spec-workflow
+.qwen

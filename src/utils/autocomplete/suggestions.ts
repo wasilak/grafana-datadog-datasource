@@ -1,5 +1,4 @@
-import { CompletionItem } from '@grafana/data';
-import { QueryContext } from '../../types';
+import { CompletionItem, QueryContext } from '../../types';
 
 // Static list of Datadog aggregation functions
 const AGGREGATIONS = [
@@ -63,7 +62,7 @@ function generateMetricSuggestions(context: QueryContext, metrics: string[]): Co
     return [
       {
         label: 'No metrics available',
-        kind: 'value',
+        kind: 'metric',
         insertText: '',
         documentation: 'Metric suggestions require backend support',
         sortText: 'z_nomatch',

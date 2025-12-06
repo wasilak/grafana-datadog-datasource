@@ -28,3 +28,74 @@ export interface MySecureJsonData {
 export interface MyVariableQuery {
   rawQuery: string;
 }
+
+/**
+ * Completion item for autocomplete suggestions
+ */
+export interface CompletionItem {
+  label: string;
+  kind?: 'metric' | 'aggregation' | 'tag' | 'tag_value' | 'function';
+  detail?: string;
+  documentation?: string;
+  insertText?: string;
+  sortText?: string;
+}
+
+/**
+ * Query context for autocomplete - what part of the query the cursor is in
+ */
+export type ContextType = 'metric' | 'aggregation' | 'tag' | 'tag_value' | 'unknown';
+
+export interface QueryContext {
+  contextType: ContextType;
+  metricName?: string;
+  existingTags: Set<string>;
+  currentToken: string;
+  lineContent: string;
+  cursorPosition: number;
+}
+
+/**
+ * State for the autocomplete hook
+ */
+export interface AutocompleteState {
+  isOpen: boolean;
+  suggestions: CompletionItem[];
+  isLoading: boolean;
+  selectedIndex: number;
+  error?: string;
+  validationError?: string;
+}
+
+/**
+ * Validation error with message and fix suggestion
+ */
+export interface ValidationError {
+  message: string;
+  fix?: string;
+}
+
+/**
+ * Result of query validation
+ */
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+}
+
+/**
+ * Cache entry for autocomplete data
+ */
+export interface CacheEntry {
+  data: CompletionItem[];
+  timestamp: number;
+}
+
+/**
+ * Completion cache structure
+ */
+export interface CompletionCache {
+  metricSuggestions: Map<string, CacheEntry>;
+  tagSuggestions: Map<string, CacheEntry>;
+  TTL: number;
+}
