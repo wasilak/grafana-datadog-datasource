@@ -10,6 +10,7 @@ const DEFAULT_DEBOUNCE_MS = 400; // 300-500ms as per design
 interface UseQueryAutocompleteOptions {
   datasourceUid: string;
   debounceMs?: number;
+  onSelect?: (item: CompletionItem) => void;
 }
 
 interface UseQueryAutocompleteReturn {
@@ -231,10 +232,13 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * This is typically called when user clicks or presses Enter on a suggestion
    */
   const onItemSelect = useCallback((item: CompletionItem) => {
-    // This will be wired to the query editor to update the query text
-    // The actual insertion logic depends on how QueryEditor uses this hook
+    // Call the provided selection callback if available
+    if (options.onSelect) {
+      options.onSelect(item);
+    }
+    // Close the autocomplete menu
     setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
-  }, []);
+  }, [options]);
 
   /**
    * Close autocomplete menu
