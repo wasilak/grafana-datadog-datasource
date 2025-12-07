@@ -36,6 +36,9 @@ export function generateSuggestions(
     case 'aggregation':
       suggestions = generateAggregationSuggestions(context);
       break;
+    case 'aggregator':
+      suggestions = generateAggregatorSuggestions(context);
+      break;
     case 'tag':
       suggestions = generateTagSuggestions(context, tagsForMetric);
       break;
@@ -83,6 +86,16 @@ function generateMetricSuggestions(context: QueryContext, metrics: string[]): Co
 }
 
 /**
+ * Available aggregator functions in Datadog
+ */
+const AGGREGATORS = [
+  'avg',
+  'sum',
+  'min',
+  'max',
+];
+
+/**
  * Generates aggregation function suggestions
  */
 function generateAggregationSuggestions(context: QueryContext): CompletionItem[] {
@@ -95,6 +108,25 @@ function generateAggregationSuggestions(context: QueryContext): CompletionItem[]
     documentation: `Datadog aggregation function: ${agg}`,
     sortText: agg,
   }));
+}
+
+/**
+ * Generates aggregator suggestions (for the prefix part like "avg:", "sum:", etc.)
+ */
+function generateAggregatorSuggestions(context: QueryContext): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  return AGGREGATORS.filter(agg => agg.toLowerCase().startsWith(currentToken)).map(agg => {
+    // For aggregator context, always return just the aggregator name without colon
+    // The colon handling is taken care of in the token replacement logic
+    return {
+      label: agg,
+      kind: 'aggregator',
+      insertText: agg, // Don't add colon here - that's handled by the replacement logic
+      documentation: `Datadog aggregator: ${agg}`,
+      sortText: agg,
+    };
+  });
 }
 
 /**

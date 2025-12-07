@@ -34,7 +34,7 @@ export interface MyVariableQuery {
  */
 export interface CompletionItem {
   label: string;
-  kind?: 'metric' | 'aggregation' | 'tag' | 'tag_value' | 'function';
+  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'function';
   detail?: string;
   documentation?: string;
   insertText?: string;
@@ -44,7 +44,7 @@ export interface CompletionItem {
 /**
  * Query context for autocomplete - what part of the query the cursor is in
  */
-export type ContextType = 'metric' | 'aggregation' | 'tag' | 'tag_value' | 'unknown';
+export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'unknown';
 
 export interface QueryContext {
   contextType: ContextType;

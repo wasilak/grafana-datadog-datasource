@@ -36,11 +36,25 @@ export function parseQuery(queryText: string, cursorPosition: number): QueryCont
 
   const lineContent = lines[cursorLine] || '';
 
-  // Extract the current token at cursor position
-  const currentToken = extractCurrentToken(lineContent, positionInLine);
-
   // Determine context type by analyzing the line structure
   const contextType = detectContextType(lineContent, positionInLine);
+
+  // Extract the current token at cursor position based on context
+  let currentToken = '';
+  if (contextType === 'aggregator') {
+    // For aggregator context, extract text from the beginning up to position, stopping at colon
+    const colonIndex = lineContent.indexOf(':');
+    const end = colonIndex !== -1 && positionInLine > colonIndex ? colonIndex : positionInLine;
+    let start = 0;
+    // Find the start of the aggregator word (stop at non-alphanumeric characters)
+    while (start < end && !/[a-zA-Z_]/.test(lineContent[start])) {
+      start++;
+    }
+    currentToken = lineContent.substring(start, end);
+  } else {
+    // For other contexts, use the standard token extraction
+    currentToken = extractCurrentToken(lineContent, positionInLine);
+  }
 
   // Extract metric name if in tag/tag_value context
   const metricName = extractMetricName(lineContent, positionInLine);
@@ -80,12 +94,12 @@ function extractCurrentToken(line: string, position: number): string {
   let end = position;
 
   // Move start backwards to find beginning of token
-  while (start > 0 && /\S/.test(line[start - 1])) {
+  while (start > 0 && /\S/.test(line[start - 1]) && line[start - 1] !== ':') {
     start--;
   }
 
   // Move end forwards to find end of token
-  while (end < line.length && /\S/.test(line[end])) {
+  while (end < line.length && /\S/.test(line[end]) && line[end] !== '{' && line[end] !== ' ') {
     end++;
   }
 
@@ -94,13 +108,14 @@ function extractCurrentToken(line: string, position: number): string {
 
 /**
  * Detects the context type at the cursor position
- * Datadog query format: metric{tag_key:tag_value,...} by aggregation
+ * Datadog query format: [aggregator:]metric{tag_key:tag_value,...} by aggregation
  *
  * Examples:
  * - "system.cpu" -> metric context
  * - "system.cpu.by_host{h" -> tag context
  * - "system.cpu.by_host{host:web-" -> tag_value context
  * - "system.cpu.by_host{} by av" -> aggregation context
+ * - "a:system.cpu" -> aggregator context (when typing aggregator)
  */
 function detectContextType(line: string, position: number): QueryContext['contextType'] {
   // Handle empty line
@@ -129,6 +144,14 @@ function detectContextType(line: string, position: number): QueryContext['contex
     }
 
     return 'tag';
+  }
+
+  // Check for aggregator context: if there's a colon after an identifier before the first space or brace
+  // Pattern: [aggregator:]metric, e.g. "avg:system.cpu"
+  const colonIndex = line.indexOf(':');
+  if (colonIndex !== -1 && position <= colonIndex) {
+    // Cursor is before or at the colon, so we're in aggregator context
+    return 'aggregator';
   }
 
   // Default to metric context

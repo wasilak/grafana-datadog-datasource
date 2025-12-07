@@ -29,7 +29,7 @@ interface UseQueryAutocompleteReturn {
  * @returns Object with state and handlers for autocomplete UI
  */
 export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQueryAutocompleteReturn {
-  const { datasourceUid, debounceMs = DEFAULT_DEBOUNCE_MS } = options;
+  const { datasourceUid, debounceMs = DEFAULT_DEBOUNCE_MS, onSelect } = options;
 
   // Validate datasource UID is provided
   if (!datasourceUid) {
@@ -233,12 +233,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    */
   const onItemSelect = useCallback((item: CompletionItem) => {
     // Call the provided selection callback if available
-    if (options.onSelect) {
-      options.onSelect(item);
+    if (onSelect) {
+      onSelect(item);
     }
     // Close the autocomplete menu
     setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
-  }, [options]);
+  }, [onSelect]);
 
   /**
    * Close autocomplete menu
