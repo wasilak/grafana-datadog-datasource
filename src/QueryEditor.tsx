@@ -351,36 +351,101 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
             }}
             className="query-field-query-editor-suggestions"
           >
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {autocomplete.state.suggestions.map((suggestion, index) => (
-                <li
-                  key={index}
-                  onMouseDown={(e) => {
-                    // Prevent default to avoid losing focus from editor
-                    e.preventDefault();
-                    autocomplete.onMouseClick(suggestion);
-                    // Ensure focus returns to editor after click
-                    setTimeout(() => {
-                      if (editorRef.current) {
-                        editorRef.current.focus();
-                      }
-                    }, 0);
-                  }}
-                  onMouseEnter={() => autocomplete.onMouseEnter(index)}
-                  style={{
-                    padding: '6px 12px',
-                    cursor: 'pointer',
-                    backgroundColor: index === autocomplete.state.selectedIndex
-                      ? theme.colors.action.selected
-                      : theme.colors.background.primary,
-                    borderBottom: `1px solid ${theme.colors.border.weak}`,
-                    color: theme.colors.text.primary,
-                  }}
-                >
-                  {suggestion.label}
-                </li>
-              ))}
-            </ul>
+            {autocomplete.state.groupedSuggestions.length > 0 ? (
+              // Render grouped suggestions with headers
+              <div>
+                {autocomplete.state.groupedSuggestions.map((group, groupIndex) => (
+                  <div key={groupIndex}>
+                    {/* Group header */}
+                    <div
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: theme.typography.size.xs,
+                        fontWeight: theme.typography.fontWeightMedium,
+                        color: theme.colors.text.secondary,
+                        backgroundColor: theme.colors.background.secondary,
+                        borderBottom: `1px solid ${theme.colors.border.weak}`,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      {group.label}
+                    </div>
+                    {/* Group suggestions */}
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                      {group.suggestions.map((suggestion) => {
+                        // Find the index in the flat suggestions array for selection state
+                        const flatIndex = autocomplete.state.suggestions.findIndex(
+                          (s) => s.label === suggestion.label
+                        );
+                        return (
+                          <li
+                            key={suggestion.label}
+                            onMouseDown={(e) => {
+                              // Prevent default to avoid losing focus from editor
+                              e.preventDefault();
+                              autocomplete.onMouseClick(suggestion);
+                              // Ensure focus returns to editor after click
+                              setTimeout(() => {
+                                if (editorRef.current) {
+                                  editorRef.current.focus();
+                                }
+                              }, 0);
+                            }}
+                            onMouseEnter={() => autocomplete.onMouseEnter(flatIndex)}
+                            style={{
+                              padding: '6px 12px',
+                              cursor: 'pointer',
+                              backgroundColor:
+                                flatIndex === autocomplete.state.selectedIndex
+                                  ? theme.colors.action.selected
+                                  : theme.colors.background.primary,
+                              borderBottom: `1px solid ${theme.colors.border.weak}`,
+                              color: theme.colors.text.primary,
+                            }}
+                          >
+                            {suggestion.label}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // Fallback to flat list if no groups
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {autocomplete.state.suggestions.map((suggestion, index) => (
+                  <li
+                    key={index}
+                    onMouseDown={(e) => {
+                      // Prevent default to avoid losing focus from editor
+                      e.preventDefault();
+                      autocomplete.onMouseClick(suggestion);
+                      // Ensure focus returns to editor after click
+                      setTimeout(() => {
+                        if (editorRef.current) {
+                          editorRef.current.focus();
+                        }
+                      }, 0);
+                    }}
+                    onMouseEnter={() => autocomplete.onMouseEnter(index)}
+                    style={{
+                      padding: '6px 12px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        index === autocomplete.state.selectedIndex
+                          ? theme.colors.action.selected
+                          : theme.colors.background.primary,
+                      borderBottom: `1px solid ${theme.colors.border.weak}`,
+                      color: theme.colors.text.primary,
+                    }}
+                  >
+                    {suggestion.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 

@@ -111,14 +111,14 @@
   - Filter out empty groups
   - _Requirements: 4.1, 4.2, 4.4_
 
-- [-] 5.2 Update useQueryAutocomplete to use grouped suggestions
+- [x] 5.2 Update useQueryAutocomplete to use grouped suggestions
   - File: src/hooks/useQueryAutocomplete.ts (modify)
   - Call groupSuggestions() after fetching
   - Store groupedSuggestions in state
   - Update keyboard navigation to skip headers
   - _Requirements: 4.3_
 
-- [ ] 5.3 Update QueryEditor to render grouped suggestions
+- [-] 5.3 Update QueryEditor to render grouped suggestions
   - File: src/QueryEditor.tsx (modify)
   - Render group headers
   - Render suggestions under each group
