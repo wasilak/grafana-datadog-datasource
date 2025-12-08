@@ -1,4 +1,4 @@
-import { CompletionItem, QueryContext } from '../../types';
+import { CompletionItem, QueryContext, SuggestionGroup } from '../../types';
 
 // Static list of Datadog aggregation functions
 const AGGREGATIONS = [
@@ -272,4 +272,86 @@ function deduplicateAndLimit(suggestions: CompletionItem[], maxItems: number): C
   }
 
   return result;
+}
+
+/**
+ * Group suggestions by category
+ * Groups are ordered: aggregators, metrics, tags, tag_values
+ * Empty groups are filtered out
+ *
+ * @param suggestions - Array of completion items to group
+ * @returns Array of suggestion groups with labels and suggestions
+ */
+export function groupSuggestions(suggestions: CompletionItem[]): SuggestionGroup[] {
+  // Map to collect suggestions by category
+  const groups = new Map<string, CompletionItem[]>();
+
+  // Collect suggestions into categories
+  for (const suggestion of suggestions) {
+    const category = getCategoryFromKind(suggestion.kind);
+    if (!groups.has(category)) {
+      groups.set(category, []);
+    }
+    groups.get(category)!.push(suggestion);
+  }
+
+  // Define category order and labels
+  const categoryOrder: Array<{ key: string; category: SuggestionGroup['category']; label: string }> = [
+    { key: 'aggregators', category: 'aggregators', label: 'Aggregators' },
+    { key: 'metrics', category: 'metrics', label: 'Metrics' },
+    { key: 'tags', category: 'tags', label: 'Tags' },
+    { key: 'tag_values', category: 'tag_values', label: 'Tag Values' },
+  ];
+
+  // Build result array in order, filtering out empty groups
+  const result: SuggestionGroup[] = [];
+  for (const { key, category, label } of categoryOrder) {
+    const suggestions = groups.get(key);
+    if (suggestions && suggestions.length > 0) {
+      result.push({
+        category,
+        label,
+        suggestions,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Map CompletionItem kind to category key
+ */
+function getCategoryFromKind(kind?: string): string {
+  switch (kind) {
+    case 'aggregation':
+    case 'aggregator':
+      return 'aggregators';
+    case 'metric':
+      return 'metrics';
+    case 'tag':
+      return 'tags';
+    case 'tag_value':
+      return 'tag_values';
+    default:
+      return 'metrics'; // Default to metrics for unknown kinds
+  }
+}
+
+/**
+ * Get category label for display
+ */
+function getCategoryLabel(category: string): string {
+  switch (category) {
+    case 'aggregators':
+      return 'Aggregators';
+    case 'metrics':
+      return 'Metrics';
+    case 'tags':
+      return 'Tags';
+    case 'tag_values':
+      return 'Tag Values';
+    default:
+      return 'Other';
+  }
 }

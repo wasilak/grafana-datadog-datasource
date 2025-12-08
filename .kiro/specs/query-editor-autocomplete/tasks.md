@@ -83,13 +83,13 @@
   - Maintain focus on CodeEditor
   - _Requirements: 2.2, 2.3_
 
-- [ ] 4. Implement theme-aware styling using Grafana hooks
+- [x] 4. Implement theme-aware styling using Grafana hooks
   - Use useTheme2() hook for theme detection
   - Apply theme colors to autocomplete popup
   - Support dynamic theme switching
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 4.1 Update QueryEditor with theme support
+- [x] 4.1 Update QueryEditor with theme support
   - File: src/QueryEditor.tsx (modify)
   - Import and use useTheme2() hook
   - Apply theme.colors to popup styling
@@ -97,14 +97,14 @@
   - Remove hardcoded color values
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 5. Implement suggestion grouping
+- [-] 5. Implement suggestion grouping
   - Group suggestions by category (metrics, aggregators, tags, tag_values)
   - Render group headers
   - Skip headers in keyboard navigation
   - Hide empty groups
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 5.1 Create grouping utility function
+- [-] 5.1 Create grouping utility function
   - File: src/utils/autocomplete/suggestions.ts (modify)
   - Implement groupSuggestions() function
   - Define category order (aggregators, metrics, tags, tag_values)

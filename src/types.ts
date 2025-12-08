@@ -56,11 +56,21 @@ export interface QueryContext {
 }
 
 /**
+ * Grouped suggestions by category
+ */
+export interface SuggestionGroup {
+  category: 'metrics' | 'aggregators' | 'tags' | 'tag_values';
+  label: string;
+  suggestions: CompletionItem[];
+}
+
+/**
  * State for the autocomplete hook
  */
 export interface AutocompleteState {
   isOpen: boolean;
   suggestions: CompletionItem[];
+  groupedSuggestions: SuggestionGroup[];
   isLoading: boolean;
   selectedIndex: number;
   hoveredIndex: number | null;
