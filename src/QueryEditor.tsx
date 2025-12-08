@@ -288,7 +288,9 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
               {autocomplete.state.suggestions.map((suggestion, index) => (
                 <li
                   key={index}
-                  onClick={() => {
+                  onMouseDown={(e) => {
+                    // Prevent default to avoid losing focus from editor
+                    e.preventDefault();
                     autocomplete.onMouseClick(suggestion);
                     // Ensure focus returns to editor after click
                     setTimeout(() => {
