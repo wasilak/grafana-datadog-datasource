@@ -204,6 +204,47 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       }, 0);
     });
 
+    // Intercept keyboard events to handle autocomplete navigation
+    editor.onKeyDown((e) => {
+      // Only intercept if autocomplete is open
+      if (!autocomplete.state.isOpen) {
+        return;
+      }
+
+      // Create a synthetic React keyboard event for the autocomplete handler
+      const syntheticEvent = {
+        key: '',
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        preventDefault: () => e.preventDefault(),
+        stopPropagation: () => e.stopPropagation(),
+      } as React.KeyboardEvent;
+
+      // Map Monaco key codes to key names
+      switch (e.keyCode) {
+        case monaco.KeyCode.UpArrow:
+          syntheticEvent.key = 'ArrowUp';
+          autocomplete.onKeyDown(syntheticEvent);
+          break;
+        case monaco.KeyCode.DownArrow:
+          syntheticEvent.key = 'ArrowDown';
+          autocomplete.onKeyDown(syntheticEvent);
+          break;
+        case monaco.KeyCode.Enter:
+          syntheticEvent.key = 'Enter';
+          autocomplete.onKeyDown(syntheticEvent);
+          break;
+        case monaco.KeyCode.Tab:
+          syntheticEvent.key = 'Tab';
+          autocomplete.onKeyDown(syntheticEvent);
+          break;
+        case monaco.KeyCode.Escape:
+          syntheticEvent.key = 'Escape';
+          autocomplete.onKeyDown(syntheticEvent);
+          break;
+      }
+    });
+
     // Track cursor position changes
     editor.onDidChangeCursorPosition((e) => {
       const model = editor.getModel();
