@@ -45,6 +45,9 @@ export function generateSuggestions(
     case 'tag_value':
       suggestions = generateTagValueSuggestions(context, tagsForMetric);
       break;
+    case 'grouping_tag':
+      suggestions = generateGroupingTagSuggestions(context, tagsForMetric);
+      break;
     default:
       suggestions = [];
   }
@@ -190,6 +193,41 @@ function generateTagValueSuggestions(context: QueryContext, tagsForMetric: strin
 }
 
 /**
+ * Generates grouping tag suggestions (for "by {}" clause)
+ * Suggests tag keys that can be used for grouping
+ */
+function generateGroupingTagSuggestions(context: QueryContext, tagsForMetric: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  // Extract tag keys from available tags
+  const tagKeys = extractTagKeys(tagsForMetric);
+
+  // Extract already-used grouping tags from the "by {}" clause
+  const existingGroupingTags = extractExistingGroupingTags(context.lineContent, context.cursorPosition);
+
+  return tagKeys
+    .filter(tag => {
+      // Filter by current token match
+      if (!tag.toLowerCase().includes(currentToken)) {
+        return false;
+      }
+      // Exclude already-used grouping tags
+      if (existingGroupingTags.has(tag)) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 100)
+    .map(tag => ({
+      label: tag,
+      kind: 'tag',
+      insertText: tag,
+      documentation: `Group by tag: ${tag}`,
+      sortText: tag,
+    }));
+}
+
+/**
  * Extract unique tag keys from a list of tag entries
  * Expected format: "tag_key:tag_value" or just "tag_key"
  */
@@ -255,6 +293,34 @@ function extractCurrentTagKey(lineContent: string, cursorPosition: number): stri
 
   // If no colon found, the whole token is the key so far
   return currentTagStr || null;
+}
+
+/**
+ * Extract existing grouping tags from the "by {}" clause
+ */
+function extractExistingGroupingTags(lineContent: string, cursorPosition: number): Set<string> {
+  const tags = new Set<string>();
+
+  // Find "by {" pattern
+  const byMatch = lineContent.match(/\s+by\s+\{([^}]*)\}/);
+  if (!byMatch) {
+    return tags;
+  }
+
+  const groupingSection = byMatch[1].trim();
+  if (!groupingSection) {
+    return tags;
+  }
+
+  // Split by comma and extract tag names
+  const tagNames = groupingSection.split(',').map(t => t.trim());
+  for (const tagName of tagNames) {
+    if (tagName) {
+      tags.add(tagName);
+    }
+  }
+
+  return tags;
 }
 
 /**

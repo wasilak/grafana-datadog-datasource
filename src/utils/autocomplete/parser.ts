@@ -108,13 +108,14 @@ function extractCurrentToken(line: string, position: number): string {
 
 /**
  * Detects the context type at the cursor position
- * Datadog query format: [aggregator:]metric{tag_key:tag_value,...} by aggregation
+ * Datadog query format: [aggregator:]metric{tag_key:tag_value,...} by {grouping_tag1,grouping_tag2}
  *
  * Examples:
  * - "system.cpu" -> metric context
  * - "system.cpu.by_host{h" -> tag context
  * - "system.cpu.by_host{host:web-" -> tag_value context
- * - "system.cpu.by_host{} by av" -> aggregation context
+ * - "system.cpu.by_host{} by {" -> grouping_tag context
+ * - "system.cpu.by_host{} by {host," -> grouping_tag context
  * - "a:system.cpu" -> aggregator context (when typing aggregator)
  */
 function detectContextType(line: string, position: number): QueryContext['contextType'] {
@@ -123,18 +124,32 @@ function detectContextType(line: string, position: number): QueryContext['contex
     return 'metric';
   }
 
-  // Check for "by" keyword for aggregation context
-  const byMatch = line.match(/\s+by\s+/);
-  if (byMatch && position > byMatch.index! + byMatch[0].length - 1) {
-    return 'aggregation';
+  // Check for "by {" pattern for grouping tag context
+  const byMatch = line.match(/\s+by\s+\{/);
+  if (byMatch) {
+    const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
+    // Find the closing brace after "by {"
+    const closeBraceAfterBy = line.indexOf('}', byBraceStart);
+    
+    // If cursor is between "by {" and "}" (or no closing brace yet)
+    if (position > byBraceStart && (closeBraceAfterBy === -1 || position <= closeBraceAfterBy)) {
+      return 'grouping_tag';
+    }
   }
 
-  // Check for curly braces for tag/tag_value context
+  // Check for curly braces for tag/tag_value context (filter section)
   const openBrace = line.lastIndexOf('{', position);
   const closeBrace = line.indexOf('}', position);
 
   if (openBrace !== -1 && (closeBrace === -1 || position < closeBrace)) {
-    // We're inside the tag section
+    // Make sure this isn't the "by {" brace
+    const textBeforeBrace = line.substring(0, openBrace).trim();
+    if (textBeforeBrace.endsWith(' by')) {
+      // This is the grouping brace, not the filter brace
+      return 'grouping_tag';
+    }
+    
+    // We're inside the filter tag section
     const tagSection = line.substring(openBrace + 1, position);
 
     // Check if we're in tag_value context (after ':')

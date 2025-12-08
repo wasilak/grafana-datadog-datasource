@@ -182,11 +182,8 @@ function validateGroupingSection(queryText: string): ValidationError[] {
 
   const groupingTags = byMatch[1].trim();
 
+  // Empty grouping "by {}" is valid - it means no grouping
   if (!groupingTags) {
-    errors.push({
-      message: 'Empty grouping clause',
-      fix: 'Specify at least one tag to group by: by {tag_name}',
-    });
     return errors;
   }
 
