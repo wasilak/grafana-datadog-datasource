@@ -190,9 +190,18 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
     // Add keyboard event listener for Cmd+Enter
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      // Trigger autocomplete validation to clear any validation errors if query is now valid
-      autocomplete.onInput(query.queryText || '', cursorPosition);
-      onRunQuery(); // Execute the query
+      // Close autocomplete popup before query execution (Requirements 2.2)
+      autocomplete.onClose();
+      
+      // Execute the query
+      onRunQuery();
+      
+      // Maintain focus on CodeEditor (Requirements 2.3)
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.focus();
+        }
+      }, 0);
     });
 
     // Track cursor position changes

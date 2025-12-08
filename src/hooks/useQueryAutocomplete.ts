@@ -185,6 +185,16 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    */
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      // Detect Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) for query execution
+      // Close popup before query execution (Requirements 2.1)
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        if (state.isOpen) {
+          setState((prev: AutocompleteState) => ({ ...prev, isOpen: false, hoveredIndex: null }));
+        }
+        // Don't prevent default - let the query execution happen
+        return;
+      }
+
       // Only handle when autocomplete is open
       if (!state.isOpen) {
         return;
