@@ -130,6 +130,13 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     // Don't run query automatically when label changes
   };
 
+  // Custom onRunQuery that also refreshes autocomplete validation
+  const handleRunQuery = () => {
+    // Trigger autocomplete validation to clear any validation errors if query is now valid
+    autocomplete.onInput(query.queryText || '', cursorPosition);
+    onRunQuery();
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Capture current cursor position before the key event is processed
     if (textareaRef.current) {

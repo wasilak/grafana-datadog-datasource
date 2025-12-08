@@ -115,10 +115,15 @@ function validateTagSection(queryText: string): ValidationError[] {
       continue; // Skip empty entries from trailing commas
     }
 
+    // Check if this is a wildcard '*' which is valid as a standalone tag
+    if (tag === '*') {
+      continue; // Wildcard is valid, no further validation needed
+    }
+
     const colonIndex = tag.indexOf(':');
 
     if (colonIndex === -1) {
-      // No colon found - incomplete tag
+      // No colon found - incomplete tag (unless it's a special case)
       errors.push({
         message: `Incomplete tag: "${tag}" (missing value)`,
         fix: `Complete it as "${tag}:value"`,
