@@ -223,50 +223,36 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         return;
       }
 
-      // Create a synthetic React keyboard event for the autocomplete handler
-      const syntheticEvent = {
-        key: '',
-        metaKey: e.metaKey,
-        ctrlKey: e.ctrlKey,
-        preventDefault: () => {},
-        stopPropagation: () => {},
-      } as React.KeyboardEvent;
-
-      // Map Monaco key codes to key names and handle autocomplete
+      // Handle autocomplete navigation directly to avoid stale closure issues
       // Prevent default IMMEDIATELY for keys we want to intercept
       switch (e.keyCode) {
         case monaco.KeyCode.UpArrow:
           e.preventDefault();
           e.stopPropagation();
-          syntheticEvent.key = 'ArrowUp';
-          autocomplete.onKeyDown(syntheticEvent);
+          autocomplete.onNavigateUp();
           break;
         case monaco.KeyCode.DownArrow:
           e.preventDefault();
           e.stopPropagation();
-          syntheticEvent.key = 'ArrowDown';
-          autocomplete.onKeyDown(syntheticEvent);
+          autocomplete.onNavigateDown();
           break;
         case monaco.KeyCode.Enter:
           // Don't handle plain Enter with Cmd/Ctrl - that's for query execution
           if (!e.metaKey && !e.ctrlKey) {
             e.preventDefault();
             e.stopPropagation();
-            syntheticEvent.key = 'Enter';
-            autocomplete.onKeyDown(syntheticEvent);
+            autocomplete.onSelectCurrent();
           }
           break;
         case monaco.KeyCode.Tab:
           e.preventDefault();
           e.stopPropagation();
-          syntheticEvent.key = 'Tab';
-          autocomplete.onKeyDown(syntheticEvent);
+          autocomplete.onSelectCurrent();
           break;
         case monaco.KeyCode.Escape:
           e.preventDefault();
           e.stopPropagation();
-          syntheticEvent.key = 'Escape';
-          autocomplete.onKeyDown(syntheticEvent);
+          autocomplete.onClose();
           break;
       }
     });

@@ -21,6 +21,9 @@ interface UseQueryAutocompleteReturn {
   onMouseEnter: (index: number) => void;
   onMouseClick: (item: CompletionItem) => void;
   onClose: () => void;
+  onNavigateUp: () => void;
+  onNavigateDown: () => void;
+  onSelectCurrent: () => void;
 }
 
 /**
@@ -283,6 +286,57 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
   }, [onItemSelect]);
 
   /**
+   * Navigate up in the suggestion list
+   * Uses setState with function to get current state, avoiding stale closures
+   */
+  const onNavigateUp = useCallback(() => {
+    setState((prev: AutocompleteState) => {
+      if (!prev.isOpen || prev.suggestions.length === 0) {
+        return prev;
+      }
+      return {
+        ...prev,
+        selectedIndex: prev.selectedIndex === 0 ? prev.suggestions.length - 1 : prev.selectedIndex - 1,
+        hoveredIndex: null,
+      };
+    });
+  }, []);
+
+  /**
+   * Navigate down in the suggestion list
+   * Uses setState with function to get current state, avoiding stale closures
+   */
+  const onNavigateDown = useCallback(() => {
+    setState((prev: AutocompleteState) => {
+      if (!prev.isOpen || prev.suggestions.length === 0) {
+        return prev;
+      }
+      return {
+        ...prev,
+        selectedIndex: (prev.selectedIndex + 1) % prev.suggestions.length,
+        hoveredIndex: null,
+      };
+    });
+  }, []);
+
+  /**
+   * Select the currently highlighted suggestion
+   * Uses setState with function to get current state, avoiding stale closures
+   */
+  const onSelectCurrent = useCallback(() => {
+    setState((prev: AutocompleteState) => {
+      if (!prev.isOpen || prev.suggestions.length === 0) {
+        return prev;
+      }
+      const selectedItem = prev.suggestions[prev.selectedIndex];
+      if (selectedItem && onSelect) {
+        onSelect(selectedItem);
+      }
+      return { ...prev, isOpen: false };
+    });
+  }, [onSelect]);
+
+  /**
    * Cleanup on unmount
    */
   useEffect(() => {
@@ -302,5 +356,8 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
     onMouseEnter,
     onMouseClick,
     onClose,
+    onNavigateUp,
+    onNavigateDown,
+    onSelectCurrent,
   };
 }
