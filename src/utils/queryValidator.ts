@@ -10,7 +10,7 @@ import { parseQuery } from './autocomplete/parser';
  * 2. Metric name must be specified (before '{' or 'by')
  * 3. Metric name must contain valid characters (alphanumeric, dots, underscores)
  * 4. If tags are used, they must have format key:value
- * 5. If aggregation is used after 'by', must be valid aggregation function
+ * 5. If grouping is used after 'by', must be in format: by {tag1,tag2}
  * 6. Braces and quotes must be balanced
  *
  * @param queryText - The Datadog query to validate
@@ -63,10 +63,10 @@ export function validateQuery(queryText: string): ValidationResult {
     errors.push(...tagErrors);
   }
 
-  // Validate aggregation if present
+  // Validate grouping clause if present
   if (queryText.includes(' by ')) {
-    const aggErrors = validateAggregationSection(queryText);
-    errors.push(...aggErrors);
+    const groupErrors = validateGroupingSection(queryText);
+    errors.push(...groupErrors);
   }
 
   return {
@@ -156,40 +156,55 @@ function validateTagSection(queryText: string): ValidationError[] {
 }
 
 /**
- * Validate the aggregation section (after "by")
+ * Validate the grouping section (after "by")
+ * In Datadog, "by" is used for grouping, not aggregation
+ * Format: by {tag1,tag2,tag3}
  */
-function validateAggregationSection(queryText: string): ValidationError[] {
+function validateGroupingSection(queryText: string): ValidationError[] {
   const errors: ValidationError[] = [];
-  const validAggregations = [
-    'avg',
-    'max',
-    'min',
-    'sum',
-    'count',
-    'last',
-    'percentile',
-    'cardinality',
-    'pct_95',
-    'pct_99',
-  ];
 
-  const byMatch = queryText.match(/\s+by\s+(.+?)(?:\s|$)/);
+  // Match "by {tags}" pattern
+  const byMatch = queryText.match(/\s+by\s+\{([^}]*)\}/);
 
-  if (!byMatch || !byMatch[1]) {
+  if (!byMatch) {
+    // Check if "by" exists but without proper braces
+    if (queryText.includes(' by ')) {
+      const afterBy = queryText.substring(queryText.indexOf(' by ') + 4).trim();
+      if (!afterBy.startsWith('{')) {
+        errors.push({
+          message: 'Grouping tags must be enclosed in braces after "by"',
+          fix: 'Use format: by {tag1,tag2}',
+        });
+      }
+    }
+    return errors;
+  }
+
+  const groupingTags = byMatch[1].trim();
+
+  if (!groupingTags) {
     errors.push({
-      message: 'Aggregation expected after "by"',
-      fix: 'Add an aggregation function (e.g., "by avg")',
+      message: 'Empty grouping clause',
+      fix: 'Specify at least one tag to group by: by {tag_name}',
     });
     return errors;
   }
 
-  const agg = byMatch[1].toLowerCase().trim();
+  // Split by comma and validate each tag
+  const tags = groupingTags.split(',').map(t => t.trim());
 
-  if (!validAggregations.includes(agg)) {
-    errors.push({
-      message: `Unknown aggregation: "${agg}"`,
-      fix: `Use one of: ${validAggregations.join(', ')}`,
-    });
+  for (const tag of tags) {
+    if (!tag) {
+      continue; // Skip empty entries from trailing commas
+    }
+
+    // Tag names in grouping should be valid identifiers
+    if (!isValidTagKey(tag)) {
+      errors.push({
+        message: `Invalid grouping tag: "${tag}"`,
+        fix: 'Use alphanumeric characters, underscores, and hyphens',
+      });
+    }
   }
 
   return errors;

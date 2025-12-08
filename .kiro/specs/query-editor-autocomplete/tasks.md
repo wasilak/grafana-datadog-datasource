@@ -97,7 +97,7 @@
   - Remove hardcoded color values
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [-] 5. Implement suggestion grouping
+- [x] 5. Implement suggestion grouping
   - Group suggestions by category (metrics, aggregators, tags, tag_values)
   - Render group headers
   - Skip headers in keyboard navigation
@@ -118,7 +118,7 @@
   - Update keyboard navigation to skip headers
   - _Requirements: 4.3_
 
-- [-] 5.3 Update QueryEditor to render grouped suggestions
+- [x] 5.3 Update QueryEditor to render grouped suggestions
   - File: src/QueryEditor.tsx (modify)
   - Render group headers
   - Render suggestions under each group
