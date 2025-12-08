@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useRef, useState } from 'react';
+import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
 import { Input, CodeEditor, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
@@ -14,6 +14,9 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
+  
+  // Ref to track autocomplete state for Monaco keyboard handler
+  const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = (item: CompletionItem) => {
@@ -108,6 +111,15 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     datasourceUid: datasource.uid || '',
     onSelect: handleItemSelect
   });
+
+  // Keep the ref updated with current autocomplete state
+  useEffect(() => {
+    autocompleteStateRef.current = {
+      isOpen: autocomplete.state.isOpen,
+      selectedIndex: autocomplete.state.selectedIndex,
+      suggestions: autocomplete.state.suggestions,
+    };
+  }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
   const onQueryTextChange = (newValue: string) => {
     // Get cursor position from Monaco editor
@@ -206,41 +218,68 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
     // Intercept keyboard events to handle autocomplete navigation
     editor.onKeyDown((e) => {
-      // Only intercept if autocomplete is open
-      if (!autocomplete.state.isOpen) {
+      // Only intercept if autocomplete is open (use ref to get current state)
+      if (!autocompleteStateRef.current.isOpen) {
         return;
       }
+
+      let shouldPreventDefault = false;
 
       // Create a synthetic React keyboard event for the autocomplete handler
       const syntheticEvent = {
         key: '',
         metaKey: e.metaKey,
         ctrlKey: e.ctrlKey,
-        preventDefault: () => e.preventDefault(),
-        stopPropagation: () => e.stopPropagation(),
+        preventDefault: () => {
+          shouldPreventDefault = true;
+        },
+        stopPropagation: () => {},
       } as React.KeyboardEvent;
 
-      // Map Monaco key codes to key names
+      // Map Monaco key codes to key names and handle autocomplete
       switch (e.keyCode) {
         case monaco.KeyCode.UpArrow:
           syntheticEvent.key = 'ArrowUp';
           autocomplete.onKeyDown(syntheticEvent);
+          if (shouldPreventDefault) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           break;
         case monaco.KeyCode.DownArrow:
           syntheticEvent.key = 'ArrowDown';
           autocomplete.onKeyDown(syntheticEvent);
+          if (shouldPreventDefault) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           break;
         case monaco.KeyCode.Enter:
-          syntheticEvent.key = 'Enter';
-          autocomplete.onKeyDown(syntheticEvent);
+          // Don't handle plain Enter with Cmd/Ctrl - that's for query execution
+          if (!e.metaKey && !e.ctrlKey) {
+            syntheticEvent.key = 'Enter';
+            autocomplete.onKeyDown(syntheticEvent);
+            if (shouldPreventDefault) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }
           break;
         case monaco.KeyCode.Tab:
           syntheticEvent.key = 'Tab';
           autocomplete.onKeyDown(syntheticEvent);
+          if (shouldPreventDefault) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           break;
         case monaco.KeyCode.Escape:
           syntheticEvent.key = 'Escape';
           autocomplete.onKeyDown(syntheticEvent);
+          if (shouldPreventDefault) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           break;
       }
     });
