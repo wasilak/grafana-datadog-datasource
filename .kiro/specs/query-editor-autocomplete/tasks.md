@@ -104,14 +104,14 @@
   - Hide empty groups
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [-] 5.1 Create grouping utility function
+- [x] 5.1 Create grouping utility function
   - File: src/utils/autocomplete/suggestions.ts (modify)
   - Implement groupSuggestions() function
   - Define category order (aggregators, metrics, tags, tag_values)
   - Filter out empty groups
   - _Requirements: 4.1, 4.2, 4.4_
 
-- [ ] 5.2 Update useQueryAutocomplete to use grouped suggestions
+- [-] 5.2 Update useQueryAutocomplete to use grouped suggestions
   - File: src/hooks/useQueryAutocomplete.ts (modify)
   - Call groupSuggestions() after fetching
   - Store groupedSuggestions in state

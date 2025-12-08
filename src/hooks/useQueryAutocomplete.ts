@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery } from '../utils/autocomplete/parser';
-import { generateSuggestions } from '../utils/autocomplete/suggestions';
+import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
 import { getBackendSrv } from '@grafana/runtime';
 
@@ -45,6 +45,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
   const [state, setState] = useState<AutocompleteState>({
     isOpen: false,
     suggestions: [],
+    groupedSuggestions: [],
     isLoading: false,
     selectedIndex: 0,
     hoveredIndex: null,
@@ -134,11 +135,15 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         // Generate suggestions based on context
         const suggestions = generateSuggestions(context, metrics, tags);
+        
+        // Group suggestions by category
+        const groupedSuggestions = groupSuggestions(suggestions);
 
         setState((prev: AutocompleteState) => ({
           ...prev,
           isLoading: false,
           suggestions,
+          groupedSuggestions,
           selectedIndex: 0,
           isOpen: suggestions.length > 0,
           validationError: validationResult.isValid ? undefined : validationResult.errors[0]?.message,
