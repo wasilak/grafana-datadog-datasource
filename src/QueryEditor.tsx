@@ -143,6 +143,15 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       setCursorPosition(textareaRef.current.selectionStart || 0);
     }
 
+    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) to run query
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault(); // Prevent default Enter behavior
+      // Trigger autocomplete validation to clear any validation errors if query is now valid
+      autocomplete.onInput(query.queryText || '', cursorPosition);
+      onRunQuery(); // Execute the query
+      return; // Exit early to prevent further processing
+    }
+
     // Let the autocomplete hook handle keyboard navigation
     autocomplete.onKeyDown(event);
   };
