@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
+import React, { ChangeEvent, useRef, useState } from 'react';
 import { Input, CodeEditor, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
@@ -14,14 +14,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
-  const [languageRegistered, setLanguageRegistered] = useState(false);
-
-  // Register Datadog language with Monaco on mount
-  useEffect(() => {
-    // Monaco is loaded lazily by CodeEditor, so we need to wait for it
-    // The registration will happen when CodeEditor mounts
-    setLanguageRegistered(true);
-  }, []);
 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = (item: CompletionItem) => {
@@ -184,13 +176,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       top: top,
       left: left,
     });
-  };
-
-  // Custom onRunQuery that also refreshes autocomplete validation
-  const handleRunQuery = () => {
-    // Trigger autocomplete validation to clear any validation errors if query is now valid
-    autocomplete.onInput(query.queryText || '', cursorPosition);
-    onRunQuery();
   };
 
   const handleEditorDidMount = (editor: monacoType.editor.IStandaloneCodeEditor, monaco: typeof monacoType) => {
