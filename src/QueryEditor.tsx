@@ -1,15 +1,27 @@
-import React, { ChangeEvent, useRef, useState } from 'react';
-import { Input, TextArea, Stack, Alert } from '@grafana/ui';
+import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
+import { Input, CodeEditor, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
+import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
+import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const theme = useTheme2();
+  const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
+  const [languageRegistered, setLanguageRegistered] = useState(false);
+
+  // Register Datadog language with Monaco on mount
+  useEffect(() => {
+    // Monaco is loaded lazily by CodeEditor, so we need to wait for it
+    // The registration will happen when CodeEditor mounts
+    setLanguageRegistered(true);
+  }, []);
 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = (item: CompletionItem) => {
@@ -73,17 +85,19 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     // Update the query
     onChange({ ...query, queryText: newValue });
 
-    // Set focus back to textarea with new cursor position after a slight delay
+    // Set focus back to editor with new cursor position after a slight delay
     // to ensure React has updated the DOM
     setTimeout(() => {
-      if (textareaRef.current) {
-        // Ensure the new value is rendered, then set the cursor position
-        // Focus the element first
-        textareaRef.current.focus();
+      if (editorRef.current) {
+        // Focus the editor first
+        editorRef.current.focus();
 
-        // Set the selection range to place cursor at the end of the inserted text
-        // This needs to be done after the update is rendered
-        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+        // Set the cursor position in Monaco editor
+        const model = editorRef.current.getModel();
+        if (model) {
+          const position = model.getPositionAt(newCursorPos);
+          editorRef.current.setPosition(position);
+        }
 
         // Update the local state to track the new cursor position
         setCursorPosition(newCursorPos);
@@ -103,10 +117,16 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     onSelect: handleItemSelect
   });
 
-  const onQueryTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    // Capture cursor position BEFORE the state changes
-    const cursorPosBefore = event.target.selectionStart || 0;
-    const newValue = event.target.value;
+  const onQueryTextChange = (newValue: string) => {
+    // Get cursor position from Monaco editor
+    let cursorPosBefore = 0;
+    if (editorRef.current) {
+      const position = editorRef.current.getPosition();
+      const model = editorRef.current.getModel();
+      if (position && model) {
+        cursorPosBefore = model.getOffsetAt(position);
+      }
+    }
 
     // Update the query state
     onChange({ ...query, queryText: newValue });
@@ -114,20 +134,56 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     // Store cursor position for autocomplete
     setCursorPosition(cursorPosBefore);
 
+    // Update the cursor position in the UI (for suggestions positioning)
+    if (editorRef.current) {
+      updateSuggestionsPositionFromEditor(editorRef.current, cursorPosBefore);
+    }
+
     // Trigger autocomplete with current query text and cursor position
     autocomplete.onInput(newValue, cursorPosBefore);
-
-    // Manually preserve cursor position after the update to avoid React's controlled component issue
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.setSelectionRange(cursorPosBefore, cursorPosBefore);
-      }
-    }, 0);
   };
 
   const onLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange({ ...query, label: event.target.value });
     // Don't run query automatically when label changes
+  };
+
+  // Helper function to calculate and update the position for suggestions dropdown
+  const updateSuggestionsPositionFromEditor = (
+    editor: monacoType.editor.IStandaloneCodeEditor,
+    cursorPosition: number
+  ) => {
+    const model = editor.getModel();
+    if (!model) {
+      return;
+    }
+
+    // Get the position from offset
+    const position = model.getPositionAt(cursorPosition);
+
+    // Get the DOM node for the editor
+    const editorDomNode = editor.getDomNode();
+    if (!editorDomNode) {
+      return;
+    }
+
+    // Get the coordinates for the cursor position
+    const coords = editor.getScrolledVisiblePosition(position);
+    if (!coords) {
+      return;
+    }
+
+    // Get the editor's bounding rectangle
+    const editorRect = editorDomNode.getBoundingClientRect();
+
+    // Calculate absolute position
+    const top = window.scrollY + editorRect.top + coords.top + coords.height + 4;
+    const left = window.scrollX + editorRect.left + coords.left;
+
+    setSuggestionsPosition({
+      top: top,
+      left: left,
+    });
   };
 
   // Custom onRunQuery that also refreshes autocomplete validation
@@ -137,23 +193,32 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     onRunQuery();
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Capture current cursor position before the key event is processed
-    if (textareaRef.current) {
-      setCursorPosition(textareaRef.current.selectionStart || 0);
-    }
+  const handleEditorDidMount = (editor: monacoType.editor.IStandaloneCodeEditor, monaco: typeof monacoType) => {
+    // Store editor reference
+    editorRef.current = editor;
 
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) to run query
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      event.preventDefault(); // Prevent default Enter behavior
+    // Register Datadog language
+    registerDatadogLanguage(monaco);
+
+    // Set the theme based on Grafana theme
+    monaco.editor.setTheme(theme.isDark ? 'datadog-dark' : 'datadog-light');
+
+    // Add keyboard event listener for Cmd+Enter
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       // Trigger autocomplete validation to clear any validation errors if query is now valid
       autocomplete.onInput(query.queryText || '', cursorPosition);
       onRunQuery(); // Execute the query
-      return; // Exit early to prevent further processing
-    }
+    });
 
-    // Let the autocomplete hook handle keyboard navigation
-    autocomplete.onKeyDown(event);
+    // Track cursor position changes
+    editor.onDidChangeCursorPosition((e) => {
+      const model = editor.getModel();
+      if (model) {
+        const offset = model.getOffsetAt(e.position);
+        setCursorPosition(offset);
+        updateSuggestionsPositionFromEditor(editor, offset);
+      }
+    });
   };
 
   const { queryText, label } = query;
@@ -164,25 +229,40 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       <div style={{ position: 'relative' }}>
         <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Query</label>
 
-        <TextArea
-          ref={textareaRef}
+        <CodeEditor
           value={queryText || ''}
+          language="datadog"
+          height="100px"
+          onBlur={(value) => {
+            // Close autocomplete when editor loses focus
+            autocomplete.onClose();
+          }}
+          onSave={(value) => {
+            // Update query when user saves (Cmd+S)
+            onChange({ ...query, queryText: value });
+          }}
           onChange={onQueryTextChange}
-          onKeyDown={handleKeyDown}
-          onClick={() => {
-            // Capture cursor position on click too
-            if (textareaRef.current) {
-              setCursorPosition(textareaRef.current.selectionStart || 0);
-            }
+          onEditorDidMount={handleEditorDidMount}
+          monacoOptions={{
+            minimap: { enabled: false },
+            lineNumbers: 'off',
+            folding: false,
+            lineDecorationsWidth: 0,
+            lineNumbersMinChars: 0,
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            wrappingIndent: 'none',
+            overviewRulerLanes: 0,
+            hideCursorInOverviewRuler: true,
+            overviewRulerBorder: false,
+            renderLineHighlight: 'none',
+            scrollbar: {
+              vertical: 'auto',
+              horizontal: 'auto',
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10,
+            },
           }}
-          onBlur={() => {
-            // Remove automatic query running to prevent cursor repositioning
-            // onRunQuery();
-            autocomplete.onClose(); // Close autocomplete when input loses focus
-          }}
-          placeholder="e.g., avg:system.cpu{*}"
-          rows={4}
-          style={{ width: '100%' }}
         />
 
         {/* Display validation error */}
@@ -203,7 +283,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         {autocomplete.state.isOpen && autocomplete.state.suggestions.length > 0 && (
           <div
             style={{
-              position: 'absolute',
+              position: 'fixed',
               zIndex: 1000,
               minWidth: '200px',
               backgroundColor: 'var(--background-primary, #ffffff)',
@@ -214,8 +294,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
               overflowY: 'auto',
               color: 'var(--text-primary, #0a0a0a)',
               fontSize: 'var(--font-size-sm, 14px)',
-              top: '100%',
-              left: 0,
+              top: `${suggestionsPosition.top}px`,
+              left: `${suggestionsPosition.left}px`,
             }}
             className="query-field-query-editor-suggestions"
           >
