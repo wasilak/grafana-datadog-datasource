@@ -274,7 +274,12 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     <Stack gap={2} direction="column">
       {/* Query field - full width */}
       <div style={{ position: 'relative' }}>
-        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Query</label>
+        <label style={{ 
+          display: 'block', 
+          marginBottom: theme.spacing(1), 
+          fontWeight: theme.typography.fontWeightMedium,
+          color: theme.colors.text.primary
+        }}>Query</label>
 
         <CodeEditor
           value={queryText || ''}
@@ -333,14 +338,14 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
               position: 'fixed',
               zIndex: 1000,
               minWidth: '200px',
-              backgroundColor: 'var(--background-primary, #ffffff)',
-              border: '1px solid var(--border-weak, #d1d2d3)',
-              borderRadius: '2px',
-              boxShadow: 'var(--panel-shadow, 0 2px 6px rgba(0,0,0,0.2))',
+              backgroundColor: theme.colors.background.primary,
+              border: `1px solid ${theme.colors.border.weak}`,
+              borderRadius: theme.shape.radius.default,
+              boxShadow: theme.shadows.z3,
               maxHeight: '200px',
               overflowY: 'auto',
-              color: 'var(--text-primary, #0a0a0a)',
-              fontSize: 'var(--font-size-sm, 14px)',
+              color: theme.colors.text.primary,
+              fontSize: theme.typography.size.sm,
               top: `${suggestionsPosition.top}px`,
               left: `${suggestionsPosition.left}px`,
             }}
@@ -366,10 +371,10 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
                     padding: '6px 12px',
                     cursor: 'pointer',
                     backgroundColor: index === autocomplete.state.selectedIndex
-                      ? 'var(--brand-primary, #e8e8e8)'
-                      : 'var(--background-primary, #ffffff)',
-                    borderBottom: '1px solid var(--border-weak, #f0f0f0)',
-                    color: 'var(--text-primary, #0a0a0a)',
+                      ? theme.colors.action.selected
+                      : theme.colors.background.primary,
+                    borderBottom: `1px solid ${theme.colors.border.weak}`,
+                    color: theme.colors.text.primary,
                   }}
                 >
                   {suggestion.label}
@@ -385,8 +390,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
             position: 'absolute',
             right: '10px',
             top: '10px',
-            fontSize: '12px',
-            color: '#999'
+            fontSize: theme.typography.size.sm,
+            color: theme.colors.text.secondary
           }}>
             Loading...
           </div>
@@ -395,7 +400,12 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
       {/* Label field - full width */}
       <div>
-        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Label</label>
+        <label style={{ 
+          display: 'block', 
+          marginBottom: theme.spacing(1), 
+          fontWeight: theme.typography.fontWeightMedium,
+          color: theme.colors.text.primary
+        }}>Label</label>
         <Input
           value={label || ''}
           onChange={onLabelChange}
