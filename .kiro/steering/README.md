@@ -10,7 +10,8 @@ This directory contains steering rules that guide development of this project.
 4. **03-go-best-practices.md** - Go language best practices (always)
 5. **04-phase-gate-discipline.md** - Incremental development discipline (always)
 6. **05-package-manager.md** - Use Yarn for package management (always)
-7. **grafana-plugin-best-practices.md** - Grafana plugin development guidelines (always)
+7. **06-command-line-tools.md** - Use fd and ripgrep instead of find and grep (always)
+8. **grafana-plugin-best-practices.md** - Grafana plugin development guidelines (always)
 
 ## Rule Priority
 
