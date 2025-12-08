@@ -106,9 +106,9 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           }
         }
 
-        // Fetch tags for the metric if in tag context
+        // Fetch tags for the metric if in tag context or grouping_tag context
         let tags: string[] = [];
-        if ((context.contextType === 'tag' || context.contextType === 'tag_value') && context.metricName) {
+        if ((context.contextType === 'tag' || context.contextType === 'tag_value' || context.contextType === 'grouping_tag') && context.metricName) {
           try {
             const tagsResponse = await getBackendSrv()
               .fetch({

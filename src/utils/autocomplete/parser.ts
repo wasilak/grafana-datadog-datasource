@@ -51,6 +51,9 @@ export function parseQuery(queryText: string, cursorPosition: number): QueryCont
       start++;
     }
     currentToken = lineContent.substring(start, end);
+  } else if (contextType === 'grouping_tag') {
+    // For grouping_tag context, extract token between commas or braces
+    currentToken = extractGroupingTagToken(lineContent, positionInLine);
   } else {
     // For other contexts, use the standard token extraction
     currentToken = extractCurrentToken(lineContent, positionInLine);
@@ -107,6 +110,48 @@ function extractCurrentToken(line: string, position: number): string {
 }
 
 /**
+ * Extracts the current token for grouping tag context (inside "by {}")
+ * Tokens are separated by commas or braces
+ */
+function extractGroupingTagToken(line: string, position: number): string {
+  // Find the "by {" opening brace
+  const byMatch = line.match(/\s+by\s+\{/);
+  if (!byMatch) {
+    return '';
+  }
+
+  const openBracePos = byMatch.index! + byMatch[0].length - 1;
+  const closeBracePos = line.indexOf('}', openBracePos);
+
+  // Extract the section between braces
+  const endPos = closeBracePos === -1 ? line.length : closeBracePos;
+  const groupingSection = line.substring(openBracePos + 1, endPos);
+
+  // Find position relative to the grouping section
+  const relativePos = position - (openBracePos + 1);
+
+  if (relativePos < 0 || relativePos > groupingSection.length) {
+    return '';
+  }
+
+  // Find the current token by looking for comma boundaries
+  let start = relativePos;
+  let end = relativePos;
+
+  // Move backwards to find start (stop at comma or beginning)
+  while (start > 0 && groupingSection[start - 1] !== ',') {
+    start--;
+  }
+
+  // Move forwards to find end (stop at comma or end)
+  while (end < groupingSection.length && groupingSection[end] !== ',') {
+    end++;
+  }
+
+  return groupingSection.substring(start, end).trim();
+}
+
+/**
  * Detects the context type at the cursor position
  * Datadog query format: [aggregator:]metric{tag_key:tag_value,...} by {grouping_tag1,grouping_tag2}
  *
@@ -132,6 +177,7 @@ function detectContextType(line: string, position: number): QueryContext['contex
     const closeBraceAfterBy = line.indexOf('}', byBraceStart);
     
     // If cursor is between "by {" and "}" (or no closing brace yet)
+    // Include position at closing brace to handle cursor right at }
     if (position > byBraceStart && (closeBraceAfterBy === -1 || position <= closeBraceAfterBy)) {
       return 'grouping_tag';
     }
@@ -175,7 +221,8 @@ function detectContextType(line: string, position: number): QueryContext['contex
 
 /**
  * Extracts the metric name from the query
- * Metric name is the part before the first '{' or 'by'
+ * Metric name is the part before the first '{' or 'by', without the aggregator prefix
+ * Example: "sum:datadog.apis.usage.per_user{*}" -> "datadog.apis.usage.per_user"
  */
 function extractMetricName(line: string, position: number): string | undefined {
   // Find the opening brace
@@ -191,7 +238,20 @@ function extractMetricName(line: string, position: number): string | undefined {
   }
 
   const metricPart = line.substring(0, metricEndIndex).trim();
-  return metricPart ? metricPart : undefined;
+  
+  if (!metricPart) {
+    return undefined;
+  }
+  
+  // Strip aggregator prefix if present (e.g., "sum:", "avg:", "max:")
+  // Datadog format: [aggregator:]metric_name
+  const colonIndex = metricPart.indexOf(':');
+  if (colonIndex !== -1) {
+    // Return the part after the colon (the actual metric name)
+    return metricPart.substring(colonIndex + 1).trim();
+  }
+  
+  return metricPart;
 }
 
 /**

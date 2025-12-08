@@ -42,6 +42,17 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     let start = currentCursorPosition;
     let end = currentCursorPosition;
 
+    // Check if we're in a grouping context (inside "by {}")
+    const byMatch = currentValue.match(/\s+by\s+\{/);
+    let inGroupingContext = false;
+    if (byMatch) {
+      const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
+      const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
+      // Cursor must be after '{' and before '}' (or no closing brace yet)
+      inGroupingContext = currentCursorPosition > byBraceStart && 
+                         (closeBraceAfterBy === -1 || currentCursorPosition <= closeBraceAfterBy);
+    }
+
     // For aggregator context, we need to handle the colon specially
     if (item.kind === 'aggregator') {
       // Find the aggregator part (before the colon or end)
@@ -57,6 +68,17 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       // If there's a colon immediately after, include it in the replacement range
       if (end < currentValue.length && currentValue[end] === ':') {
         end++; // Include the colon in the token to be replaced
+      }
+    } else if (inGroupingContext) {
+      // For grouping tags, stop at commas and braces
+      // Move backwards to find token start (stop at comma or opening brace)
+      while (start > 0 && currentValue[start - 1] !== ',' && currentValue[start - 1] !== '{') {
+        start--;
+      }
+
+      // Move forwards to find token end (stop at comma or closing brace)
+      while (end < currentValue.length && currentValue[end] !== ',' && currentValue[end] !== '}') {
+        end++;
       }
     } else {
       // Default behavior for other contexts

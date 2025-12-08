@@ -404,20 +404,4 @@ function getCategoryFromKind(kind?: string): string {
   }
 }
 
-/**
- * Get category label for display
- */
-function getCategoryLabel(category: string): string {
-  switch (category) {
-    case 'aggregators':
-      return 'Aggregators';
-    case 'metrics':
-      return 'Metrics';
-    case 'tags':
-      return 'Tags';
-    case 'tag_values':
-      return 'Tag Values';
-    default:
-      return 'Other';
-  }
-}
+

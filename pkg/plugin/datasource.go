@@ -314,6 +314,15 @@ func replaceTemplateVariables(template string, labels map[string]string) string 
 func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi, from, to int64, qm *QueryModel, refID string) (data.Frames, error) {
 	logger := log.New()
 
+	// Modify query to include "by {*}" if no "by" clause is present
+	// This ensures we get individual series instead of a single aggregated series
+	queryText := qm.QueryText
+	if !strings.Contains(strings.ToLower(queryText), " by ") {
+		// No "by" clause present, add "by {*}" to get all series
+		queryText = queryText + " by {*}"
+		logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
+	}
+
 	body := datadogV2.TimeseriesFormulaQueryRequest{
 		Data: datadogV2.TimeseriesFormulaRequest{
 			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
@@ -324,7 +333,7 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 					{
 						MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
 							DataSource: datadogV2.METRICSDATASOURCE_METRICS,
-							Query:      qm.QueryText,
+							Query:      queryText,
 						}},
 				},
 			},
@@ -514,14 +523,19 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 	logger := log.New()
 	ttl := 30 * time.Second
 
+	// Check if cache is disabled via environment variable (for development)
+	cacheDisabled := os.Getenv("DISABLE_CACHE") == "true"
+	
 	// Check cache first
-	if cached := d.GetCachedEntry("metrics", ttl); cached != nil {
-		logger.Debug("Returning cached metrics")
-		respData, _ := json.Marshal(cached.Data)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 200,
-			Body:   respData,
-		})
+	if !cacheDisabled {
+		if cached := d.GetCachedEntry("metrics", ttl); cached != nil {
+			logger.Debug("Returning cached metrics")
+			respData, _ := json.Marshal(cached.Data)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
+		}
 	}
 
 	// Get API credentials
@@ -650,15 +664,23 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 
 	cacheKey := "tags:" + metric
 
-	// Check cache first
-	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
-		logger.Debug("Returning cached tags", "metric", metric)
-		respData, _ := json.Marshal(cached.Data)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 200,
-			Body:   respData,
-		})
+	// Check if cache is disabled via environment variable (for development)
+	cacheDisabled := os.Getenv("DISABLE_CACHE") == "true"
+	
+	// Check cache first (skip cache if it's empty to force refresh or if cache is disabled)
+	if !cacheDisabled {
+		if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil && len(cached.Data) > 0 {
+			logger.Debug("Returning cached tags", "metric", metric, "tagCount", len(cached.Data))
+			respData, _ := json.Marshal(cached.Data)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
+		}
 	}
+	
+	// If cache is empty, expired, or disabled, fetch fresh data
+	logger.Debug("Fetching fresh tags", "metric", metric, "cacheDisabled", cacheDisabled)
 
 	// Get API credentials
 	apiKey, ok := d.SecureJSONData["apiKey"]
@@ -711,11 +733,17 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 	client := datadog.NewAPIClient(configuration)
 	metricsApi := datadogV2.NewMetricsApi(client)
 
-	// Fetch tags from Datadog for this metric
-	// ListTagsByMetricName returns all tags associated with a specific metric
-	resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
+	// Fetch tags from Datadog using ListTagsByMetricName
+	// This returns all tags associated with a specific metric
+	logger.Debug("Fetching tags for metric using ListTagsByMetricName", "metric", metric)
+
+	resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
 	if err != nil {
-		logger.Error("Failed to fetch tags", "error", err)
+		httpStatus := 0
+		if httpResp != nil {
+			httpStatus = httpResp.StatusCode
+		}
+		logger.Error("Failed to fetch tags", "error", err, "metric", metric, "httpStatus", httpStatus)
 		// Return empty array on timeout or error
 		respData, _ := json.Marshal([]string{})
 		return sender.Send(&backend.CallResourceResponse{
@@ -724,14 +752,35 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 		})
 	}
 
-	// Extract tags from response
-	// ListTagsByMetricName returns MetricAllTagsResponse with Data.Attributes.Tags
-	tags := []string{}
+	// Extract tag keys from response
+	// The response contains tags in format "key:value", we need to extract unique keys
+	tagKeysSet := make(map[string]bool)
 	data := resp.GetData()
-	if (data.Id) != nil { // Check if pointer is not nil
+	
+	logger.Debug("Got response from ListTagsByMetricName", "metric", metric, "hasData", data.Id != nil)
+	
+	if data.Id != nil {
 		attributes := data.GetAttributes()
-		tags = attributes.GetTags()
+		allTags := attributes.GetTags()
+		logger.Debug("Got tags from attributes", "metric", metric, "tagCount", len(allTags))
+		
+		// Tags are in format "key:value", extract unique keys
+		for _, tag := range allTags {
+			parts := strings.SplitN(tag, ":", 2)
+			if len(parts) >= 1 {
+				tagKey := parts[0]
+				tagKeysSet[tagKey] = true
+			}
+		}
 	}
+
+	// Convert set to sorted slice
+	tags := make([]string, 0, len(tagKeysSet))
+	for key := range tagKeysSet {
+		tags = append(tags, key)
+	}
+	
+	logger.Debug("Extracted tag keys", "metric", metric, "tagCount", len(tags), "tags", tags)
 
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tags)
