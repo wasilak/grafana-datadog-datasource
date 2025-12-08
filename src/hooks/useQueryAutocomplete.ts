@@ -18,6 +18,8 @@ interface UseQueryAutocompleteReturn {
   onInput: (queryText: string, cursorPosition: number) => void;
   onKeyDown: (event: React.KeyboardEvent) => void;
   onItemSelect: (item: CompletionItem) => void;
+  onMouseEnter: (index: number) => void;
+  onMouseClick: (item: CompletionItem) => void;
   onClose: () => void;
 }
 
@@ -42,6 +44,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
     suggestions: [],
     isLoading: false,
     selectedIndex: 0,
+    hoveredIndex: null,
     error: !datasourceUid ? 'Backend datasource UID not available' : undefined,
     validationError: undefined,
   });
@@ -193,6 +196,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           setState((prev: AutocompleteState) => ({
             ...prev,
             selectedIndex: (prev.selectedIndex + 1) % prev.suggestions.length,
+            hoveredIndex: null, // Reset hover when using keyboard
           }));
           break;
 
@@ -202,6 +206,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             ...prev,
             selectedIndex:
               prev.selectedIndex === 0 ? prev.suggestions.length - 1 : prev.selectedIndex - 1,
+            hoveredIndex: null, // Reset hover when using keyboard
           }));
           break;
 
@@ -216,7 +221,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         case 'Escape':
           event.preventDefault();
-          setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
+          setState((prev: AutocompleteState) => ({ ...prev, isOpen: false, hoveredIndex: null }));
           break;
 
         default:
@@ -244,8 +249,28 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * Close autocomplete menu
    */
   const onClose = useCallback(() => {
-    setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
+    setState((prev: AutocompleteState) => ({ ...prev, isOpen: false, hoveredIndex: null }));
   }, []);
+
+  /**
+   * Handle mouse enter on a suggestion item
+   * Updates both hoveredIndex and selectedIndex for visual feedback
+   */
+  const onMouseEnter = useCallback((index: number) => {
+    setState((prev: AutocompleteState) => ({
+      ...prev,
+      hoveredIndex: index,
+      selectedIndex: index,
+    }));
+  }, []);
+
+  /**
+   * Handle mouse click on a suggestion item
+   * Selects the item and closes the autocomplete menu
+   */
+  const onMouseClick = useCallback((item: CompletionItem) => {
+    onItemSelect(item);
+  }, [onItemSelect]);
 
   /**
    * Cleanup on unmount
@@ -264,6 +289,8 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
     onInput,
     onKeyDown,
     onItemSelect,
+    onMouseEnter,
+    onMouseClick,
     onClose,
   };
 }

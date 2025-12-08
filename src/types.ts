@@ -63,6 +63,7 @@ export interface AutocompleteState {
   suggestions: CompletionItem[];
   isLoading: boolean;
   selectedIndex: number;
+  hoveredIndex: number | null;
   error?: string;
   validationError?: string;
 }

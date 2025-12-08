@@ -288,7 +288,16 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
               {autocomplete.state.suggestions.map((suggestion, index) => (
                 <li
                   key={index}
-                  onClick={() => autocomplete.onItemSelect(suggestion)}
+                  onClick={() => {
+                    autocomplete.onMouseClick(suggestion);
+                    // Ensure focus returns to editor after click
+                    setTimeout(() => {
+                      if (editorRef.current) {
+                        editorRef.current.focus();
+                      }
+                    }, 0);
+                  }}
+                  onMouseEnter={() => autocomplete.onMouseEnter(index)}
                   style={{
                     padding: '6px 12px',
                     cursor: 'pointer',
