@@ -220,7 +220,7 @@ function generateGroupingTagSuggestions(context: QueryContext, tagsForMetric: st
     .slice(0, 100)
     .map(tag => ({
       label: tag,
-      kind: 'tag',
+      kind: 'grouping_tag',  // Use unique kind for grouping tags
       insertText: tag,
       documentation: `Group by tag: ${tag}`,
       sortText: tag,

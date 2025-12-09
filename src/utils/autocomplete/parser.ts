@@ -134,6 +134,14 @@ function extractGroupingTagToken(line: string, position: number): string {
     return '';
   }
 
+  // Check if cursor is right after a comma or opening brace - if so, we're starting a new tag
+  if (relativePos > 0 && groupingSection[relativePos - 1] === ',') {
+    return ''; // Starting a new tag after comma
+  }
+  if (relativePos === 0) {
+    return ''; // At the very beginning (right after opening brace)
+  }
+
   // Find the current token by looking for comma boundaries
   let start = relativePos;
   let end = relativePos;
@@ -148,7 +156,8 @@ function extractGroupingTagToken(line: string, position: number): string {
     end++;
   }
 
-  return groupingSection.substring(start, end).trim();
+  const token = groupingSection.substring(start, end).trim();
+  return token;
 }
 
 /**
@@ -175,6 +184,16 @@ function detectContextType(line: string, position: number): QueryContext['contex
     const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
     // Find the closing brace after "by {"
     const closeBraceAfterBy = line.indexOf('}', byBraceStart);
+    
+    console.log('detectContextType - by { check:', {
+      line,
+      position,
+      byMatch: byMatch[0],
+      byMatchIndex: byMatch.index,
+      byBraceStart,
+      closeBraceAfterBy,
+      isInGrouping: position > byBraceStart && (closeBraceAfterBy === -1 || position <= closeBraceAfterBy),
+    });
     
     // If cursor is between "by {" and "}" (or no closing brace yet)
     // Include position at closing brace to handle cursor right at }

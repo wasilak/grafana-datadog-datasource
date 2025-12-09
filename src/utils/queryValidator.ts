@@ -146,7 +146,7 @@ function validateTagSection(queryText: string): ValidationError[] {
       } else if (!isValidTagKey(key)) {
         errors.push({
           message: `Invalid tag key: "${key}"`,
-          fix: 'Use alphanumeric characters, underscores, and hyphens',
+          fix: 'Use alphanumeric characters, underscores, hyphens, and dots',
         });
       }
     }
@@ -199,7 +199,7 @@ function validateGroupingSection(queryText: string): ValidationError[] {
     if (!isValidTagKey(tag)) {
       errors.push({
         message: `Invalid grouping tag: "${tag}"`,
-        fix: 'Use alphanumeric characters, underscores, and hyphens',
+        fix: 'Use alphanumeric characters, underscores, hyphens, and dots',
       });
     }
   }
@@ -209,10 +209,10 @@ function validateGroupingSection(queryText: string): ValidationError[] {
 
 /**
  * Check if a tag key is valid
- * Valid: alphanumeric, underscores, hyphens
+ * Valid: alphanumeric, underscores, hyphens, dots
  */
 function isValidTagKey(tagKey: string): boolean {
-  const keyRegex = /^[a-zA-Z0-9_-]+$/;
+  const keyRegex = /^[a-zA-Z0-9_.-]+$/;
   return keyRegex.test(tagKey);
 }
 

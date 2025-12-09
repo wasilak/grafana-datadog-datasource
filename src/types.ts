@@ -34,7 +34,7 @@ export interface MyVariableQuery {
  */
 export interface CompletionItem {
   label: string;
-  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'function';
+  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'function';
   detail?: string;
   documentation?: string;
   insertText?: string;

@@ -5,7 +5,7 @@ import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/sug
 import { validateQuery } from '../utils/queryValidator';
 import { getBackendSrv } from '@grafana/runtime';
 
-const DEFAULT_DEBOUNCE_MS = 400; // 300-500ms as per design
+const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
 
 interface UseQueryAutocompleteOptions {
   datasourceUid: string;
@@ -136,6 +136,15 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         // Generate suggestions based on context
         const suggestions = generateSuggestions(context, metrics, tags);
         
+        console.log('Suggestions generated:', {
+          contextType: context.contextType,
+          currentToken: context.currentToken,
+          metricsCount: metrics.length,
+          tagsCount: tags.length,
+          suggestionsCount: suggestions.length,
+          suggestions: suggestions.slice(0, 5), // First 5 for debugging
+        });
+        
         // Group suggestions by category
         const groupedSuggestions = groupSuggestions(suggestions);
 
@@ -179,6 +188,14 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
       // Parse query to get context
       const context = parseQuery(queryText, cursorPosition);
       contextRef.current = context;
+
+      console.log('onInput - context detected:', {
+        queryText,
+        cursorPosition,
+        contextType: context.contextType,
+        currentToken: context.currentToken,
+        metricName: context.metricName,
+      });
 
       // Set debounce timer for API call
       debounceTimerRef.current = setTimeout(() => {

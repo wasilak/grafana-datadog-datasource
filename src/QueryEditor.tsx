@@ -24,23 +24,31 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     const currentValue = query.queryText || '';
     const currentCursorPosition = cursorPosition;
 
+    console.log('handleItemSelect called:', {
+      itemKind: item.kind,
+      itemLabel: item.label,
+      currentValue,
+      currentCursorPosition,
+    });
+
     // Format the insertion based on the type of suggestion
     let insertValue = item.insertText || item.label;
 
-    // If it's a metric suggestion, format it properly for Datadog
+    // Calculate where to insert the value - find the current token
+    let start = currentCursorPosition;
+    let end = currentCursorPosition;
+
+    // Special handling for metrics - replace entire query
     if (item.kind === 'metric') {
-      // For metrics, use a standard format like avg:metric.name{*}
       insertValue = `avg:${insertValue}{*}`;
+      start = 0;
+      end = currentValue.length;
     }
     // If it's an aggregator suggestion, add the colon
     else if (item.kind === 'aggregator') {
       // For aggregators, add colon to form the complete aggregator: format
       insertValue = `${insertValue}:`;
     }
-
-    // Calculate where to insert the value - find the current token
-    let start = currentCursorPosition;
-    let end = currentCursorPosition;
 
     // Check if we're in a grouping context (inside "by {}")
     const byMatch = currentValue.match(/\s+by\s+\{/);
@@ -51,10 +59,61 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       // Cursor must be after '{' and before '}' (or no closing brace yet)
       inGroupingContext = currentCursorPosition > byBraceStart && 
                          (closeBraceAfterBy === -1 || currentCursorPosition <= closeBraceAfterBy);
+      
+      console.log('Grouping context check:', {
+        byMatch: byMatch[0],
+        byBraceStart,
+        closeBraceAfterBy,
+        currentCursorPosition,
+        inGroupingContext,
+        itemKind: item.kind,
+      });
     }
 
+    // For grouping_tag context, ALWAYS use the grouping logic
+    if (item.kind === 'grouping_tag') {
+      console.log('Grouping tag selected:', {
+        currentValue,
+        currentCursorPosition,
+        byMatch: byMatch ? byMatch[0] : null,
+        insertValue,
+      });
+      
+      // Force grouping context handling
+      if (byMatch) {
+        const byBraceStart = byMatch.index! + byMatch[0].length - 1;
+        const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
+        const groupingEnd = closeBraceAfterBy === -1 ? currentValue.length : closeBraceAfterBy;
+        
+        const groupingContent = currentValue.substring(byBraceStart + 1, groupingEnd);
+        const relativePos = currentCursorPosition - (byBraceStart + 1);
+        
+        console.log('Grouping tag (forced):', {
+          byBraceStart,
+          closeBraceAfterBy,
+          groupingEnd,
+          groupingContent,
+          relativePos,
+          insertValue,
+        });
+        
+        // Always insert at current position for grouping tags
+        start = currentCursorPosition;
+        end = currentCursorPosition;
+        
+        // Add comma if there's already content and we're not right after a comma
+        if (groupingContent.trim().length > 0 && relativePos > 0 && groupingContent[relativePos - 1] !== ',') {
+          insertValue = ',' + insertValue;
+        }
+      } else {
+        console.error('Grouping tag selected but no byMatch found!');
+        // Fallback: insert at cursor position
+        start = currentCursorPosition;
+        end = currentCursorPosition;
+      }
+    }
     // For aggregator context, we need to handle the colon specially
-    if (item.kind === 'aggregator') {
+    else if (item.kind === 'aggregator') {
       // Find the aggregator part (before the colon or end)
       while (start > 0 && /[a-zA-Z0-9_]/.test(currentValue[start - 1])) {
         start--;
@@ -69,16 +128,64 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       if (end < currentValue.length && currentValue[end] === ':') {
         end++; // Include the colon in the token to be replaced
       }
-    } else if (inGroupingContext) {
-      // For grouping tags, stop at commas and braces
-      // Move backwards to find token start (stop at comma or opening brace)
-      while (start > 0 && currentValue[start - 1] !== ',' && currentValue[start - 1] !== '{') {
-        start--;
-      }
-
-      // Move forwards to find token end (stop at comma or closing brace)
-      while (end < currentValue.length && currentValue[end] !== ',' && currentValue[end] !== '}') {
-        end++;
+    } else if (inGroupingContext && byMatch) {
+      // For grouping tags: find the "by {}" section and work ONLY within it
+      const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
+      const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
+      const groupingEnd = closeBraceAfterBy === -1 ? currentValue.length : closeBraceAfterBy;
+      
+      // Get content inside braces
+      const groupingContent = currentValue.substring(byBraceStart + 1, groupingEnd);
+      const relativePos = currentCursorPosition - (byBraceStart + 1);
+      
+      console.log('Grouping tag replacement:', {
+        groupingContent,
+        relativePos,
+        byBraceStart,
+        groupingEnd,
+      });
+      
+      // Check if cursor is right after comma or at start
+      if (relativePos === 0 || (relativePos > 0 && groupingContent[relativePos - 1] === ',')) {
+        // Insert mode - just insert at current position
+        start = currentCursorPosition;
+        end = currentCursorPosition;
+        console.log('Insert mode - cursor after comma or at start');
+      } else {
+        // Find token boundaries within grouping section
+        let tokenStart = relativePos;
+        let tokenEnd = relativePos;
+        
+        // Move backwards to find start (stop at comma or beginning)
+        while (tokenStart > 0 && groupingContent[tokenStart - 1] !== ',') {
+          tokenStart--;
+        }
+        
+        // Move forwards to find end (stop at comma or end)
+        while (tokenEnd < groupingContent.length && groupingContent[tokenEnd] !== ',') {
+          tokenEnd++;
+        }
+        
+        const currentToken = groupingContent.substring(tokenStart, tokenEnd).trim();
+        
+        console.log('Token boundaries:', {
+          tokenStart,
+          tokenEnd,
+          currentToken,
+        });
+        
+        // If cursor is at end of token, append with comma
+        if (currentToken.length > 0 && relativePos === tokenEnd) {
+          start = currentCursorPosition;
+          end = currentCursorPosition;
+          insertValue = ',' + insertValue;
+          console.log('Append mode - adding comma');
+        } else {
+          // Replace the token
+          start = byBraceStart + 1 + tokenStart;
+          end = byBraceStart + 1 + tokenEnd;
+          console.log('Replace mode - replacing token');
+        }
       }
     } else {
       // Default behavior for other contexts
@@ -95,6 +202,18 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
     // Create new value with replacement
     const newValue = currentValue.substring(0, start) + insertValue + currentValue.substring(end);
+
+    // Debug log to understand what's being replaced
+    console.log('Token replacement:', {
+      original: currentValue,
+      start,
+      end,
+      replacing: currentValue.substring(start, end),
+      insertValue,
+      result: newValue,
+      inGroupingContext,
+      itemKind: item.kind,
+    });
 
     // Store the desired cursor position before the state update
     const newCursorPos = start + insertValue.length;
