@@ -346,14 +346,19 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * Uses setState with function to get current state, avoiding stale closures
    */
   const onSelectCurrent = useCallback(() => {
+    console.log('onSelectCurrent called');
     setState((prev: AutocompleteState) => {
+      console.log('onSelectCurrent setState:', { isOpen: prev.isOpen, suggestionsLength: prev.suggestions.length, selectedIndex: prev.selectedIndex });
       if (!prev.isOpen || prev.suggestions.length === 0) {
+        console.log('onSelectCurrent: autocomplete not open or no suggestions');
         return prev;
       }
       const selectedItem = prev.suggestions[prev.selectedIndex];
+      console.log('onSelectCurrent: selectedItem:', selectedItem);
       if (selectedItem) {
         // Call onItemSelect which will handle the callback and close the menu
         // Do this outside setState to avoid stale closure issues
+        console.log('onSelectCurrent: calling onItemSelect via setTimeout');
         setTimeout(() => onItemSelect(selectedItem), 0);
       }
       return { ...prev, isOpen: false };

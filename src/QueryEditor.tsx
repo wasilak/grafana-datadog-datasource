@@ -21,6 +21,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = async (item: CompletionItem) => {
+    console.log('=== handleItemSelect START ===');
     // Get current state values
     const currentValue = query.queryText || '';
     const currentCursorPosition = cursorPosition;
@@ -72,6 +73,10 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       return;
     } catch (error) {
       console.error('Backend completion failed:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       // Fall back to old logic if backend fails
     }
 
