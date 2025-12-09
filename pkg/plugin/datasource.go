@@ -1353,6 +1353,71 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 			newCursorPos = openBracePos + 1 + tokenStart + len(selectedItem) + 1 // Position after the colon
 		}
 
+	case "filter_tag_value":
+		// Find the filter section {tags} (first {...} after metric name) and replace tag value
+		openBracePos := strings.Index(completeReq.Query, "{")
+		if openBracePos == -1 {
+			// No opening brace found, just insert at cursor
+			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + completeReq.Query[completeReq.CursorPosition:]
+			newCursorPos = completeReq.CursorPosition + len(selectedItem)
+		} else {
+			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
+			if closeBracePos == -1 {
+				closeBracePos = len(completeReq.Query)
+			} else {
+				closeBracePos += openBracePos
+			}
+			
+			// Calculate position within the filter section
+			filterContent := completeReq.Query[openBracePos+1 : closeBracePos]
+			relativePos := completeReq.CursorPosition - (openBracePos + 1)
+			
+			if relativePos < 0 {
+				relativePos = 0
+			}
+			if relativePos > len(filterContent) {
+				relativePos = len(filterContent)
+			}
+			
+			logger.Info("Filter tag value insertion",
+				"filterContent", filterContent,
+				"relativePos", relativePos,
+				"cursorPos", completeReq.CursorPosition,
+				"openBracePos", openBracePos)
+			
+			// Find the current tag pair by looking backwards for comma or start
+			pairStart := relativePos
+			for pairStart > 0 && filterContent[pairStart-1] != ',' {
+				pairStart--
+			}
+			
+			// Find the end of the current pair (stop at comma or end)
+			pairEnd := relativePos
+			for pairEnd < len(filterContent) && filterContent[pairEnd] != ',' {
+				pairEnd++
+			}
+			
+			// Extract the current pair
+			currentPair := filterContent[pairStart:pairEnd]
+			
+			// Find the colon in the current pair
+			colonIndex := strings.Index(currentPair, ":")
+			if colonIndex == -1 {
+				// No colon found, just insert at cursor
+				newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + completeReq.Query[completeReq.CursorPosition:]
+				newCursorPos = completeReq.CursorPosition + len(selectedItem)
+			} else {
+				// Replace the value part (after the colon)
+				tagKey := currentPair[:colonIndex]
+				newPair := tagKey + ":" + selectedItem
+				
+				// Replace the current pair with the new pair
+				newFilterContent := filterContent[:pairStart] + newPair + filterContent[pairEnd:]
+				newQuery = completeReq.Query[:openBracePos+1] + newFilterContent + completeReq.Query[closeBracePos:]
+				newCursorPos = openBracePos + 1 + pairStart + len(newPair) // Position after the value
+			}
+		}
+
 	default:
 		// Default: insert at cursor position
 		newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + completeReq.Query[completeReq.CursorPosition:]
