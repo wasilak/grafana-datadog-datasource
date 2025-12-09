@@ -282,7 +282,15 @@ function detectContextType(line: string, position: number): QueryContext['contex
   const openBrace = line.lastIndexOf('{', position);
   const closeBrace = line.indexOf('}', position);
 
-  if (openBrace !== -1 && (closeBrace === -1 || position < closeBrace)) {
+  console.log('detectContextType - brace check:', {
+    line,
+    position,
+    openBrace,
+    closeBrace,
+    isInsideBraces: openBrace !== -1 && (closeBrace === -1 || position <= closeBrace),
+  });
+
+  if (openBrace !== -1 && (closeBrace === -1 || position <= closeBrace)) {
     // Make sure this isn't the "by {" brace
     const textBeforeBrace = line.substring(0, openBrace).trim();
     if (textBeforeBrace.endsWith(' by')) {
