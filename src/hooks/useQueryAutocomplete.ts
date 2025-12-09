@@ -108,7 +108,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         // Fetch tags for the metric if in tag context or grouping_tag context
         let tags: string[] = [];
-        if ((context.contextType === 'tag' || context.contextType === 'tag_value' || context.contextType === 'grouping_tag') && context.metricName) {
+        if ((context.contextType === 'tag' || context.contextType === 'tag_value' || context.contextType === 'grouping_tag' || context.contextType === 'filter_tag_key') && context.metricName) {
           try {
             const tagsResponse = await getBackendSrv()
               .fetch({
@@ -131,16 +131,42 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           }
         }
 
+        // Fetch tag values for the specific tag key if in filter_tag_value context
+        let tagValues: string[] = [];
+        if (context.contextType === 'filter_tag_value' && context.metricName && context.tagKey) {
+          try {
+            const tagValuesResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/tag-values/${context.metricName}/${context.tagKey}`,
+                method: 'GET',
+              })
+              .toPromise();
+            tagValues = (tagValuesResponse as any).data as string[];
+          } catch (tagValuesError) {
+            const err = tagValuesError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              throw new Error('Endpoint not found (backend not available)');
+            } else {
+              console.warn('Failed to fetch tag values:', tagValuesError);
+              // Continue with empty tag values if backend call fails
+              tagValues = [];
+            }
+          }
+        }
+
         clearTimeout(timeoutHandle);
 
         // Generate suggestions based on context
-        const suggestions = generateSuggestions(context, metrics, tags);
+        const suggestions = generateSuggestions(context, metrics, tags, tagValues);
         
         console.log('Suggestions generated:', {
           contextType: context.contextType,
           currentToken: context.currentToken,
           metricsCount: metrics.length,
           tagsCount: tags.length,
+          tagValuesCount: tagValues.length,
           suggestionsCount: suggestions.length,
           suggestions: suggestions.slice(0, 5), // First 5 for debugging
         });

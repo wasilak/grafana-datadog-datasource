@@ -20,12 +20,14 @@ const AGGREGATIONS = [
  * @param context - Parsed query context with cursor position info
  * @param metrics - Array of available metric names from Datadog API
  * @param tagsForMetric - Array of available tags/tag values for the current metric
+ * @param tagValues - Array of available tag values for a specific tag key (for filter_tag_value context)
  * @returns Array of CompletionItem suggestions (max 100 items)
  */
 export function generateSuggestions(
   context: QueryContext,
   metrics: string[] = [],
-  tagsForMetric: string[] = []
+  tagsForMetric: string[] = [],
+  tagValues: string[] = []
 ): CompletionItem[] {
   let suggestions: CompletionItem[] = [];
 
@@ -47,6 +49,9 @@ export function generateSuggestions(
       break;
     case 'tag_value':
       suggestions = generateTagValueSuggestions(context, tagsForMetric);
+      break;
+    case 'filter_tag_value':
+      suggestions = generateFilterTagValueSuggestions(context, tagValues);
       break;
     case 'grouping_tag':
       suggestions = generateGroupingTagSuggestions(context, tagsForMetric);
@@ -225,6 +230,27 @@ function generateTagValueSuggestions(context: QueryContext, tagsForMetric: strin
       kind: 'tag_value',
       insertText: value,
       documentation: `Value for tag ${currentTagKey}: ${value}`,
+      sortText: value,
+    }));
+}
+
+/**
+ * Generate suggestions for filter tag values (inside {...} after metric name, after ':')
+ * Fetches tag values from /autocomplete/tag-values/{metric}/{tagKey} endpoint
+ * Filters by current token (prefix matching) and sorts alphabetically
+ */
+function generateFilterTagValueSuggestions(context: QueryContext, tagValues: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  return tagValues
+    .filter(value => value.toLowerCase().includes(currentToken))
+    .sort((a, b) => a.localeCompare(b)) // Sort alphabetically
+    .slice(0, 100)
+    .map(value => ({
+      label: value,
+      kind: 'filter_tag_value',
+      insertText: value,
+      documentation: `Filter tag value: ${value}`,
       sortText: value,
     }));
 }
