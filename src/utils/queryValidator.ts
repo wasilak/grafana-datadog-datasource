@@ -139,10 +139,17 @@ function validateTagSection(queryText: string): ValidationError[] {
       const value = tag.substring(colonIndex + 1).trim();
 
       if (!value) {
-        errors.push({
-          message: `Tag "${key}" has no value`,
-          fix: `Specify a value: "${key}:value" or "${key}:*"`,
-        });
+        // Don't show error if this is the last tag and query ends with ':'
+        // This indicates the user is actively typing and autocomplete should help
+        const isLastTag = tags.indexOf(tag) === tags.length - 1;
+        const queryEndsWithColon = queryText.trimEnd().endsWith(':');
+        
+        if (!isLastTag || !queryEndsWithColon) {
+          errors.push({
+            message: `Tag "${key}" has no value`,
+            fix: `Specify a value: "${key}:value" or "${key}:*"`,
+          });
+        }
       } else if (!isValidTagKey(key)) {
         errors.push({
           message: `Invalid tag key: "${key}"`,
