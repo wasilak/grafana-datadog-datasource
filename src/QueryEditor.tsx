@@ -22,9 +22,18 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = async (item: CompletionItem) => {
     console.log('=== handleItemSelect START ===');
-    // Get current state values
-    const currentValue = query.queryText || '';
-    const currentCursorPosition = cursorPosition;
+    
+    // Get CURRENT values from Monaco editor (not from React state which may be stale)
+    let currentValue = '';
+    let currentCursorPosition = 0;
+    if (editorRef.current) {
+      const model = editorRef.current.getModel();
+      const position = editorRef.current.getPosition();
+      if (model && position) {
+        currentValue = model.getValue();
+        currentCursorPosition = model.getOffsetAt(position);
+      }
+    }
 
     console.log('handleItemSelect called:', {
       itemKind: item.kind,
@@ -312,29 +321,32 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
   const onQueryTextChange = (newValue: string) => {
-    // Get cursor position from Monaco editor
-    let cursorPosBefore = 0;
-    if (editorRef.current) {
-      const position = editorRef.current.getPosition();
-      const model = editorRef.current.getModel();
-      if (position && model) {
-        cursorPosBefore = model.getOffsetAt(position);
-      }
-    }
-
-    // Update the query state
+    // Update the query state first
     onChange({ ...query, queryText: newValue });
 
-    // Store cursor position for autocomplete
-    setCursorPosition(cursorPosBefore);
+    // Get cursor position AFTER the text change by using setTimeout
+    // This ensures Monaco has updated its internal state
+    setTimeout(() => {
+      let cursorPos = 0;
+      if (editorRef.current) {
+        const position = editorRef.current.getPosition();
+        const model = editorRef.current.getModel();
+        if (position && model) {
+          cursorPos = model.getOffsetAt(position);
+        }
+      }
 
-    // Update the cursor position in the UI (for suggestions positioning)
-    if (editorRef.current) {
-      updateSuggestionsPositionFromEditor(editorRef.current, cursorPosBefore);
-    }
+      // Store cursor position for autocomplete
+      setCursorPosition(cursorPos);
 
-    // Trigger autocomplete with current query text and cursor position
-    autocomplete.onInput(newValue, cursorPosBefore);
+      // Update the cursor position in the UI (for suggestions positioning)
+      if (editorRef.current) {
+        updateSuggestionsPositionFromEditor(editorRef.current, cursorPos);
+      }
+
+      // Trigger autocomplete with current query text and cursor position
+      autocomplete.onInput(newValue, cursorPos);
+    }, 0);
   };
 
   const onLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
