@@ -34,7 +34,7 @@ export interface MyVariableQuery {
  */
 export interface CompletionItem {
   label: string;
-  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'function';
+  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'function';
   detail?: string;
   documentation?: string;
   insertText?: string;
@@ -44,11 +44,12 @@ export interface CompletionItem {
 /**
  * Query context for autocomplete - what part of the query the cursor is in
  */
-export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'unknown';
+export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'unknown';
 
 export interface QueryContext {
   contextType: ContextType;
   metricName?: string;
+  tagKey?: string; // For filter_tag_value context - the tag key being edited
   existingTags: Set<string>;
   currentToken: string;
   lineContent: string;
