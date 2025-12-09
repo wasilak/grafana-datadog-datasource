@@ -351,12 +351,14 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         return prev;
       }
       const selectedItem = prev.suggestions[prev.selectedIndex];
-      if (selectedItem && onSelect) {
-        onSelect(selectedItem);
+      if (selectedItem) {
+        // Call onItemSelect which will handle the callback and close the menu
+        // Do this outside setState to avoid stale closure issues
+        setTimeout(() => onItemSelect(selectedItem), 0);
       }
       return { ...prev, isOpen: false };
     });
-  }, [onSelect]);
+  }, [onItemSelect]);
 
   /**
    * Cleanup on unmount
