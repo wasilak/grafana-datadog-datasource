@@ -509,6 +509,8 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.MetricsHandler(ctx, req, sender)
 	case req.Method == "GET" && len(req.Path) > len("autocomplete/tags/") && req.Path[:len("autocomplete/tags/")] == "autocomplete/tags/":
 		return d.TagsHandler(ctx, req, sender)
+	case req.Method == "POST" && req.Path == "autocomplete/complete":
+		return d.CompleteHandler(ctx, req, sender)
 	default:
 		logger.Warn("Unknown resource path", "path", req.Path, "method", req.Method)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1009,4 +1011,160 @@ func (d *Datasource) CleanExpiredCache(ttl time.Duration) {
 			delete(d.cache.entries, key)
 		}
 	}
+}
+
+// CompleteRequest represents the request body for autocomplete completion
+type CompleteRequest struct {
+	Query          string `json:"query"`
+	CursorPosition int    `json:"cursorPosition"`
+	SelectedItem   string `json:"selectedItem"`
+	ItemKind       string `json:"itemKind"`
+}
+
+// CompleteResponse represents the response for autocomplete completion
+type CompleteResponse struct {
+	NewQuery          string `json:"newQuery"`
+	NewCursorPosition int    `json:"newCursorPosition"`
+}
+
+// CompleteHandler handles POST /autocomplete/complete requests
+// This endpoint receives a query, cursor position, and selected item,
+// then returns the completed query with the new cursor position
+func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+
+	// Parse request body
+	var completeReq CompleteRequest
+	if err := json.Unmarshal(req.Body, &completeReq); err != nil {
+		logger.Error("Failed to parse complete request", "error", err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "invalid request body"}`),
+		})
+	}
+
+	logger.Info("Complete request", "query", completeReq.Query, "cursor", completeReq.CursorPosition, "item", completeReq.SelectedItem, "kind", completeReq.ItemKind)
+
+	// Determine where to insert based on item kind and cursor position
+	newQuery := completeReq.Query
+	newCursorPos := completeReq.CursorPosition
+	selectedItem := completeReq.SelectedItem
+
+	switch completeReq.ItemKind {
+	case "metric":
+		// Replace entire query with avg:metric{*}
+		newQuery = fmt.Sprintf("avg:%s{*}", selectedItem)
+		newCursorPos = len(newQuery)
+
+	case "aggregator":
+		// Replace aggregator at the beginning
+		colonIdx := strings.Index(completeReq.Query, ":")
+		if colonIdx > 0 {
+			// Replace existing aggregator
+			newQuery = selectedItem + ":" + completeReq.Query[colonIdx+1:]
+		} else {
+			// Add aggregator
+			newQuery = selectedItem + ":" + completeReq.Query
+		}
+		newCursorPos = len(selectedItem) + 1
+
+	case "grouping_tag":
+		// Find "by {" section and insert tag
+		byIdx := strings.Index(completeReq.Query, " by {")
+		if byIdx == -1 {
+			// No "by {" found, append it
+			newQuery = completeReq.Query + " by {" + selectedItem + "}"
+			newCursorPos = len(newQuery) - 1
+		} else {
+			// Find the opening brace position
+			openBracePos := byIdx + len(" by {") - 1
+			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
+			
+			if closeBracePos == -1 {
+				// No closing brace, append tag and close
+				newQuery = completeReq.Query + selectedItem + "}"
+				newCursorPos = len(newQuery) - 1
+			} else {
+				// Insert tag inside braces
+				closeBracePos += openBracePos
+				groupingContent := completeReq.Query[openBracePos+1 : closeBracePos]
+				
+				// Calculate relative position within the braces
+				relativePos := completeReq.CursorPosition - (openBracePos + 1)
+				if relativePos < 0 {
+					relativePos = 0
+				}
+				if relativePos > len(groupingContent) {
+					relativePos = len(groupingContent)
+				}
+				
+				logger.Info("Grouping tag insertion", 
+					"groupingContent", groupingContent,
+					"relativePos", relativePos,
+					"cursorPos", completeReq.CursorPosition,
+					"openBracePos", openBracePos)
+				
+				// Check if cursor is right after a comma or space
+				needsComma := false
+				if relativePos > 0 && relativePos <= len(groupingContent) {
+					// Check character before cursor
+					charBeforeCursor := groupingContent[relativePos-1]
+					logger.Info("Character before cursor", "char", string(charBeforeCursor), "byte", charBeforeCursor)
+					// Add comma only if previous char is not a comma/space and content is not empty
+					if charBeforeCursor != ',' && charBeforeCursor != ' ' && strings.TrimSpace(groupingContent[:relativePos]) != "" {
+						needsComma = true
+					}
+				}
+				
+				if needsComma {
+					selectedItem = "," + selectedItem
+				}
+				
+				logger.Info("Inserting tag", "needsComma", needsComma, "selectedItem", selectedItem)
+				
+				newGroupingContent := groupingContent[:relativePos] + selectedItem + groupingContent[relativePos:]
+				newQuery = completeReq.Query[:openBracePos+1] + newGroupingContent + completeReq.Query[closeBracePos:]
+				newCursorPos = openBracePos + 1 + relativePos + len(selectedItem)
+			}
+		}
+
+	case "tag":
+		// Find the filter section {tags} and insert tag:
+		openBracePos := strings.LastIndex(completeReq.Query[:completeReq.CursorPosition+1], "{")
+		if openBracePos == -1 {
+			// No opening brace found, just insert at cursor
+			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
+			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
+		} else {
+			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
+			if closeBracePos == -1 {
+				closeBracePos = len(completeReq.Query)
+			} else {
+				closeBracePos += openBracePos
+			}
+			
+			// Insert tag: at cursor position
+			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
+			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
+		}
+
+	default:
+		// Default: insert at cursor position
+		newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + completeReq.Query[completeReq.CursorPosition:]
+		newCursorPos = completeReq.CursorPosition + len(selectedItem)
+	}
+
+	logger.Info("Complete response", "newQuery", newQuery, "newCursor", newCursorPos)
+
+	// Return response
+	response := CompleteResponse{
+		NewQuery:          newQuery,
+		NewCursorPosition: newCursorPos,
+	}
+
+	respData, _ := json.Marshal(response)
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
 }

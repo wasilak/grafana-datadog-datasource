@@ -1,6 +1,7 @@
 import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
 import { Input, CodeEditor, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
+import { getBackendSrv } from '@grafana/runtime';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
@@ -19,7 +20,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
 
   // Define handleItemSelect before the hook initialization to avoid circular dependency
-  const handleItemSelect = (item: CompletionItem) => {
+  const handleItemSelect = async (item: CompletionItem) => {
     // Get current state values
     const currentValue = query.queryText || '';
     const currentCursorPosition = cursorPosition;
@@ -30,6 +31,49 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       currentValue,
       currentCursorPosition,
     });
+
+    // Call backend to compute the completion
+    try {
+      const response = await getBackendSrv()
+        .fetch({
+          url: `/api/datasources/uid/${datasource.uid}/resources/autocomplete/complete`,
+          method: 'POST',
+          data: {
+            query: currentValue,
+            cursorPosition: currentCursorPosition,
+            selectedItem: item.insertText || item.label,
+            itemKind: item.kind || 'unknown',
+          },
+        })
+        .toPromise();
+
+      const result = (response as any).data as { newQuery: string; newCursorPosition: number };
+      
+      console.log('Backend completion result:', result);
+
+      // Update the query with the backend result
+      onChange({ ...query, queryText: result.newQuery });
+
+      // Set cursor position after a delay to ensure React has updated
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.focus();
+          const model = editorRef.current.getModel();
+          if (model) {
+            const position = model.getPositionAt(result.newCursorPosition);
+            editorRef.current.setPosition(position);
+          }
+          setCursorPosition(result.newCursorPosition);
+        }
+      }, 15);
+
+      // Close autocomplete after selection
+      autocomplete.onClose();
+      return;
+    } catch (error) {
+      console.error('Backend completion failed:', error);
+      // Fall back to old logic if backend fails
+    }
 
     // Format the insertion based on the type of suggestion
     let insertValue = item.insertText || item.label;

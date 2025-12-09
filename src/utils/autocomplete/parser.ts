@@ -135,6 +135,14 @@ function extractGroupingTagToken(line: string, position: number): string {
   }
 
   // Check if cursor is right after a comma or opening brace - if so, we're starting a new tag
+  const charBeforeCursor = relativePos > 0 ? groupingSection[relativePos - 1] : null;
+  console.log('extractGroupingTagToken:', {
+    groupingSection,
+    relativePos,
+    charBeforeCursor,
+    isAfterComma: charBeforeCursor === ',',
+  });
+  
   if (relativePos > 0 && groupingSection[relativePos - 1] === ',') {
     return ''; // Starting a new tag after comma
   }
