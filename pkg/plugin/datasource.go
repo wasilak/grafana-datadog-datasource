@@ -1148,6 +1148,56 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
 		}
 
+	case "filter_tag_key":
+		// Find the filter section {tags} (first {...} after metric name) and insert tag key with colon
+		openBracePos := strings.Index(completeReq.Query, "{")
+		if openBracePos == -1 {
+			// No opening brace found, just insert at cursor
+			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
+			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
+		} else {
+			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
+			if closeBracePos == -1 {
+				closeBracePos = len(completeReq.Query)
+			} else {
+				closeBracePos += openBracePos
+			}
+			
+			// Calculate position within the filter section
+			filterContent := completeReq.Query[openBracePos+1 : closeBracePos]
+			relativePos := completeReq.CursorPosition - (openBracePos + 1)
+			
+			if relativePos < 0 {
+				relativePos = 0
+			}
+			if relativePos > len(filterContent) {
+				relativePos = len(filterContent)
+			}
+			
+			logger.Info("Filter tag key insertion",
+				"filterContent", filterContent,
+				"relativePos", relativePos,
+				"cursorPos", completeReq.CursorPosition,
+				"openBracePos", openBracePos)
+			
+			// Find the start of the current token (backwards to comma or start)
+			tokenStart := relativePos
+			for tokenStart > 0 && filterContent[tokenStart-1] != ',' && filterContent[tokenStart-1] != ':' {
+				tokenStart--
+			}
+			
+			// Find the end of the current token (forwards to comma, colon, or end)
+			tokenEnd := relativePos
+			for tokenEnd < len(filterContent) && filterContent[tokenEnd] != ',' && filterContent[tokenEnd] != ':' {
+				tokenEnd++
+			}
+			
+			// Replace the current token with the selected tag key
+			newFilterContent := filterContent[:tokenStart] + selectedItem + ":" + filterContent[tokenEnd:]
+			newQuery = completeReq.Query[:openBracePos+1] + newFilterContent + completeReq.Query[closeBracePos:]
+			newCursorPos = openBracePos + 1 + tokenStart + len(selectedItem) + 1 // Position after the colon
+		}
+
 	default:
 		// Default: insert at cursor position
 		newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + completeReq.Query[completeReq.CursorPosition:]
