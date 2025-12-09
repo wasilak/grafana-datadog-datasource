@@ -509,6 +509,8 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.MetricsHandler(ctx, req, sender)
 	case req.Method == "GET" && len(req.Path) > len("autocomplete/tags/") && req.Path[:len("autocomplete/tags/")] == "autocomplete/tags/":
 		return d.TagsHandler(ctx, req, sender)
+	case req.Method == "GET" && len(req.Path) > len("autocomplete/tag-values/") && req.Path[:len("autocomplete/tag-values/")] == "autocomplete/tag-values/":
+		return d.TagValuesHandler(ctx, req, sender)
 	case req.Method == "POST" && req.Path == "autocomplete/complete":
 		return d.CompleteHandler(ctx, req, sender)
 	default:
@@ -789,6 +791,159 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 
 	// Return tags as JSON
 	respData, _ := json.Marshal(tags)
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// TagValuesHandler handles GET /autocomplete/tag-values/{metric}/{tagKey} requests
+func (d *Datasource) TagValuesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	ttl := 30 * time.Second
+
+	// Extract metric name and tag key from path: "autocomplete/tag-values/{metric}/{tagKey}"
+	pathParts := strings.Split(req.Path[len("autocomplete/tag-values/"):], "/")
+	if len(pathParts) < 2 {
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "metric name and tag key required"}`),
+		})
+	}
+
+	metric := pathParts[0]
+	tagKey := pathParts[1]
+
+	if metric == "" || tagKey == "" {
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "metric name and tag key required"}`),
+		})
+	}
+
+	cacheKey := "tag-values:" + metric + ":" + tagKey
+
+	// Check if cache is disabled via environment variable (for development)
+	cacheDisabled := os.Getenv("DISABLE_CACHE") == "true"
+
+	// Check cache first
+	if !cacheDisabled {
+		if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil && len(cached.Data) > 0 {
+			logger.Debug("Returning cached tag values", "metric", metric, "tagKey", tagKey, "valueCount", len(cached.Data))
+			respData, _ := json.Marshal(cached.Data)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
+		}
+	}
+
+	// If cache is empty, expired, or disabled, fetch fresh data
+	logger.Debug("Fetching fresh tag values", "metric", metric, "tagKey", tagKey, "cacheDisabled", cacheDisabled)
+
+	// Get API credentials
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Acquire semaphore slot (max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 2*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	// Fetch tags from Datadog using ListTagsByMetricName
+	logger.Debug("Fetching tag values for metric and tag key", "metric", metric, "tagKey", tagKey)
+
+	resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
+	if err != nil {
+		httpStatus := 0
+		if httpResp != nil {
+			httpStatus = httpResp.StatusCode
+		}
+		logger.Error("Failed to fetch tag values", "error", err, "metric", metric, "tagKey", tagKey, "httpStatus", httpStatus)
+		// Return empty array on timeout or error
+		respData, _ := json.Marshal([]string{})
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Extract tag values for the specific tag key from response
+	tagValuesSet := make(map[string]bool)
+	data := resp.GetData()
+
+	logger.Debug("Got response from ListTagsByMetricName", "metric", metric, "hasData", data.Id != nil)
+
+	if data.Id != nil {
+		attributes := data.GetAttributes()
+		allTags := attributes.GetTags()
+		logger.Debug("Got tags from attributes", "metric", metric, "tagCount", len(allTags))
+
+		// Tags are in format "key:value", extract values for the specific key
+		for _, tag := range allTags {
+			parts := strings.SplitN(tag, ":", 2)
+			if len(parts) == 2 && parts[0] == tagKey {
+				tagValue := parts[1]
+				tagValuesSet[tagValue] = true
+			}
+		}
+	}
+
+	// Convert set to sorted slice
+	tagValues := make([]string, 0, len(tagValuesSet))
+	for value := range tagValuesSet {
+		tagValues = append(tagValues, value)
+	}
+
+	logger.Debug("Extracted tag values", "metric", metric, "tagKey", tagKey, "valueCount", len(tagValues), "values", tagValues)
+
+	// Cache the result
+	d.SetCachedEntry(cacheKey, tagValues)
+
+	// Return tag values as JSON
+	respData, _ := json.Marshal(tagValues)
 
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
