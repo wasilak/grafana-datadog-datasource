@@ -54,6 +54,9 @@ export function parseQuery(queryText: string, cursorPosition: number): QueryCont
   } else if (contextType === 'grouping_tag') {
     // For grouping_tag context, extract token between commas or braces
     currentToken = extractGroupingTagToken(lineContent, positionInLine);
+  } else if (contextType === 'filter_tag_key') {
+    // For filter_tag_key context, extract token between commas, braces, or colons
+    currentToken = extractFilterTagKeyToken(lineContent, positionInLine);
   } else {
     // For other contexts, use the standard token extraction
     currentToken = extractCurrentToken(lineContent, positionInLine);
@@ -173,12 +176,66 @@ function extractGroupingTagToken(line: string, position: number): string {
 }
 
 /**
+ * Extracts the current token for filter tag key context (inside "{}" after metric name)
+ * Tokens are separated by commas, braces, or colons
+ */
+function extractFilterTagKeyToken(line: string, position: number): string {
+  // Find the filter section opening brace (first { in the line)
+  const openBracePos = line.indexOf('{');
+  if (openBracePos === -1) {
+    return '';
+  }
+
+  const closeBracePos = line.indexOf('}', openBracePos);
+
+  // Extract the section between braces
+  const endPos = closeBracePos === -1 ? line.length : closeBracePos;
+  const filterSection = line.substring(openBracePos + 1, endPos);
+
+  // Find position relative to the filter section
+  const relativePos = position - (openBracePos + 1);
+
+  if (relativePos < 0 || relativePos > filterSection.length) {
+    return '';
+  }
+
+  // If cursor is right after opening brace or comma, we're starting a new tag key
+  if (relativePos === 0) {
+    return ''; // At the very beginning (right after opening brace)
+  }
+
+  // Find the current token by looking for comma or colon boundaries
+  let start = relativePos;
+  let end = relativePos;
+
+  // Move backwards to find start (stop at comma or beginning)
+  while (start > 0 && filterSection[start - 1] !== ',' && filterSection[start - 1] !== ':') {
+    start--;
+  }
+
+  // Move forwards to find end (stop at comma, colon, or end)
+  while (end < filterSection.length && filterSection[end] !== ',' && filterSection[end] !== ':') {
+    end++;
+  }
+
+  const token = filterSection.substring(start, end).trim();
+
+  // Check if cursor is right after a comma
+  const charBeforeCursor = relativePos > 0 ? filterSection[relativePos - 1] : null;
+  if (charBeforeCursor === ',') {
+    return '';
+  }
+
+  return token;
+}
+
+/**
  * Detects the context type at the cursor position
  * Datadog query format: [aggregator:]metric{tag_key:tag_value,...} by {grouping_tag1,grouping_tag2}
  *
  * Examples:
  * - "system.cpu" -> metric context
- * - "system.cpu.by_host{h" -> tag context
+ * - "system.cpu.by_host{h" -> filter_tag_key context
  * - "system.cpu.by_host{host:web-" -> tag_value context
  * - "system.cpu.by_host{} by {" -> grouping_tag context
  * - "system.cpu.by_host{} by {host," -> grouping_tag context
@@ -230,12 +287,23 @@ function detectContextType(line: string, position: number): QueryContext['contex
     const tagSection = line.substring(openBrace + 1, position);
 
     // Check if we're in tag_value context (after ':')
-    const colonInTagSection = tagSection.includes(':');
-    if (colonInTagSection) {
-      return 'tag_value';
+    // We need to check if there's a colon in the current tag pair (not in previous pairs)
+    const lastComma = tagSection.lastIndexOf(',');
+    const currentPair = lastComma === -1 ? tagSection : tagSection.substring(lastComma + 1);
+    const colonInCurrentPair = currentPair.includes(':');
+    
+    if (colonInCurrentPair) {
+      // Check if cursor is after the colon in the current pair
+      const colonPosInPair = currentPair.indexOf(':');
+      const cursorPosInPair = lastComma === -1 ? position - openBrace - 1 : position - openBrace - 1 - lastComma - 1;
+      
+      if (cursorPosInPair > colonPosInPair) {
+        return 'tag_value';
+      }
     }
 
-    return 'tag';
+    // We're in filter tag key context
+    return 'filter_tag_key';
   }
 
   // Check for aggregator context: if there's a colon after an identifier before the first space or brace

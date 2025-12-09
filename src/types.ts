@@ -44,7 +44,7 @@ export interface CompletionItem {
 /**
  * Query context for autocomplete - what part of the query the cursor is in
  */
-export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'unknown';
+export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'unknown';
 
 export interface QueryContext {
   contextType: ContextType;
