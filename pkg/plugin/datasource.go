@@ -1347,8 +1347,17 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 				tokenEnd++
 			}
 			
+			// Check if there's already a colon after the token
+			hasColonAfter := tokenEnd < len(filterContent) && filterContent[tokenEnd] == ':'
+			
 			// Replace the current token with the selected tag key
-			newFilterContent := filterContent[:tokenStart] + selectedItem + ":" + filterContent[tokenEnd:]
+			// Only add colon if there isn't one already
+			colonSuffix := ":"
+			if hasColonAfter {
+				colonSuffix = ""
+			}
+			
+			newFilterContent := filterContent[:tokenStart] + selectedItem + colonSuffix + filterContent[tokenEnd:]
 			newQuery = completeReq.Query[:openBracePos+1] + newFilterContent + completeReq.Query[closeBracePos:]
 			newCursorPos = openBracePos + 1 + tokenStart + len(selectedItem) + 1 // Position after the colon
 		}
