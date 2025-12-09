@@ -42,6 +42,9 @@ export function generateSuggestions(
     case 'tag':
       suggestions = generateTagSuggestions(context, tagsForMetric);
       break;
+    case 'filter_tag_key':
+      suggestions = generateFilterTagKeySuggestions(context, tagsForMetric);
+      break;
     case 'tag_value':
       suggestions = generateTagValueSuggestions(context, tagsForMetric);
       break;
@@ -160,6 +163,40 @@ function generateTagSuggestions(context: QueryContext, tagsForMetric: string[]):
       kind: 'tag',
       insertText: `${tag}:`,
       documentation: `Tag key: ${tag}`,
+      sortText: tag,
+    }));
+}
+
+/**
+ * Generate suggestions for filter tag keys (inside {...} after metric name)
+ * Fetches tag keys from /autocomplete/tags/{metric} endpoint
+ * Filters out already-used keys and sorts alphabetically
+ */
+function generateFilterTagKeySuggestions(context: QueryContext, tagsForMetric: string[]): CompletionItem[] {
+  const currentToken = context.currentToken.toLowerCase();
+
+  // Extract tag keys (part before ':') from available tags
+  const tagKeys = extractTagKeys(tagsForMetric);
+
+  return tagKeys
+    .filter(tag => {
+      // Filter by current token match
+      if (!tag.toLowerCase().includes(currentToken)) {
+        return false;
+      }
+      // Exclude already-used tags in the filter section
+      if (context.existingTags.has(tag)) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b)) // Sort alphabetically
+    .slice(0, 100)
+    .map(tag => ({
+      label: tag,
+      kind: 'filter_tag_key',
+      insertText: `${tag}:`,
+      documentation: `Filter tag key: ${tag}`,
       sortText: tag,
     }));
 }
@@ -396,6 +433,7 @@ function getCategoryFromKind(kind?: string): string {
     case 'metric':
       return 'metrics';
     case 'tag':
+    case 'filter_tag_key':
       return 'tags';
     case 'tag_value':
       return 'tag_values';
