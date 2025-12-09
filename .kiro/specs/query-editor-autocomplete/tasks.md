@@ -1,5 +1,124 @@
 # Implementation Plan: Query Editor Autocomplete (v2 - Refinements)
 
+## Filter Autocomplete (Tag Key:Value Pairs)
+
+- [ ] 0.1 Implement filter tag key autocomplete
+  - Add context detection for filter section (inside `{...}` after metric name)
+  - Detect when cursor is at tag key position (after `{`, after `,`, or replacing existing key)
+  - Reuse existing `/autocomplete/tags/{metric}` endpoint for tag keys
+  - Generate suggestions for available tag keys
+  - Filter out already-used tag keys in current filter section
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [ ] 0.1.1 Update parser to detect filter tag key context
+  - File: src/utils/autocomplete/parser.ts (modify)
+  - Add 'filter_tag_key' context type
+  - Detect cursor inside `{...}` after metric name (not in grouping section)
+  - Distinguish between filter section and grouping section
+  - Extract current token at cursor position
+  - Extract already-used tag keys in filter section
+  - _Requirements: 1.1_
+
+- [ ] 0.1.2 Update suggestions generator for filter tag keys
+  - File: src/utils/autocomplete/suggestions.ts (modify)
+  - Handle 'filter_tag_key' context type
+  - Fetch tag keys from `/autocomplete/tags/{metric}` endpoint
+  - Filter out already-used keys
+  - Generate CompletionItem list with kind: 'filter_tag_key'
+  - Sort alphabetically
+  - _Requirements: 1.2_
+
+- [ ] 0.1.3 Update backend completion handler for filter tag keys
+  - File: pkg/plugin/datasource.go (modify)
+  - Add case for 'filter_tag_key' in CompleteHandler
+  - Insert tag key at cursor position
+  - Append `:` after tag key
+  - Calculate new cursor position (after the colon)
+  - _Requirements: 1.3_
+
+- [ ]* 0.1.4 Write property test for filter tag key autocomplete
+  - File: tests/utils/autocomplete/parser.test.ts (modify)
+  - **Property 11: Filter tag key context detection**
+  - **Validates: Requirements 1.1**
+
+- [ ] 0.2 Implement filter tag value autocomplete
+  - Add context detection for tag value position (after `:` in filter section)
+  - Create new backend endpoint to fetch tag values for a specific tag key
+  - Generate suggestions for available tag values
+  - Support multiple values for same key (comma-separated)
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [ ] 0.2.1 Create backend endpoint for tag values
+  - File: pkg/plugin/datasource.go (modify)
+  - Add GET `/autocomplete/tag-values/{metric}/{tagKey}` endpoint
+  - Call Datadog API to fetch tag values for specific metric and tag key
+  - Cache results with TTL (30 seconds)
+  - Return JSON array of tag value strings
+  - _Requirements: 1.2_
+
+- [ ] 0.2.2 Update parser to detect filter tag value context
+  - File: src/utils/autocomplete/parser.ts (modify)
+  - Add 'filter_tag_value' context type
+  - Detect cursor after `:` in filter section
+  - Extract current tag key (before the colon)
+  - Extract current token (partial value being typed)
+  - _Requirements: 1.1_
+
+- [ ] 0.2.3 Update suggestions generator for filter tag values
+  - File: src/utils/autocomplete/suggestions.ts (modify)
+  - Handle 'filter_tag_value' context type
+  - Fetch tag values from `/autocomplete/tag-values/{metric}/{tagKey}` endpoint
+  - Filter by current token (prefix matching)
+  - Generate CompletionItem list with kind: 'filter_tag_value'
+  - Sort alphabetically
+  - _Requirements: 1.2_
+
+- [ ] 0.2.4 Update backend completion handler for filter tag values
+  - File: pkg/plugin/datasource.go (modify)
+  - Add case for 'filter_tag_value' in CompleteHandler
+  - Replace current token with selected value
+  - Calculate new cursor position (after the value)
+  - _Requirements: 1.3_
+
+- [ ]* 0.2.5 Write property test for filter tag value autocomplete
+  - File: tests/utils/autocomplete/parser.test.ts (modify)
+  - **Property 12: Filter tag value context detection**
+  - **Validates: Requirements 1.1**
+
+- [ ] 0.3 Implement multi-value filter support
+  - Support comma-separated values for same tag key (e.g., `os.type:linux,windows`)
+  - Detect when cursor is after comma within a tag value
+  - Trigger tag value autocomplete after comma
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [ ] 0.3.1 Update parser for multi-value detection
+  - File: src/utils/autocomplete/parser.ts (modify)
+  - Detect comma within tag value (between `:` and next `,` or `}`)
+  - Return 'filter_tag_value' context when cursor is after comma in value
+  - Extract same tag key for value suggestions
+  - _Requirements: 1.1_
+
+- [ ] 0.3.2 Update backend completion for multi-value
+  - File: pkg/plugin/datasource.go (modify)
+  - Handle comma insertion before value if needed
+  - Detect if cursor is in middle of existing values
+  - Calculate correct insertion position
+  - _Requirements: 1.3_
+
+- [ ]* 0.3.3 Write property test for multi-value support
+  - File: tests/utils/autocomplete/parser.test.ts (modify)
+  - **Property 13: Multi-value filter detection**
+  - **Validates: Requirements 1.1**
+
+- [ ] 0.4 Checkpoint - Test filter autocomplete
+  - Test tag key autocomplete in filter section
+  - Test tag value autocomplete after selecting key
+  - Test multi-value support (comma-separated values)
+  - Test that filter autocomplete doesn't interfere with grouping autocomplete
+  - Ensure all tests pass, ask user if questions arise
+
+## Previous Tasks
+
 - [x] 1. Migrate to Grafana CodeEditor with syntax highlighting
   - Replace custom TextArea with @grafana/ui CodeEditor component
   - Register custom Monaco language for Datadog queries
