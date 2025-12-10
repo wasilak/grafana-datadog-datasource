@@ -568,6 +568,13 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.TagValuesHandler(ctx, req, sender)
 	case req.Method == "POST" && req.Path == "autocomplete/complete":
 		return d.CompleteHandler(ctx, req, sender)
+	// Variable resource handlers
+	case req.Method == "POST" && req.Path == "resources/metrics":
+		return d.VariableMetricsHandler(ctx, req, sender)
+	case req.Method == "POST" && req.Path == "resources/tag-keys":
+		return d.VariableTagKeysHandler(ctx, req, sender)
+	case req.Method == "POST" && req.Path == "resources/tag-values":
+		return d.VariableTagValuesHandler(ctx, req, sender)
 	default:
 		logger.Warn("Unknown resource path", "path", req.Path, "method", req.Method)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1237,6 +1244,31 @@ type CompleteResponse struct {
 	NewCursorPosition int    `json:"newCursorPosition"`
 }
 
+// Variable resource request/response models
+
+// MetricsRequest represents the request for /resources/metrics endpoint
+type MetricsRequest struct {
+	Namespace     string `json:"namespace,omitempty"`
+	SearchPattern string `json:"searchPattern,omitempty"`
+}
+
+// TagKeysRequest represents the request for /resources/tag-keys endpoint
+type TagKeysRequest struct {
+	MetricName string `json:"metricName,omitempty"`
+}
+
+// TagValuesRequest represents the request for /resources/tag-values endpoint
+type TagValuesRequest struct {
+	MetricName string `json:"metricName,omitempty"`
+	TagKey     string `json:"tagKey"`
+}
+
+// VariableResponse represents the response for variable resource endpoints
+type VariableResponse struct {
+	Values []string `json:"values"`
+	Error  string   `json:"error,omitempty"`
+}
+
 // CompleteHandler handles POST /autocomplete/complete requests
 // This endpoint receives a query, cursor position, and selected item,
 // then returns the completed query with the new cursor position
@@ -1492,6 +1524,428 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 	}
 
 	respData, _ := json.Marshal(response)
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// VariableMetricsHandler handles POST /resources/metrics requests for variable queries
+func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
+
+	// Parse request body
+	var metricsReq MetricsRequest
+	if err := json.Unmarshal(req.Body, &metricsReq); err != nil {
+		logger.Error("Failed to parse metrics request", "error", err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "Invalid request format"}`),
+		})
+	}
+
+	// Build cache key based on filters
+	cacheKey := fmt.Sprintf("var-metrics:%s:%s", metricsReq.Namespace, metricsReq.SearchPattern)
+
+	// Check cache first
+	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
+		logger.Debug("Returning cached variable metrics", "namespace", metricsReq.Namespace, "searchPattern", metricsReq.SearchPattern)
+		response := VariableResponse{Values: cached.Data}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Get API credentials
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Acquire semaphore slot (max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	// Fetch metrics from Datadog - ListTagConfigurations returns available metrics
+	resp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
+	if err != nil {
+		logger.Error("Failed to fetch variable metrics", "error", err, "namespace", metricsReq.Namespace, "searchPattern", metricsReq.SearchPattern)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "Unable to fetch metrics from Datadog"}`),
+		})
+	}
+
+	// Extract metric names from response
+	data := resp.GetData()
+	if data == nil {
+		response := VariableResponse{Values: []string{}}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	metrics := []string{}
+	for _, config := range data {
+		var metricName string
+		if config.Metric != nil {
+			metricName = config.Metric.GetId()
+		} else if config.MetricTagConfiguration != nil {
+			metricName = config.MetricTagConfiguration.GetId()
+		}
+
+		if metricName != "" {
+			// Apply namespace filter if specified
+			if metricsReq.Namespace != "" && !strings.HasPrefix(metricName, metricsReq.Namespace) {
+				continue
+			}
+
+			// Apply search pattern filter if specified
+			if metricsReq.SearchPattern != "" && !strings.Contains(metricName, metricsReq.SearchPattern) {
+				continue
+			}
+
+			metrics = append(metrics, metricName)
+		}
+	}
+
+	// Cache the result
+	d.SetCachedEntry(cacheKey, metrics)
+
+	// Return metrics as VariableResponse
+	response := VariableResponse{Values: metrics}
+	respData, _ := json.Marshal(response)
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// VariableTagKeysHandler handles POST /resources/tag-keys requests for variable queries
+func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
+
+	// Parse request body
+	var tagKeysReq TagKeysRequest
+	if err := json.Unmarshal(req.Body, &tagKeysReq); err != nil {
+		logger.Error("Failed to parse tag keys request", "error", err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "Invalid request format"}`),
+		})
+	}
+
+	// Build cache key based on metric name
+	cacheKey := fmt.Sprintf("var-tag-keys:%s", tagKeysReq.MetricName)
+
+	// Check cache first
+	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
+		logger.Debug("Returning cached variable tag keys", "metricName", tagKeysReq.MetricName)
+		response := VariableResponse{Values: cached.Data}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Get API credentials
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Acquire semaphore slot (max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	var tagKeys []string
+
+	if tagKeysReq.MetricName != "" {
+		// Fetch tags for specific metric using ListTagsByMetricName
+		logger.Debug("Fetching tag keys for specific metric", "metricName", tagKeysReq.MetricName)
+
+		resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, tagKeysReq.MetricName)
+		if err != nil {
+			httpStatus := 0
+			if httpResp != nil {
+				httpStatus = httpResp.StatusCode
+			}
+			logger.Error("Failed to fetch variable tag keys", "error", err, "metricName", tagKeysReq.MetricName, "httpStatus", httpStatus)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "Unable to fetch tag keys from Datadog"}`),
+			})
+		}
+
+		// Extract tag keys from response
+		tagKeysSet := make(map[string]bool)
+		data := resp.GetData()
+
+		if data.Id != nil {
+			attributes := data.GetAttributes()
+			allTags := attributes.GetTags()
+
+			// Tags are in format "key:value", extract unique keys
+			for _, tag := range allTags {
+				parts := strings.SplitN(tag, ":", 2)
+				if len(parts) >= 1 {
+					tagKey := parts[0]
+					tagKeysSet[tagKey] = true
+				}
+			}
+		}
+
+		// Convert set to slice
+		for key := range tagKeysSet {
+			tagKeys = append(tagKeys, key)
+		}
+	} else {
+		// Return commonly used tag keys when no metric is specified
+		tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type"}
+	}
+
+	// Cache the result
+	d.SetCachedEntry(cacheKey, tagKeys)
+
+	// Return tag keys as VariableResponse
+	response := VariableResponse{Values: tagKeys}
+	respData, _ := json.Marshal(response)
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// VariableTagValuesHandler handles POST /resources/tag-values requests for variable queries
+func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
+
+	// Parse request body
+	var tagValuesReq TagValuesRequest
+	if err := json.Unmarshal(req.Body, &tagValuesReq); err != nil {
+		logger.Error("Failed to parse tag values request", "error", err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "Invalid request format"}`),
+		})
+	}
+
+	// Validate required fields
+	if tagValuesReq.TagKey == "" {
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "Tag key is required"}`),
+		})
+	}
+
+	// Build cache key based on metric name and tag key
+	cacheKey := fmt.Sprintf("var-tag-values:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey)
+
+	// Check cache first
+	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
+		logger.Debug("Returning cached variable tag values", "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey)
+		response := VariableResponse{Values: cached.Data}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Get API credentials
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey")
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Acquire semaphore slot (max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	var tagValues []string
+
+	if tagValuesReq.MetricName != "" {
+		// Fetch tag values for specific metric and tag key
+		logger.Debug("Fetching tag values for specific metric and tag key", "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey)
+
+		resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, tagValuesReq.MetricName)
+		if err != nil {
+			httpStatus := 0
+			if httpResp != nil {
+				httpStatus = httpResp.StatusCode
+			}
+			logger.Error("Failed to fetch variable tag values", "error", err, "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey, "httpStatus", httpStatus)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "Unable to fetch tag values from Datadog"}`),
+			})
+		}
+
+		// Extract tag values for the specific tag key from response
+		tagValuesSet := make(map[string]bool)
+		data := resp.GetData()
+
+		if data.Id != nil {
+			attributes := data.GetAttributes()
+			allTags := attributes.GetTags()
+
+			// Tags are in format "key:value", extract values for the specific key
+			for _, tag := range allTags {
+				parts := strings.SplitN(tag, ":", 2)
+				if len(parts) == 2 && parts[0] == tagValuesReq.TagKey {
+					tagValue := parts[1]
+					tagValuesSet[tagValue] = true
+				}
+			}
+		}
+
+		// Convert set to slice
+		for value := range tagValuesSet {
+			tagValues = append(tagValues, value)
+		}
+	} else {
+		// For unfiltered queries, we would need a different API call
+		// For now, return empty array as we need a specific metric to get meaningful tag values
+		tagValues = []string{}
+	}
+
+	// Cache the result
+	d.SetCachedEntry(cacheKey, tagValues)
+
+	// Return tag values as VariableResponse
+	response := VariableResponse{Values: tagValues}
+	respData, _ := json.Marshal(response)
+
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
 		Body:   respData,
