@@ -14,6 +14,8 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    env:
+      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -54,6 +56,7 @@ jobs:
 
       - name: Sign plugin with private signature
         run: yarn sign --rootUrls http://localhost:3000
+        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
 
       - name: Get plugin metadata
         id: metadata
