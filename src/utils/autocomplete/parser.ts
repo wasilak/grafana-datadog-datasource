@@ -281,8 +281,6 @@ function detectContextType(line: string, position: number): QueryContext['contex
     }
     
     // We're inside the filter tag section
-    const tagSection = line.substring(openBrace + 1, position);
-
     // Check if cursor is right after trigger characters for tag key autocomplete
     // Trigger characters: '{', ' ', '(', ','
     const charBeforeCursor = position > openBrace + 1 ? line[position - 1] : '{';

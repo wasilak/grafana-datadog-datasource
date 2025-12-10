@@ -13,7 +13,7 @@ type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) {
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
-  const [cursorPosition, setCursorPosition] = useState(0);
+
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   
   // Ref to track autocomplete state for Monaco keyboard handler
@@ -73,7 +73,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
             const position = model.getPositionAt(result.newCursorPosition);
             editorRef.current.setPosition(position);
           }
-          setCursorPosition(result.newCursorPosition);
+
         }
       }, 15);
 
@@ -293,8 +293,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
           editorRef.current.setPosition(position);
         }
 
-        // Update the local state to track the new cursor position
-        setCursorPosition(newCursorPos);
+
       }
       // Do NOT run query automatically after insertion - user decides when to run
       // This prevents re-rendering that moves cursor to end
@@ -336,8 +335,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         }
       }
 
-      // Store cursor position for autocomplete
-      setCursorPosition(cursorPos);
+
 
       // Update the cursor position in the UI (for suggestions positioning)
       if (editorRef.current) {
@@ -464,7 +462,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       const model = editor.getModel();
       if (model) {
         const offset = model.getOffsetAt(e.position);
-        setCursorPosition(offset);
+
         updateSuggestionsPositionFromEditor(editor, offset);
       }
     });
