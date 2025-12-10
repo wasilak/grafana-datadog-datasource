@@ -26,5 +26,5 @@ jobs:
 
       - name: Sign plugin with private signature
         run: |
-          yarn sign --rootUrls "https://localhost:3000,http://localhost:3000,https://grafana.local,http://grafana.local"
+          yarn sign --rootUrls http://localhost:3000
         working-directory: .
