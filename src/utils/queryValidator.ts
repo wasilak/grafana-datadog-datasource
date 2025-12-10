@@ -107,7 +107,27 @@ function validateTagSection(queryText: string): ValidationError[] {
     return errors;
   }
 
-  // Split by comma
+  // Check if this contains boolean operators - if so, skip detailed validation
+  // Boolean operators: OR, AND, IN, NOT IN
+  const hasBooleanOperators = /\b(OR|AND|IN|NOT\s+IN)\b/i.test(tagSection);
+  
+  if (hasBooleanOperators) {
+    // For queries with boolean operators, we'll do minimal validation
+    // Just check for basic syntax issues like unmatched parentheses
+    const openParens = (tagSection.match(/\(/g) || []).length;
+    const closeParens = (tagSection.match(/\)/g) || []).length;
+    
+    if (openParens !== closeParens) {
+      errors.push({
+        message: `Unmatched parentheses in filter section: ${openParens} opening, ${closeParens} closing`,
+        fix: 'Add or remove parentheses to match pairs',
+      });
+    }
+    
+    return errors; // Skip detailed tag validation for boolean expressions
+  }
+
+  // Split by comma for simple tag validation (no boolean operators)
   const tags = tagSection.split(',').map(t => t.trim());
 
   for (const tag of tags) {
