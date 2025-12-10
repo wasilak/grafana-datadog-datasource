@@ -1,7 +1,7 @@
 # Grafana Datadog Datasource Plugin
 
 [![Release](https://img.shields.io/github/v/release/wasilak/grafana-datadog-datasource)](https://github.com/wasilak/grafana-datadog-datasource/releases)
-[![License](https://img.shields.io/github/license/wasilak/grafana-datadog-datasource)](LICENSE)
+[![License](https://img.shields.io/github/license/wasilak/grafana-datadog-datasource)](https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE)
 
 An **unofficial** Grafana datasource plugin for Datadog metrics with advanced query autocomplete functionality.
 
@@ -196,99 +196,9 @@ Production CPU: {{host}} ({{availability_zone}})
 3. Use the same query syntax with full autocomplete support
 4. Perfect for ad-hoc metric exploration and debugging
 
-## 🧪 Local Development & Testing
+## 🧪 Development
 
-### Prerequisites
-- Node.js (LTS version)
-- Yarn package manager
-- Go 1.21+
-- Mage build tool
-- Docker & Docker Compose
-
-### Quick Start with Docker
-```bash
-# Clone repository
-git clone https://github.com/wasilak/grafana-datadog-datasource.git
-cd grafana-datadog-datasource
-
-# Install dependencies and build
-make build
-
-# Start Grafana with plugin loaded
-docker compose up --build
-```
-
-This will start Grafana at `http://localhost:3000` with:
-- **Anonymous authentication enabled** (no login required)
-- **Plugin pre-loaded** and trusted
-- **Debug logging enabled** for development
-- **Hot reload** - changes to `dist/` are reflected immediately
-
-### Manual Setup
-```bash
-# Install dependencies
-yarn install
-
-# Build plugin
-make build
-
-# Start development server (watch mode)
-make watch
-
-# In another terminal, start Grafana
-docker compose up --build
-```
-
-### Build Commands
-```bash
-make build                    # Build frontend + backend for current platform
-make build-backend-all        # Build backend for all platforms
-make clean                    # Clean build artifacts
-make lint                     # Run linting
-make test                     # Run tests
-make watch                    # Start development server (watch mode)
-```
-
-### Docker Configuration Details
-
-The included `docker-compose.yaml` provides a complete development environment:
-
-```yaml
-services:
-  grafana:
-    build:
-      context: ./.config
-      args:
-        grafana_image: grafana                    # Use OSS Grafana
-        grafana_version: 12.3.0                  # Grafana version
-        development: true                        # Development mode
-        anonymous_auth_enabled: true             # No login required
-    ports:
-      - 3000:3000/tcp
-    volumes:
-      - ./dist:/var/lib/grafana/plugins/wasilak-datadog-datasource  # Plugin files
-      - .:/root/wasilak-datadog-datasource                          # Source code
-    environment:
-      GF_LOG_FILTERS: plugin.wasilak-datadog-datasource:debug      # Plugin debug logs
-      GF_LOG_LEVEL: debug                                           # Grafana debug logs
-      GF_DATAPROXY_LOGGING: 1                                      # HTTP proxy debug logs
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: wasilak-datadog-datasource  # Trust plugin
-```
-
-### Environment Variables
-
-You can customize the Docker setup with environment variables:
-
-```bash
-# Use Grafana Enterprise
-GRAFANA_IMAGE=grafana-enterprise docker compose up
-
-# Use different Grafana version
-GRAFANA_VERSION=11.0.0 docker compose up
-
-# Combine both
-GRAFANA_IMAGE=grafana-enterprise GRAFANA_VERSION=11.0.0 docker compose up
-```
+For local development and contributing to this plugin, see [DEVELOPMENT.md](https://github.com/wasilak/grafana-datadog-datasource/blob/main/DEVELOPMENT.md).
 
 ## 📦 Multi-Platform Support
 
@@ -307,7 +217,7 @@ The plugin includes pre-built binaries for:
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE) file for details.
 
 ## Screenshots
 
