@@ -429,14 +429,17 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 	for i := range series.Attributes.GetSeries() {
 		s := &series.Attributes.Series[i]
 
-		index := *s.QueryIndex
+		// Use the series index (i) instead of queryIndex for values array
+		// queryIndex is for multi-query requests, but for series within the same query,
+		// we need to use the series index to get the correct values
+		seriesIndex := i
 
-		// Check if we have data for this query index
-		if index >= int32(len(values)) {
+		// Check if we have data for this series index
+		if seriesIndex >= len(values) {
 			continue
 		}
 
-		pointlist := values[index]
+		pointlist := values[seriesIndex]
 		if len(pointlist) == 0 {
 			continue
 		}
@@ -450,10 +453,11 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		tagSet := s.GetGroupTags()
 		
 		logger.Info("Processing series", 
-			"index", index,
+			"seriesIndex", seriesIndex,
 			"queryIndex", *s.QueryIndex,
 			"groupTags", tagSet,
-			"pointCount", len(pointlist))
+			"pointCount", len(pointlist),
+			"firstFewValues", pointlist[:min(5, len(pointlist))])
 		
 		if len(tagSet) > 0 {
 			for _, tag := range tagSet {
