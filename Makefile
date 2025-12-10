@@ -40,7 +40,8 @@ help:
 	@echo "  $(GREEN)build-backend-all$(NC)     - Build backend for all platforms"
 	@echo "  $(GREEN)build-backend-linux$(NC)   - Build backend for Linux x86-64"
 	@echo "  $(GREEN)build-backend-linux-arm$(NC) - Build backend for Linux ARM64"
-	@echo "  $(GREEN)build-backend-darwin$(NC)  - Build backend for macOS"
+	@echo "  $(GREEN)build-backend-darwin$(NC)  - Build backend for macOS Intel"
+	@echo "  $(GREEN)build-backend-darwin-arm$(NC) - Build backend for macOS Apple Silicon"
 	@echo "  $(GREEN)build-backend-windows$(NC) - Build backend for Windows"
 	@echo ""
 	@echo "Utility targets:"
@@ -104,6 +105,7 @@ build-backend-all:
 	@mage build:backendLinux
 	@mage build:backendLinuxArm
 	@mage build:backendDarwin
+	@mage build:backendDarwinArm
 	@mage build:backendWindows
 	@echo "$(GREEN)✓ All backends built$(NC)"
 
@@ -118,9 +120,14 @@ build-backend-linux-arm:
 	@echo "$(GREEN)✓ Linux ARM backend built$(NC)"
 
 build-backend-darwin:
-	@echo "$(BLUE)Building backend for macOS...$(NC)"
+	@echo "$(BLUE)Building backend for macOS Intel...$(NC)"
 	@mage build:backendDarwin
-	@echo "$(GREEN)✓ macOS backend built$(NC)"
+	@echo "$(GREEN)✓ macOS Intel backend built$(NC)"
+
+build-backend-darwin-arm:
+	@echo "$(BLUE)Building backend for macOS Apple Silicon...$(NC)"
+	@mage build:backendDarwinArm
+	@echo "$(GREEN)✓ macOS ARM backend built$(NC)"
 
 build-backend-windows:
 	@echo "$(BLUE)Building backend for Windows...$(NC)"

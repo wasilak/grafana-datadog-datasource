@@ -104,18 +104,39 @@ func (Build) BackendLinuxArm() error {
 	)
 }
 
-// BackendDarwin builds the macOS backend binary
+// BackendDarwin builds the macOS backend binary for Intel
 func (Build) BackendDarwin() error {
 	os.MkdirAll("dist", 0755)
 
-	output := filepath.Join("dist", "gpx_wasilak_datadog_datasource_darwin_x64")
-	fmt.Printf("Building macOS backend -> %s\n", output)
+	output := filepath.Join("dist", "gpx_wasilak_datadog_datasource_darwin_amd64")
+	fmt.Printf("Building macOS backend (Intel) -> %s\n", output)
 
 	return sh.RunWith(
 		map[string]string{
 			"GO111MODULE": "on",
 			"GOOS":        "darwin",
 			"GOARCH":      "amd64",
+		},
+		"go",
+		"build",
+		"-o", output,
+		"-ldflags", "-s -w",
+		"./pkg",
+	)
+}
+
+// BackendDarwinArm builds the macOS backend binary for Apple Silicon
+func (Build) BackendDarwinArm() error {
+	os.MkdirAll("dist", 0755)
+
+	output := filepath.Join("dist", "gpx_wasilak_datadog_datasource_darwin_arm64")
+	fmt.Printf("Building macOS backend (Apple Silicon) -> %s\n", output)
+
+	return sh.RunWith(
+		map[string]string{
+			"GO111MODULE": "on",
+			"GOOS":        "darwin",
+			"GOARCH":      "arm64",
 		},
 		"go",
 		"build",
@@ -144,4 +165,33 @@ func (Build) BackendWindows() error {
 		"-ldflags", "-s -w",
 		"./pkg",
 	)
+}
+// BuildAll builds backend binaries for all supported platforms
+func BuildAll() error {
+	fmt.Println("Building backend for all platforms...")
+	
+	build := Build{}
+	
+	if err := build.BackendLinux(); err != nil {
+		return fmt.Errorf("failed to build Linux backend: %w", err)
+	}
+	
+	if err := build.BackendLinuxArm(); err != nil {
+		return fmt.Errorf("failed to build Linux ARM backend: %w", err)
+	}
+	
+	if err := build.BackendDarwin(); err != nil {
+		return fmt.Errorf("failed to build macOS Intel backend: %w", err)
+	}
+	
+	if err := build.BackendDarwinArm(); err != nil {
+		return fmt.Errorf("failed to build macOS ARM backend: %w", err)
+	}
+	
+	if err := build.BackendWindows(); err != nil {
+		return fmt.Errorf("failed to build Windows backend: %w", err)
+	}
+	
+	fmt.Println("✓ All backend binaries built successfully")
+	return nil
 }
