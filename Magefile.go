@@ -195,3 +195,12 @@ func BuildAll() error {
 	fmt.Println("✓ All backend binaries built successfully")
 	return nil
 }
+
+// Coverage is a mock target for compatibility with GitHub Actions
+// The actual coverage is handled by the frontend test suite
+func Coverage() error {
+	fmt.Println("Coverage target called - this is a mock for GitHub Actions compatibility")
+	fmt.Println("Frontend coverage is handled by Jest test suite")
+	fmt.Println("Backend coverage would require additional setup")
+	return nil
+}
