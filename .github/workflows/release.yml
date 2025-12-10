@@ -25,3 +25,7 @@ jobs:
           use_changelog_generator: true
           # Use Go 1.25 to match local development environment
           go-version: '1.25'
+          # Plugin signing configuration
+          sign_plugin: true
+          # Root URLs for plugin signing - allows installation on any Grafana instance
+          plugin_sign_root_urls: 'https://localhost:3000,http://localhost:3000,https://grafana.local,http://grafana.local'
