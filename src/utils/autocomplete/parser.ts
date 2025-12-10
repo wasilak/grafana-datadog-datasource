@@ -184,7 +184,7 @@ function extractGroupingTagToken(line: string, position: number): string {
 
 /**
  * Extracts the current token for filter tag key context (inside "{}" after metric name)
- * Tokens are separated by commas, braces, or colons
+ * Tokens are separated by trigger characters: '{', ' ', '(', ','
  */
 function extractFilterTagKeyToken(line: string, position: number): string {
   // Find the filter section opening brace (first { in the line)
@@ -193,46 +193,28 @@ function extractFilterTagKeyToken(line: string, position: number): string {
     return '';
   }
 
-  const closeBracePos = line.indexOf('}', openBracePos);
-
-  // Extract the section between braces
-  const endPos = closeBracePos === -1 ? line.length : closeBracePos;
-  const filterSection = line.substring(openBracePos + 1, endPos);
-
-  // Find position relative to the filter section
-  const relativePos = position - (openBracePos + 1);
-
-  if (relativePos < 0 || relativePos > filterSection.length) {
-    return '';
+  // Check if cursor is right after a trigger character
+  const charBeforeCursor = position > openBracePos + 1 ? line[position - 1] : '{';
+  const isAfterTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || charBeforeCursor === '(' || charBeforeCursor === ',';
+  
+  if (isAfterTriggerChar) {
+    return ''; // Starting a new tag key
   }
 
-  // If cursor is right after opening brace or comma, we're starting a new tag key
-  if (relativePos === 0) {
-    return ''; // At the very beginning (right after opening brace)
+  // Find the current token by looking backwards to the last trigger character
+  let tokenStart = position - 1;
+  while (tokenStart > openBracePos && line[tokenStart] !== '{' && line[tokenStart] !== ' ' && line[tokenStart] !== '(' && line[tokenStart] !== ',') {
+    tokenStart--;
   }
-
-  // Find the current token by looking for comma or colon boundaries
-  let start = relativePos;
-  let end = relativePos;
-
-  // Move backwards to find start (stop at comma or beginning)
-  while (start > 0 && filterSection[start - 1] !== ',' && filterSection[start - 1] !== ':') {
-    start--;
+  
+  const token = line.substring(tokenStart + 1, position).trim();
+  
+  // If token contains a colon, only return the part before the colon (the key part)
+  const colonIndex = token.indexOf(':');
+  if (colonIndex !== -1) {
+    return token.substring(0, colonIndex).trim();
   }
-
-  // Move forwards to find end (stop at comma, colon, or end)
-  while (end < filterSection.length && filterSection[end] !== ',' && filterSection[end] !== ':') {
-    end++;
-  }
-
-  const token = filterSection.substring(start, end).trim();
-
-  // Check if cursor is right after a comma
-  const charBeforeCursor = relativePos > 0 ? filterSection[relativePos - 1] : null;
-  if (charBeforeCursor === ',') {
-    return '';
-  }
-
+  
   return token;
 }
 
@@ -301,23 +283,35 @@ function detectContextType(line: string, position: number): QueryContext['contex
     // We're inside the filter tag section
     const tagSection = line.substring(openBrace + 1, position);
 
-    // Check if we're in filter_tag_value context (after ':')
-    // We need to check if there's a colon in the current tag pair (not in previous pairs)
-    const lastComma = tagSection.lastIndexOf(',');
-    const currentPair = lastComma === -1 ? tagSection : tagSection.substring(lastComma + 1);
-    const colonInCurrentPair = currentPair.includes(':');
+    // Check if cursor is right after trigger characters for tag key autocomplete
+    // Trigger characters: '{', ' ', '(', ','
+    const charBeforeCursor = position > openBrace + 1 ? line[position - 1] : '{';
+    const isAfterTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || charBeforeCursor === '(' || charBeforeCursor === ',';
     
-    if (colonInCurrentPair) {
-      // Check if cursor is after the colon in the current pair
-      const colonPosInPair = currentPair.indexOf(':');
-      const cursorPosInPair = lastComma === -1 ? position - openBrace - 1 : position - openBrace - 1 - lastComma - 1;
+    if (isAfterTriggerChar) {
+      return 'filter_tag_key';
+    }
+
+    // Check if we're in filter_tag_value context (after ':' and not after trigger chars)
+    // Find the current token by looking backwards to the last trigger character
+    let tokenStart = position - 1;
+    while (tokenStart > openBrace && line[tokenStart] !== '{' && line[tokenStart] !== ' ' && line[tokenStart] !== '(' && line[tokenStart] !== ',') {
+      tokenStart--;
+    }
+    
+    const currentToken = line.substring(tokenStart + 1, position);
+    const colonInToken = currentToken.includes(':');
+    
+    if (colonInToken) {
+      const colonPos = currentToken.indexOf(':');
+      const cursorPosInToken = position - tokenStart - 1;
       
-      if (cursorPosInPair > colonPosInPair) {
+      if (cursorPosInToken > colonPos) {
         return 'filter_tag_value';
       }
     }
 
-    // We're in filter tag key context
+    // Default to filter tag key context
     return 'filter_tag_key';
   }
 
@@ -414,42 +408,28 @@ function extractFilterTagKey(lineContent: string, cursorPosition: number): strin
     return undefined;
   }
 
-  const closeBracePos = lineContent.indexOf('}', openBracePos);
-
-  // Extract the section between braces
-  const endPos = closeBracePos === -1 ? lineContent.length : closeBracePos;
-  const filterSection = lineContent.substring(openBracePos + 1, endPos);
-
-  // Find position relative to the filter section
-  const relativePos = cursorPosition - (openBracePos + 1);
-
-  if (relativePos < 0 || relativePos > filterSection.length) {
-    return undefined;
+  // Find the current token by looking backwards to the last trigger character
+  let tokenStart = cursorPosition - 1;
+  while (tokenStart > openBracePos && lineContent[tokenStart] !== '{' && lineContent[tokenStart] !== ' ' && lineContent[tokenStart] !== '(' && lineContent[tokenStart] !== ',') {
+    tokenStart--;
   }
-
-  // Find the current tag pair by looking backwards for comma or start
-  let pairStart = relativePos;
-  while (pairStart > 0 && filterSection[pairStart - 1] !== ',') {
-    pairStart--;
-  }
-
-  // Extract the current pair up to cursor
-  const currentPair = filterSection.substring(pairStart, relativePos);
-
-  // Find the colon in the current pair
-  const colonIndex = currentPair.lastIndexOf(':');
+  
+  const currentToken = lineContent.substring(tokenStart + 1, cursorPosition);
+  
+  // Find the colon in the current token
+  const colonIndex = currentToken.indexOf(':');
   if (colonIndex === -1) {
     return undefined;
   }
-
+  
   // Extract the tag key (before the colon)
-  const tagKey = currentPair.substring(0, colonIndex).trim();
+  const tagKey = currentToken.substring(0, colonIndex).trim();
   return tagKey || undefined;
 }
 
 /**
  * Extracts the current token for filter tag value context (after ':' in filter section)
- * Tokens are separated by commas or braces
+ * Tokens are separated by trigger characters and colons
  */
 function extractFilterTagValueToken(line: string, position: number): string {
   // Find the filter section opening brace (first { in the line)
@@ -458,44 +438,22 @@ function extractFilterTagValueToken(line: string, position: number): string {
     return '';
   }
 
-  const closeBracePos = line.indexOf('}', openBracePos);
-
-  // Extract the section between braces
-  const endPos = closeBracePos === -1 ? line.length : closeBracePos;
-  const filterSection = line.substring(openBracePos + 1, endPos);
-
-  // Find position relative to the filter section
-  const relativePos = position - (openBracePos + 1);
-
-  if (relativePos < 0 || relativePos > filterSection.length) {
-    return '';
+  // Find the current token by looking backwards to the last trigger character
+  let tokenStart = position - 1;
+  while (tokenStart > openBracePos && line[tokenStart] !== '{' && line[tokenStart] !== ' ' && line[tokenStart] !== '(' && line[tokenStart] !== ',') {
+    tokenStart--;
   }
-
-  // Find the current tag pair by looking backwards for comma or start
-  let pairStart = relativePos;
-  while (pairStart > 0 && filterSection[pairStart - 1] !== ',') {
-    pairStart--;
-  }
-
-  // Find the end of the current value (stop at comma or end)
-  let pairEnd = relativePos;
-  while (pairEnd < filterSection.length && filterSection[pairEnd] !== ',') {
-    pairEnd++;
-  }
-
-  // Extract the current pair
-  const currentPair = filterSection.substring(pairStart, pairEnd);
-
-  // Find the colon in the current pair
-  const colonIndex = currentPair.indexOf(':');
+  
+  const currentToken = line.substring(tokenStart + 1, position);
+  
+  // Find the colon in the current token
+  const colonIndex = currentToken.indexOf(':');
   if (colonIndex === -1) {
     return '';
   }
-
-  // Extract the value part (after the colon, up to cursor position)
-  const valueStart = colonIndex + 1;
-  const valueEnd = relativePos - pairStart;
-  const value = currentPair.substring(valueStart, valueEnd).trim();
-
+  
+  // Extract the value part (after the colon)
+  const value = currentToken.substring(colonIndex + 1).trim();
+  
   return value;
 }
