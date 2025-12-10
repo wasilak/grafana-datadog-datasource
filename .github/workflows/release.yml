@@ -72,8 +72,8 @@ jobs:
 
       - name: Sign plugin
         run: yarn sign --rootUrls http://localhost:3000
-        env:
-          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_API_KEY }}
+        # Note: This creates a private signature without Grafana Cloud token
+        # The plugin will work with GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS
 
       - name: Get plugin metadata
         id: metadata
