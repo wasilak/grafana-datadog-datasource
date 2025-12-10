@@ -316,11 +316,23 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 
 	// Modify query to include "by {*}" if no "by" clause is present
 	// This ensures we get individual series instead of a single aggregated series
+	// However, skip this if the query already has complex filtering (IN, OR, AND operators)
+	// as those queries are likely already designed to return specific series
 	queryText := qm.QueryText
-	if !strings.Contains(strings.ToLower(queryText), " by ") {
-		// No "by" clause present, add "by {*}" to get all series
+	lowerQuery := strings.ToLower(queryText)
+	
+	hasGroupByClause := strings.Contains(lowerQuery, " by ")
+	hasBooleanOperators := strings.Contains(lowerQuery, " in ") || 
+						  strings.Contains(lowerQuery, " or ") || 
+						  strings.Contains(lowerQuery, " and ") ||
+						  strings.Contains(lowerQuery, " not in ")
+	
+	if !hasGroupByClause && !hasBooleanOperators {
+		// No "by" clause and no boolean operators present, add "by {*}" to get all series
 		queryText = queryText + " by {*}"
 		logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
+	} else if hasBooleanOperators {
+		logger.Debug("Skipping 'by {*}' addition due to boolean operators", "original", qm.QueryText)
 	}
 
 	body := datadogV2.TimeseriesFormulaQueryRequest{
