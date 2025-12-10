@@ -1,3 +1,5 @@
+# This GitHub Action automates the process of building Grafana plugins.
+# (For more information, see https://github.com/grafana/plugin-actions/blob/main/build-plugin/README.md)
 name: Release
 
 on:
@@ -5,25 +7,53 @@ on:
     tags:
       - 'v*' # Run workflow on version tags, e.g. v1.0.0.
 
+permissions: read-all
+
 jobs:
   release:
     permissions:
-      id-token: write
       contents: write
-      attestations: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: grafana/plugin-actions/package-plugin@main
+      - uses: actions/checkout@v5
         with:
-          # Use Go 1.25 to match local development environment
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build frontend
+        run: yarn build
+
+      - name: Check for backend
+        id: check-for-backend
+        run: |
+          if [ -f "Magefile.go" ]
+          then
+            echo "has-backend=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Go environment
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        uses: actions/setup-go@v6
+        with:
           go-version: '1.25'
 
+      - name: Build backend
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        uses: magefile/mage-action@6f50bbb8ea47d56e62dee92392788acbc8192d0b # v3.1.0
+        with:
+          version: latest
+          args: buildAll
+
       - name: Sign plugin with private signature
-        run: |
-          yarn sign --rootUrls http://localhost:3000
-        working-directory: .
+        run: yarn sign --rootUrls http://localhost:3000
 
       - name: Get plugin metadata
         id: metadata
