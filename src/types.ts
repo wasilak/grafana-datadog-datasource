@@ -3,6 +3,9 @@ import { DataQuery, DataSourceJsonData } from '@grafana/data';
 export interface MyQuery extends DataQuery {
   queryText?: string;
   label?: string;
+  // Variable interpolation support - these fields will be populated by applyTemplateVariables
+  interpolatedQueryText?: string;
+  interpolatedLabel?: string;
 }
 
 export const DEFAULT_QUERY: Partial<MyQuery> = {
@@ -25,8 +28,64 @@ export interface MySecureJsonData {
   appKey?: string;
 }
 
+/**
+ * Variable query interface for Grafana template variables
+ * Supports querying Datadog API for metric names, tag keys, and tag values
+ */
 export interface MyVariableQuery {
-  rawQuery: string;
+  queryType: 'metrics' | 'tag_keys' | 'tag_values';
+  namespace?: string;        // Filter metrics by namespace (e.g., 'system', 'aws')
+  searchPattern?: string;    // Search pattern for metrics (e.g., 'cpu', 'memory')
+  metricName?: string;       // Metric name for tag queries
+  tagKey?: string;          // Tag key for tag value queries
+  rawQuery?: string;        // Legacy field for backward compatibility
+}
+
+/**
+ * Props interface for VariableQueryEditor component
+ */
+export interface VariableQueryEditorProps {
+  query: MyVariableQuery;
+  onChange: (query: MyVariableQuery, definition: string) => void;
+  datasource?: any; // Grafana datasource instance
+}
+
+/**
+ * Variable response from backend resource handlers
+ */
+export interface VariableResponse {
+  values: string[];
+  error?: string;
+}
+
+/**
+ * Data frame structure for variable queries
+ * Extends Grafana's data frame format for template variables
+ */
+export interface VariableDataFrame {
+  name: string;
+  fields: Array<{
+    name: 'text';
+    type: 'string';
+    values: string[];
+  }>;
+}
+
+/**
+ * MetricFindValue format required by Grafana for template variables
+ */
+export interface MetricFindValue {
+  text: string;
+  value?: string;
+}
+
+/**
+ * Variable query options for different query types
+ */
+export interface VariableQueryTypeOption {
+  label: string;
+  value: 'metrics' | 'tag_keys' | 'tag_values';
+  description: string;
 }
 
 /**
@@ -110,4 +169,29 @@ export interface CompletionCache {
   metricSuggestions: Map<string, CacheEntry>;
   tagSuggestions: Map<string, CacheEntry>;
   TTL: number;
+}
+
+/**
+ * Variable format options for multi-value variables
+ */
+export type VariableFormat = 'csv' | 'pipe' | 'json' | 'lucene' | 'raw';
+
+/**
+ * Variable interpolation context
+ */
+export interface VariableInterpolationContext {
+  format?: VariableFormat;
+  values: string[];
+  isMultiValue: boolean;
+}
+
+/**
+ * Variable example for help documentation
+ */
+export interface VariableExample {
+  title: string;
+  expression: string;
+  label: string;
+  category: 'basic' | 'multi-value' | 'formatting';
+  description: string;
 }
