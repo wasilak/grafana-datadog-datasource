@@ -1329,12 +1329,6 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 				relativePos = len(filterContent)
 			}
 			
-			logger.Info("Filter tag key insertion",
-				"filterContent", filterContent,
-				"relativePos", relativePos,
-				"cursorPos", completeReq.CursorPosition,
-				"openBracePos", openBracePos)
-			
 			// Find the start of the current token (backwards to comma or start)
 			tokenStart := relativePos
 			for tokenStart > 0 && filterContent[tokenStart-1] != ',' && filterContent[tokenStart-1] != ':' {
@@ -1347,17 +1341,18 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 				tokenEnd++
 			}
 			
-			// Check if there's already a colon after the token
-			hasColonAfter := tokenEnd < len(filterContent) && filterContent[tokenEnd] == ':'
+			logger.Info("Filter tag key insertion",
+				"filterContent", filterContent,
+				"relativePos", relativePos,
+				"cursorPos", completeReq.CursorPosition,
+				"openBracePos", openBracePos,
+				"tokenStart", tokenStart,
+				"tokenEnd", tokenEnd,
+				"selectedItem", selectedItem)
 			
 			// Replace the current token with the selected tag key
-			// Only add colon if there isn't one already
-			colonSuffix := ":"
-			if hasColonAfter {
-				colonSuffix = ""
-			}
-			
-			newFilterContent := filterContent[:tokenStart] + selectedItem + colonSuffix + filterContent[tokenEnd:]
+			// Always add colon since we're completing a tag key (not value)
+			newFilterContent := filterContent[:tokenStart] + selectedItem + ":" + filterContent[tokenEnd:]
 			newQuery = completeReq.Query[:openBracePos+1] + newFilterContent + completeReq.Query[closeBracePos:]
 			newCursorPos = openBracePos + 1 + tokenStart + len(selectedItem) + 1 // Position after the colon
 		}

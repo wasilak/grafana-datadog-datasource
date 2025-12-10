@@ -2,7 +2,9 @@
 
 ## Filter Autocomplete (Tag Key:Value Pairs)
 
-- [ ] 0.1 Implement filter tag key autocomplete
+- [ ] 0.  filter tag key autocomplete
+
+- [x] 0.1 Implement filter tag key autocomplete
   - Add context detection for filter section (inside `{...}` after metric name)
   - Detect when cursor is at tag key position (after `{`, after `,`, or replacing existing key)
   - Reuse existing `/autocomplete/tags/{metric}` endpoint for tag keys
@@ -10,7 +12,7 @@
   - Filter out already-used tag keys in current filter section
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 0.1.1 Update parser to detect filter tag key context
+- [x] 0.1.1 Update parser to detect filter tag key context
   - File: src/utils/autocomplete/parser.ts (modify)
   - Add 'filter_tag_key' context type
   - Detect cursor inside `{...}` after metric name (not in grouping section)
@@ -19,7 +21,7 @@
   - Extract already-used tag keys in filter section
   - _Requirements: 1.1_
 
-- [ ] 0.1.2 Update suggestions generator for filter tag keys
+- [x] 0.1.2 Update suggestions generator for filter tag keys
   - File: src/utils/autocomplete/suggestions.ts (modify)
   - Handle 'filter_tag_key' context type
   - Fetch tag keys from `/autocomplete/tags/{metric}` endpoint
@@ -28,7 +30,7 @@
   - Sort alphabetically
   - _Requirements: 1.2_
 
-- [ ] 0.1.3 Update backend completion handler for filter tag keys
+- [x] 0.1.3 Update backend completion handler for filter tag keys
   - File: pkg/plugin/datasource.go (modify)
   - Add case for 'filter_tag_key' in CompleteHandler
   - Insert tag key at cursor position
@@ -41,14 +43,14 @@
   - **Property 11: Filter tag key context detection**
   - **Validates: Requirements 1.1**
 
-- [ ] 0.2 Implement filter tag value autocomplete
+- [x] 0.2 Implement filter tag value autocomplete
   - Add context detection for tag value position (after `:` in filter section)
   - Create new backend endpoint to fetch tag values for a specific tag key
   - Generate suggestions for available tag values
   - Support multiple values for same key (comma-separated)
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 0.2.1 Create backend endpoint for tag values
+- [x] 0.2.1 Create backend endpoint for tag values
   - File: pkg/plugin/datasource.go (modify)
   - Add GET `/autocomplete/tag-values/{metric}/{tagKey}` endpoint
   - Call Datadog API to fetch tag values for specific metric and tag key
@@ -56,7 +58,7 @@
   - Return JSON array of tag value strings
   - _Requirements: 1.2_
 
-- [ ] 0.2.2 Update parser to detect filter tag value context
+- [x] 0.2.2 Update parser to detect filter tag value context
   - File: src/utils/autocomplete/parser.ts (modify)
   - Add 'filter_tag_value' context type
   - Detect cursor after `:` in filter section
@@ -64,7 +66,7 @@
   - Extract current token (partial value being typed)
   - _Requirements: 1.1_
 
-- [ ] 0.2.3 Update suggestions generator for filter tag values
+- [x] 0.2.3 Update suggestions generator for filter tag values
   - File: src/utils/autocomplete/suggestions.ts (modify)
   - Handle 'filter_tag_value' context type
   - Fetch tag values from `/autocomplete/tag-values/{metric}/{tagKey}` endpoint
@@ -73,7 +75,7 @@
   - Sort alphabetically
   - _Requirements: 1.2_
 
-- [ ] 0.2.4 Update backend completion handler for filter tag values
+- [x] 0.2.4 Update backend completion handler for filter tag values
   - File: pkg/plugin/datasource.go (modify)
   - Add case for 'filter_tag_value' in CompleteHandler
   - Replace current token with selected value
