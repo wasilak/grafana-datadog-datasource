@@ -281,12 +281,18 @@ function detectContextType(line: string, position: number): QueryContext['contex
     }
     
     // We're inside the filter tag section
-    // Check if cursor is right after trigger characters for tag key autocomplete
-    // Trigger characters: '{', ' ', '(', ','
+    // Check if cursor is right after trigger characters
     const charBeforeCursor = position > openBrace + 1 ? line[position - 1] : '{';
-    const isAfterTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || charBeforeCursor === '(' || charBeforeCursor === ',';
     
-    if (isAfterTriggerChar) {
+    // Special case: after '(' we want tag VALUE autocomplete (for IN operator)
+    if (charBeforeCursor === '(') {
+      return 'filter_tag_value';
+    }
+    
+    // After '{', ' ', ',' we want tag KEY autocomplete
+    const isAfterKeyTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || charBeforeCursor === ',';
+    
+    if (isAfterKeyTriggerChar) {
       return 'filter_tag_key';
     }
 
@@ -397,7 +403,7 @@ function extractExistingTags(line: string): Set<string> {
 
 /**
  * Extract the filter tag key for filter_tag_value context
- * This is used when the cursor is after ':' in the filter section
+ * This is used when the cursor is after ':' or after '(' (for IN operator)
  */
 function extractFilterTagKey(lineContent: string, cursorPosition: number): string | undefined {
   // Find the filter section opening brace (first { in the line)
@@ -406,7 +412,20 @@ function extractFilterTagKey(lineContent: string, cursorPosition: number): strin
     return undefined;
   }
 
-  // Find the current token by looking backwards to the last trigger character
+  const charBeforeCursor = cursorPosition > openBracePos + 1 ? lineContent[cursorPosition - 1] : '';
+  
+  // Special case: cursor after '(' - find tag key before "IN ("
+  if (charBeforeCursor === '(') {
+    // Look backwards for "IN (" pattern
+    const beforeParen = lineContent.substring(openBracePos + 1, cursorPosition - 1).trim();
+    const inMatch = beforeParen.match(/(\w+)\s+IN\s*$/);
+    if (inMatch) {
+      return inMatch[1]; // Return the tag key before "IN"
+    }
+    return undefined;
+  }
+
+  // Regular case: cursor after ':' - find current token
   let tokenStart = cursorPosition - 1;
   while (tokenStart > openBracePos && lineContent[tokenStart] !== '{' && lineContent[tokenStart] !== ' ' && lineContent[tokenStart] !== '(' && lineContent[tokenStart] !== ',') {
     tokenStart--;
@@ -426,7 +445,7 @@ function extractFilterTagKey(lineContent: string, cursorPosition: number): strin
 }
 
 /**
- * Extracts the current token for filter tag value context (after ':' in filter section)
+ * Extracts the current token for filter tag value context (after ':' or after '(' for IN operator)
  * Tokens are separated by trigger characters and colons
  */
 function extractFilterTagValueToken(line: string, position: number): string {
@@ -436,7 +455,14 @@ function extractFilterTagValueToken(line: string, position: number): string {
     return '';
   }
 
-  // Find the current token by looking backwards to the last trigger character
+  const charBeforeCursor = position > openBracePos + 1 ? line[position - 1] : '';
+  
+  // Special case: cursor after '(' - we're starting to type the first value in IN clause
+  if (charBeforeCursor === '(') {
+    return ''; // Empty token, starting fresh
+  }
+
+  // Regular case: find the current token by looking backwards to the last trigger character
   let tokenStart = position - 1;
   while (tokenStart > openBracePos && line[tokenStart] !== '{' && line[tokenStart] !== ' ' && line[tokenStart] !== '(' && line[tokenStart] !== ',') {
     tokenStart--;
