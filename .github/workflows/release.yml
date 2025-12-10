@@ -55,7 +55,7 @@ jobs:
           args: buildAll
 
       - name: Sign plugin with private signature
-        run: yarn sign --rootUrls http://localhost:3000
+        run: yarn sign --rootUrls https://grafana.otteryak.foo,http://localhost:3000
         if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
 
       - name: Get plugin metadata
