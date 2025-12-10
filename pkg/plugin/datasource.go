@@ -436,11 +436,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 
 		// Check if we have data for this series index
 		if seriesIndex >= len(values) {
+			logger.Warn("Series index out of bounds", "seriesIndex", seriesIndex, "valuesCount", len(values))
 			continue
 		}
 
 		pointlist := values[seriesIndex]
 		if len(pointlist) == 0 {
+			logger.Debug("Empty pointlist for series", "seriesIndex", seriesIndex)
 			continue
 		}
 
@@ -452,12 +454,26 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		labels := map[string]string{}
 		tagSet := s.GetGroupTags()
 		
+		// Create a safe slice for logging first few values
+		maxLogValues := 5
+		if len(pointlist) < maxLogValues {
+			maxLogValues = len(pointlist)
+		}
+		firstFewValues := make([]interface{}, maxLogValues)
+		for idx := 0; idx < maxLogValues; idx++ {
+			if pointlist[idx] != nil {
+				firstFewValues[idx] = *pointlist[idx]
+			} else {
+				firstFewValues[idx] = nil
+			}
+		}
+		
 		logger.Info("Processing series", 
 			"seriesIndex", seriesIndex,
 			"queryIndex", *s.QueryIndex,
 			"groupTags", tagSet,
 			"pointCount", len(pointlist),
-			"firstFewValues", pointlist[:min(5, len(pointlist))])
+			"firstFewValues", firstFewValues)
 		
 		if len(tagSet) > 0 {
 			for _, tag := range tagSet {
@@ -488,6 +504,7 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		}
 
 		if len(timeValues) == 0 {
+			logger.Debug("No valid time values for series", "seriesIndex", seriesIndex)
 			continue
 		}
 
@@ -504,6 +521,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 			}
 			seriesName = metric + " {" + strings.Join(labelStrings, ", ") + "}"
 		}
+
+		logger.Info("Creating frame for series", 
+			"seriesIndex", seriesIndex,
+			"seriesName", seriesName,
+			"labels", labels,
+			"timeValueCount", len(timeValues),
+			"numberValueCount", len(numberValues))
 
 		// Create data frame with proper timeseries format
 		frame := data.NewFrame(
@@ -526,6 +550,7 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		frames = append(frames, frame)
 	}
 
+	logger.Info("Completed processing series", "totalFrames", len(frames))
 	return frames, nil
 }
 
