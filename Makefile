@@ -102,36 +102,36 @@ build-backend:
 
 build-backend-all:
 	@echo "$(BLUE)Building backend for all platforms...$(NC)"
-	@mage build:backendLinux
-	@mage build:backendLinuxArm
-	@mage build:backendDarwin
-	@mage build:backendDarwinArm
-	@mage build:backendWindows
+	@mage build:linux
+	@mage build:linuxARM64
+	@mage build:darwin
+	@mage build:darwinARM64
+	@mage build:windows
 	@echo "$(GREEN)✓ All backends built$(NC)"
 
 build-backend-linux:
 	@echo "$(BLUE)Building backend for Linux x86-64...$(NC)"
-	@mage build:backendLinux
+	@mage build:linux
 	@echo "$(GREEN)✓ Linux backend built$(NC)"
 
 build-backend-linux-arm:
 	@echo "$(BLUE)Building backend for Linux ARM64...$(NC)"
-	@mage build:backendLinuxArm
+	@mage build:linuxARM64
 	@echo "$(GREEN)✓ Linux ARM backend built$(NC)"
 
 build-backend-darwin:
 	@echo "$(BLUE)Building backend for macOS Intel...$(NC)"
-	@mage build:backendDarwin
+	@mage build:darwin
 	@echo "$(GREEN)✓ macOS Intel backend built$(NC)"
 
 build-backend-darwin-arm:
 	@echo "$(BLUE)Building backend for macOS Apple Silicon...$(NC)"
-	@mage build:backendDarwinArm
+	@mage build:darwinARM64
 	@echo "$(GREEN)✓ macOS ARM backend built$(NC)"
 
 build-backend-windows:
 	@echo "$(BLUE)Building backend for Windows...$(NC)"
-	@mage build:backendWindows
+	@mage build:windows
 	@echo "$(GREEN)✓ Windows backend built$(NC)"
 
 ##############################################################################
