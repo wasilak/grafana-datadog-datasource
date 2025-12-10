@@ -58,58 +58,170 @@ GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/release
 
 ## ⚙️ Configuration
 
-1. **Add Datasource** - Go to Configuration → Data Sources → Add data source
-2. **Select Datadog** - Choose "Datadog" from the list
-3. **Configure Settings**:
-   - **Site**: Your Datadog site (e.g., `datadoghq.eu`)
+### Adding the Datasource
+
+1. **Navigate to Datasources**
+   - Go to **Configuration** → **Data Sources** (or **Connections** → **Data sources** in newer Grafana versions)
+   - Click **"Add data source"**
+
+2. **Select Datadog**
+   - Search for "Datadog" or scroll to find it
+   - Click on the **Datadog** datasource
+
+3. **Configure Connection Settings**
+   - **Name**: Give your datasource a name (e.g., "Datadog Production")
+   - **Site**: Your Datadog site URL
+     - `datadoghq.com` (US)
+     - `datadoghq.eu` (EU)
+     - `us3.datadoghq.com` (US3)
+     - `us5.datadoghq.com` (US5)
+     - `ap1.datadoghq.com` (AP1)
+     - `ddog-gov.com` (Government)
+
+4. **Add API Credentials**
    - **API Key**: Your Datadog API key
    - **Application Key**: Your Datadog application key
-4. **Test Connection** - Click "Save & Test" to verify the configuration
+   
+   > **Note**: The application key can be "unscoped" - it doesn't need specific permissions
 
-## 🧪 Example Usage
+5. **Test & Save**
+   - Click **"Save & Test"** to verify the connection
+   - You should see a green "Data source is working" message
 
-### Basic Query
+### Getting Datadog API Keys
+
+1. **API Key**:
+   - Go to [Datadog API Keys](https://app.datadoghq.com/organization-settings/api-keys)
+   - Create a new API key or use an existing one
+
+2. **Application Key**:
+   - Go to [Datadog Application Keys](https://app.datadoghq.com/organization-settings/application-keys)
+   - Create a new application key
+   - No specific scopes are required (unscoped works fine)
+
+### Troubleshooting
+
+- **"Unauthorized" error**: Check your API key and application key
+- **"Forbidden" error**: Verify your Datadog site URL is correct
+- **No metrics showing**: Ensure your Datadog account has metrics data
+- **Autocomplete not working**: Check browser console for API errors
+
+## 🧪 Using the Plugin
+
+### Creating Your First Query
+
+1. **Create a Dashboard**
+   - Go to **Dashboards** → **New** → **New Dashboard**
+   - Click **"Add visualization"**
+
+2. **Select Datadog Datasource**
+   - In the query editor, select your Datadog datasource from the dropdown
+
+3. **Write a Query**
+   - Use the query editor with autocomplete support
+   - Start typing a metric name and see suggestions appear
+   - Use `{` to trigger tag key autocomplete
+   - Use `:` after a tag key to get tag value suggestions
+
+### Query Examples
+
+#### Basic Queries
 ```
+# Simple metric query
 avg:system.cpu.user{*}
+
+# Query with specific host
+avg:system.cpu.user{host:web-server-01}
+
+# Query with aggregation
+sum:docker.containers.running{*}
 ```
 
-### Query with Grouping
+#### Advanced Queries with Autocomplete
 ```
+# Grouping by tags (autocomplete will suggest available tags)
 avg:system.cpu.user{*} by {host}
-```
 
-### Query with Filters and Boolean Operators
-```
+# Multiple filters with boolean operators
 avg:container.cpu.usage{service:web OR service:api} by {host}
+
+# Using IN operator for multiple values
+avg:system.load.1{host IN (web-01,web-02,web-03)}
+
+# Complex filtering
+max:kubernetes.cpu.usage{cluster_name:production AND namespace:frontend} by {pod_name}
 ```
 
-### Custom Series Label
+#### Custom Series Labels
 ```
+# Using template variables
 CPU Usage: {{host}}
+
+# Multiple variables
+{{service}} on {{host}}: {{cluster_name}}
+
+# With static text
+Production CPU: {{host}} ({{availability_zone}})
 ```
 
-## 🏗️ Development
+### Autocomplete Features
+
+- **Metric Names**: Start typing to see available metrics
+- **Tag Keys**: Type `{` after a metric to see available tags
+- **Tag Values**: Type `:` after a tag key to see possible values
+- **Boolean Operators**: Use `OR`, `AND`, `IN`, `NOT IN` with full autocomplete support
+- **Keyboard Shortcuts**: 
+  - `Cmd+Enter` (Mac) or `Ctrl+Enter` (Windows/Linux) to execute query
+  - Works in both query field and label field
+
+### Using in Explore
+
+1. Go to **Explore** in Grafana
+2. Select your Datadog datasource
+3. Use the same query syntax with full autocomplete support
+4. Perfect for ad-hoc metric exploration and debugging
+
+## 🧪 Local Development & Testing
 
 ### Prerequisites
 - Node.js (LTS version)
 - Yarn package manager
 - Go 1.21+
 - Mage build tool
+- Docker & Docker Compose
 
-### Setup
+### Quick Start with Docker
 ```bash
 # Clone repository
 git clone https://github.com/wasilak/grafana-datadog-datasource.git
 cd grafana-datadog-datasource
 
+# Install dependencies and build
+make build
+
+# Start Grafana with plugin loaded
+docker compose up --build
+```
+
+This will start Grafana at `http://localhost:3000` with:
+- **Anonymous authentication enabled** (no login required)
+- **Plugin pre-loaded** and trusted
+- **Debug logging enabled** for development
+- **Hot reload** - changes to `dist/` are reflected immediately
+
+### Manual Setup
+```bash
 # Install dependencies
 yarn install
 
 # Build plugin
 make build
 
-# Start development server
-make server
+# Start development server (watch mode)
+make watch
+
+# In another terminal, start Grafana
+docker compose up --build
 ```
 
 ### Build Commands
@@ -119,6 +231,47 @@ make build-backend-all        # Build backend for all platforms
 make clean                    # Clean build artifacts
 make lint                     # Run linting
 make test                     # Run tests
+make watch                    # Start development server (watch mode)
+```
+
+### Docker Configuration Details
+
+The included `docker-compose.yaml` provides a complete development environment:
+
+```yaml
+services:
+  grafana:
+    build:
+      context: ./.config
+      args:
+        grafana_image: grafana                    # Use OSS Grafana
+        grafana_version: 12.3.0                  # Grafana version
+        development: true                        # Development mode
+        anonymous_auth_enabled: true             # No login required
+    ports:
+      - 3000:3000/tcp
+    volumes:
+      - ./dist:/var/lib/grafana/plugins/wasilak-datadog-datasource  # Plugin files
+      - .:/root/wasilak-datadog-datasource                          # Source code
+    environment:
+      GF_LOG_FILTERS: plugin.wasilak-datadog-datasource:debug      # Plugin debug logs
+      GF_LOG_LEVEL: debug                                           # Grafana debug logs
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: wasilak-datadog-datasource  # Trust plugin
+```
+
+### Environment Variables
+
+You can customize the Docker setup with environment variables:
+
+```bash
+# Use Grafana Enterprise
+GRAFANA_IMAGE=grafana-enterprise docker compose up
+
+# Use different Grafana version
+GRAFANA_VERSION=11.0.0 docker compose up
+
+# Combine both
+GRAFANA_IMAGE=grafana-enterprise GRAFANA_VERSION=11.0.0 docker compose up
 ```
 
 ## 📦 Multi-Platform Support

@@ -14,7 +14,6 @@ services:
       - 3000:3000/tcp
     volumes:
       - ./dist:/var/lib/grafana/plugins/wasilak-datadog-datasource
-      - ./provisioning:/etc/grafana/provisioning
       - .:/root/wasilak-datadog-datasource
 
     environment:
