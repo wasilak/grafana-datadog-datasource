@@ -352,6 +352,14 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     // Don't run query automatically when label changes
   };
 
+  const onLabelKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) for query execution
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      onRunQuery();
+    }
+  };
+
   // Helper function to calculate and update the position for suggestions dropdown
   const updateSuggestionsPositionFromEditor = (
     editor: monacoType.editor.IStandaloneCodeEditor,
@@ -674,6 +682,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         <Input
           value={label || ''}
           onChange={onLabelChange}
+          onKeyDown={onLabelKeyDown}
           placeholder="e.g., {{host}}"
           style={{ width: '100%' }}
         />
