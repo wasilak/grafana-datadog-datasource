@@ -289,8 +289,19 @@ function detectContextType(line: string, position: number): QueryContext['contex
       return 'filter_tag_value';
     }
     
-    // After '{', ' ', ',' we want tag KEY autocomplete
-    const isAfterKeyTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || charBeforeCursor === ',';
+    // Check if we're inside parentheses (for IN operator)
+    const filterContent = line.substring(openBrace + 1, position);
+    const lastOpenParen = filterContent.lastIndexOf('(');
+    const lastCloseParen = filterContent.lastIndexOf(')');
+    const isInsideParens = lastOpenParen !== -1 && (lastCloseParen === -1 || lastOpenParen > lastCloseParen);
+    
+    // If we're inside parentheses and after a comma, we want tag VALUE autocomplete
+    if (isInsideParens && charBeforeCursor === ',') {
+      return 'filter_tag_value';
+    }
+    
+    // After '{', ' ', ',' (but not inside parens) we want tag KEY autocomplete
+    const isAfterKeyTriggerChar = charBeforeCursor === '{' || charBeforeCursor === ' ' || (charBeforeCursor === ',' && !isInsideParens);
     
     if (isAfterKeyTriggerChar) {
       return 'filter_tag_key';
@@ -414,10 +425,16 @@ function extractFilterTagKey(lineContent: string, cursorPosition: number): strin
 
   const charBeforeCursor = cursorPosition > openBracePos + 1 ? lineContent[cursorPosition - 1] : '';
   
-  // Special case: cursor after '(' - find tag key before "IN ("
-  if (charBeforeCursor === '(') {
+  // Check if we're inside parentheses (for IN operator)
+  const filterContent = lineContent.substring(openBracePos + 1, cursorPosition);
+  const lastOpenParen = filterContent.lastIndexOf('(');
+  const lastCloseParen = filterContent.lastIndexOf(')');
+  const isInsideParens = lastOpenParen !== -1 && (lastCloseParen === -1 || lastOpenParen > lastCloseParen);
+  
+  // Special case: cursor after '(' or after ',' inside parentheses - find tag key before "IN ("
+  if (charBeforeCursor === '(' || (isInsideParens && charBeforeCursor === ',')) {
     // Look backwards for "IN (" pattern
-    const beforeParen = lineContent.substring(openBracePos + 1, cursorPosition - 1).trim();
+    const beforeParen = lineContent.substring(openBracePos + 1, openBracePos + 1 + lastOpenParen).trim();
     const inMatch = beforeParen.match(/(\w+)\s+IN\s*$/);
     if (inMatch) {
       return inMatch[1]; // Return the tag key before "IN"
@@ -457,9 +474,29 @@ function extractFilterTagValueToken(line: string, position: number): string {
 
   const charBeforeCursor = position > openBracePos + 1 ? line[position - 1] : '';
   
-  // Special case: cursor after '(' - we're starting to type the first value in IN clause
-  if (charBeforeCursor === '(') {
+  // Check if we're inside parentheses (for IN operator)
+  const filterContent = line.substring(openBracePos + 1, position);
+  const lastOpenParen = filterContent.lastIndexOf('(');
+  const lastCloseParen = filterContent.lastIndexOf(')');
+  const isInsideParens = lastOpenParen !== -1 && (lastCloseParen === -1 || lastOpenParen > lastCloseParen);
+  
+  // Special case: cursor after '(' or after ',' inside parentheses - we're starting to type a value in IN clause
+  if (charBeforeCursor === '(' || (isInsideParens && charBeforeCursor === ',')) {
     return ''; // Empty token, starting fresh
+  }
+
+  // If we're inside parentheses, find the current value token (separated by commas)
+  if (isInsideParens) {
+    const parenContent = filterContent.substring(lastOpenParen + 1);
+    const relativePos = parenContent.length;
+    
+    // Find the start of the current value (after last comma or start of parentheses)
+    let valueStart = relativePos;
+    while (valueStart > 0 && parenContent[valueStart - 1] !== ',') {
+      valueStart--;
+    }
+    
+    return parenContent.substring(valueStart, relativePos).trim();
   }
 
   // Regular case: find the current token by looking backwards to the last trigger character
