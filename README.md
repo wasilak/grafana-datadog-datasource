@@ -1,57 +1,144 @@
-# Grafana Data Source Plugin for Datadog
+# Grafana Datadog Datasource Plugin
+
+[![Release](https://img.shields.io/github/v/release/wasilak/grafana-datadog-datasource)](https://github.com/wasilak/grafana-datadog-datasource/releases)
+[![License](https://img.shields.io/github/license/wasilak/grafana-datadog-datasource)](LICENSE)
+
+An **unofficial** Grafana datasource plugin for Datadog metrics with advanced query autocomplete functionality.
 
 > [!NOTE]  
-> It is an **unofficial** Datadog plugin utilising Datadog API for metrics queries. There is also [official Datadog plugin](https://grafana.com/grafana/plugins/grafana-datadog-datasource/) available for Enterprise Grafana subscriptions. This is also the reason why this plugin probably won't be available on official Grafana plugins site... :/
+> This is an unofficial plugin that uses the Datadog API for metrics queries. There is also an [official Datadog plugin](https://grafana.com/grafana/plugins/grafana-datadog-datasource/) available for Grafana Enterprise subscriptions.
 
-## Features:
+## ✨ Features
 
-- **Does not support** logs nor traces, only **metrics**
-- Supports:
-  - Explore
-  - Dashboard variables
-  - Most of visualisations, at least stock ones
-  - Custom graph series names/labels (including variables), e.g. `$host` or `{{host}}`
-  - Inline comments in query field: lines starting with `#` + toggling using `cmd+/` or `ctrl+/`
-- Requirements:
-  - Site name i.e. `datadoghq.eu`
-  - (Probably) paid Datadog subscription in order to get:
-    - API key
-    - Application key (it worked for me with "not scoped" Application key)
+### 🎯 Core Functionality
+- **Metrics support only** - Does not support logs or traces
+- **Explore integration** - Full support for Grafana Explore
+- **Dashboard variables** - Complete variable support
+- **All visualizations** - Works with standard Grafana visualizations
+- **Custom series labels** - Support for variables like `$host` or `{{host}}`
+- **Inline comments** - Lines starting with `#`, toggle with `Cmd+/` or `Ctrl+/`
 
-## Installation
+### 🚀 Advanced Query Editor (v0.4.0+)
+- **Smart autocomplete** - Real-time suggestions from Datadog API
+  - Metric name autocomplete
+  - Tag key autocomplete based on selected metrics  
+  - Tag value autocomplete with filter context awareness
+- **Boolean operators** - Full support for `OR`, `AND`, `IN`, `NOT IN` operators
+- **Keyboard shortcuts** - `Cmd+Enter` (Mac) / `Ctrl+Enter` (Windows/Linux) for query execution
+- **Context-aware parsing** - Intelligent cursor position detection for accurate suggestions
 
-1. Add this plugin to "trusted" using i.e. env variable:
+## 📋 Requirements
 
-   ```shell
-   GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource"
+- **Datadog site** - e.g., `datadoghq.eu` or `datadoghq.com`
+- **Datadog subscription** - API access requires a paid Datadog subscription
+- **API credentials**:
+  - **API Key** - Your Datadog API key
+  - **Application Key** - Datadog application key (unscoped key works)
+
+## 🚀 Installation
+
+### Option 1: Direct Download
+1. Download the latest release from [GitHub Releases](https://github.com/wasilak/grafana-datadog-datasource/releases)
+2. Extract to your Grafana plugins directory
+3. Allow unsigned plugins:
+   ```bash
+   GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
    ```
+4. Restart Grafana
 
-2. Install either by unpacking to plugin dir or by using env variable i.e.:
+### Option 2: Environment Variable Installation
+```bash
+GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.4.0/wasilak-datadog-datasource-0.4.0.zip;Datadog
+```
 
-   ```shell
-   GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.1.0/wasilak-datadog-datasource-0.1.0.zip;Datadog
-   ```
+### Option 3: Self-Signed Plugin
+1. Clone this repository
+2. Sign the plugin with a [private signature](https://grafana.com/docs/grafana/latest/developers/plugins/sign-a-plugin/)
+3. Install the signed plugin
 
-   Or
+## ⚙️ Configuration
 
-3. You can checkout plugin code and sign it yourself with so-called private signature level as descibed [here](https://grafana.com/docs/grafana/latest/developers/plugins/sign-a-plugin/).
-4. Install plugin code
+1. **Add Datasource** - Go to Configuration → Data Sources → Add data source
+2. **Select Datadog** - Choose "Datadog" from the list
+3. **Configure Settings**:
+   - **Site**: Your Datadog site (e.g., `datadoghq.eu`)
+   - **API Key**: Your Datadog API key
+   - **Application Key**: Your Datadog application key
+4. **Test Connection** - Click "Save & Test" to verify the configuration
 
-## Test run
+## 🧪 Example Usage
 
-You can test it out e.g. with following:
+### Basic Query
+```
+avg:system.cpu.user{*}
+```
 
-- query:
+### Query with Grouping
+```
+avg:system.cpu.user{*} by {host}
+```
 
-  ```plain
-  sum:datadog.apis.usage.per_user{*} by {rate_limit_status,limit_name}
-  ```
+### Query with Filters and Boolean Operators
+```
+avg:container.cpu.usage{service:web OR service:api} by {host}
+```
 
-- label:
+### Custom Series Label
+```
+CPU Usage: {{host}}
+```
 
-  ```plain
-  {{limit_name}}: {{rate_limit_status}}
-  ```
+## 🏗️ Development
+
+### Prerequisites
+- Node.js (LTS version)
+- Yarn package manager
+- Go 1.21+
+- Mage build tool
+
+### Setup
+```bash
+# Clone repository
+git clone https://github.com/wasilak/grafana-datadog-datasource.git
+cd grafana-datadog-datasource
+
+# Install dependencies
+yarn install
+
+# Build plugin
+make build
+
+# Start development server
+make server
+```
+
+### Build Commands
+```bash
+make build                    # Build frontend + backend for current platform
+make build-backend-all        # Build backend for all platforms
+make clean                    # Clean build artifacts
+make lint                     # Run linting
+make test                     # Run tests
+```
+
+## 📦 Multi-Platform Support
+
+The plugin includes pre-built binaries for:
+- **Linux**: x86-64, ARM64
+- **macOS**: Intel, Apple Silicon  
+- **Windows**: x86-64
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Screenshots
 

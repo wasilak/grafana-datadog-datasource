@@ -35,3 +35,6 @@ data
 wasilak-datadog-datasource*
 .spec-workflow
 .qwen
+# Datadog credentials and provisioning (prevent accidental commits)
+provisioning/datasources/
+**/datadog-credentials.yaml
