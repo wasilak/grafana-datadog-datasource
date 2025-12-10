@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
@@ -192,8 +193,36 @@ func BuildAll() error {
 		return fmt.Errorf("failed to build Windows backend: %w", err)
 	}
 	
+	// Generate the Go plugin build manifest
+	if err := GenerateManifest(); err != nil {
+		return fmt.Errorf("failed to generate Go plugin build manifest: %w", err)
+	}
+	
 	fmt.Println("✓ All backend binaries built successfully")
 	return nil
+}
+
+// GenerateManifest creates the Go plugin build manifest file
+func GenerateManifest() error {
+	manifestContent := `{
+  "version": "1.0.0",
+  "buildInfo": {
+    "goVersion": "` + runtime.Version() + `",
+    "buildTime": "` + fmt.Sprintf("%d", time.Now().Unix()) + `",
+    "platforms": [
+      {"os": "linux", "arch": "amd64"},
+      {"os": "linux", "arch": "arm64"},
+      {"os": "darwin", "arch": "amd64"},
+      {"os": "darwin", "arch": "arm64"},
+      {"os": "windows", "arch": "amd64"}
+    ]
+  }
+}`
+
+	manifestPath := filepath.Join("dist", "go_plugin_build_manifest")
+	fmt.Printf("Creating Go plugin build manifest: %s\n", manifestPath)
+	
+	return os.WriteFile(manifestPath, []byte(manifestContent), 0644)
 }
 
 // Coverage is a mock target for compatibility with GitHub Actions
