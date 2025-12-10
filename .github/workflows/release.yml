@@ -14,73 +14,16 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    env:
-      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
 
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v6
+      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
         with:
-          node-version: '22'
-          cache: 'yarn'
-
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Build frontend
-        run: yarn build
-
-      - name: Check for backend
-        id: check-for-backend
-        run: |
-          if [ -f "Magefile.go" ]
-          then
-            echo "has-backend=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Go environment
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-
-      - name: Build backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: magefile/mage-action@6f50bbb8ea47d56e62dee92392788acbc8192d0b # v3.1.0
-        with:
-          version: latest
-          args: buildAll
-
-      - name: Sign plugin with private signature
-        run: yarn sign --rootUrls https://grafana.otteryak.foo,http://localhost:3000
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
-
-      - name: Get plugin metadata
-        id: metadata
-        run: |
-          sudo apt-get install jq
-          export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
-          export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
-          export GRAFANA_PLUGIN_ARTIFACT=${GRAFANA_PLUGIN_ID}-${GRAFANA_PLUGIN_VERSION}.zip
-          echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
-          echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
-          echo "archive=${GRAFANA_PLUGIN_ARTIFACT}" >> $GITHUB_OUTPUT
-
-      - name: Package plugin
-        run: |
-          mv dist ${{ steps.metadata.outputs.plugin-id }}
-          zip -r ${{ steps.metadata.outputs.archive }} ${{ steps.metadata.outputs.plugin-id }}
-          sha1sum ${{ steps.metadata.outputs.archive }} | cut -f1 -d' ' > ${{ steps.metadata.outputs.archive }}.sha1
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ steps.metadata.outputs.archive }}
-            ${{ steps.metadata.outputs.archive }}.sha1
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+          go-version: "1.25"
+        # Uncomment to enable plugin signing
+        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
+        # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
+        # grafana_token: ${{ secrets.GRAFANA_API_KEY }}
