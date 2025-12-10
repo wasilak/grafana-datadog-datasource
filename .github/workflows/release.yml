@@ -23,3 +23,8 @@ jobs:
           use_changelog_generator: true
           # Use Go 1.25 to match local development environment
           go-version: '1.25'
+
+      - name: Sign plugin with private signature
+        run: |
+          yarn sign --rootUrls "https://localhost:3000,http://localhost:3000,https://grafana.local,http://grafana.local"
+        working-directory: .
