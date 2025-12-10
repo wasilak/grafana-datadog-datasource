@@ -405,7 +405,9 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
-	// responseContent, _ := json.MarshalIndent(resp, "", "  ")
+	// Debug: Log the response to understand what Datadog is returning
+	responseContent, _ := json.MarshalIndent(resp, "", "  ")
+	logger.Info("Datadog API Response", "response", string(responseContent))
 
 	// Build frames from response
 	var frames data.Frames
@@ -418,6 +420,11 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 
 	times := resp.GetData().Attributes.GetTimes()
 	values := resp.GetData().Attributes.GetValues()
+
+	logger.Info("Processing Datadog series", 
+		"seriesCount", len(series.Attributes.Series),
+		"timesCount", len(times),
+		"valuesCount", len(values))
 
 	for i := range series.Attributes.GetSeries() {
 		s := &series.Attributes.Series[i]
@@ -441,6 +448,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 		// Parse group tags (dimensions) into labels
 		labels := map[string]string{}
 		tagSet := s.GetGroupTags()
+		
+		logger.Info("Processing series", 
+			"index", index,
+			"queryIndex", *s.QueryIndex,
+			"groupTags", tagSet,
+			"pointCount", len(pointlist))
+		
 		if len(tagSet) > 0 {
 			for _, tag := range tagSet {
 				parts := strings.SplitN(tag, ":", 2)
