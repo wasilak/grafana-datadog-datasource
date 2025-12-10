@@ -1269,6 +1269,138 @@ type VariableResponse struct {
 	Error  string   `json:"error,omitempty"`
 }
 
+// Enhanced logging and error handling utilities for variable operations
+
+// generateTraceID creates a simple trace ID for request tracking
+func generateTraceID() string {
+	return fmt.Sprintf("var-%d", time.Now().UnixNano())
+}
+
+// logVariableRequest logs the start of a variable request with structured context
+func logVariableRequest(logger log.Logger, traceID, endpoint, method string, requestData interface{}) {
+	logger.Info("Variable request started",
+		"traceID", traceID,
+		"endpoint", endpoint,
+		"method", method,
+		"requestData", requestData,
+		"timestamp", time.Now().Format(time.RFC3339))
+}
+
+// logVariableResponse logs the completion of a variable request with timing and status
+func logVariableResponse(logger log.Logger, traceID, endpoint string, status int, duration time.Duration, resultCount int, err error) {
+	fields := []interface{}{
+		"traceID", traceID,
+		"endpoint", endpoint,
+		"status", status,
+		"duration", duration,
+		"resultCount", resultCount,
+		"timestamp", time.Now().Format(time.RFC3339),
+	}
+
+	if err != nil {
+		fields = append(fields, "error", err.Error())
+		logger.Error("Variable request completed with error", fields...)
+	} else {
+		logger.Info("Variable request completed successfully", fields...)
+	}
+}
+
+// logVariableError logs detailed error information for variable operations
+func logVariableError(logger log.Logger, traceID, operation string, err error, context map[string]interface{}) {
+	fields := []interface{}{
+		"traceID", traceID,
+		"operation", operation,
+		"error", err.Error(),
+		"errorType", fmt.Sprintf("%T", err),
+		"timestamp", time.Now().Format(time.RFC3339),
+	}
+
+	// Add context fields
+	for key, value := range context {
+		fields = append(fields, key, value)
+	}
+
+	logger.Error("Variable operation error", fields...)
+}
+
+// createUserFriendlyError creates user-friendly error messages while logging technical details
+func createUserFriendlyError(logger log.Logger, traceID string, technicalErr error, userMessage string, context map[string]interface{}) error {
+	// Log technical details for debugging
+	logVariableError(logger, traceID, "error_handling", technicalErr, context)
+	
+	// Return user-friendly error
+	return fmt.Errorf("%s", userMessage)
+}
+
+// validateVariableRequest performs common validation for variable requests
+func validateVariableRequest(logger log.Logger, traceID string, body []byte, target interface{}) error {
+	if len(body) == 0 {
+		return createUserFriendlyError(logger, traceID, 
+			fmt.Errorf("empty request body"), 
+			"Invalid request format", 
+			map[string]interface{}{"bodyLength": 0})
+	}
+
+	if err := json.Unmarshal(body, target); err != nil {
+		return createUserFriendlyError(logger, traceID, err, 
+			"Invalid request format", 
+			map[string]interface{}{"bodyLength": len(body), "body": string(body)})
+	}
+
+	return nil
+}
+
+// handleVariableAPIError processes Datadog API errors and returns appropriate HTTP responses
+func handleVariableAPIError(logger log.Logger, traceID string, err error, operation string) (int, []byte) {
+	context := map[string]interface{}{
+		"operation": operation,
+	}
+
+	// Log technical error details
+	logVariableError(logger, traceID, "datadog_api_error", err, context)
+
+	// Determine appropriate HTTP status and user message based on error
+	errorStr := err.Error()
+	
+	if strings.Contains(errorStr, "401") || strings.Contains(errorStr, "Unauthorized") {
+		return 401, []byte(`{"error": "Invalid Datadog API credentials"}`)
+	}
+	
+	if strings.Contains(errorStr, "403") || strings.Contains(errorStr, "Forbidden") {
+		return 403, []byte(`{"error": "API key missing required permissions"}`)
+	}
+	
+	if strings.Contains(errorStr, "timeout") || strings.Contains(errorStr, "context deadline exceeded") {
+		return 504, []byte(`{"error": "Request timeout - Datadog API took too long to respond"}`)
+	}
+	
+	if strings.Contains(errorStr, "400") || strings.Contains(errorStr, "Bad Request") {
+		return 400, []byte(`{"error": "Invalid request parameters"}`)
+	}
+
+	// Default to 500 for other errors
+	return 500, []byte(`{"error": "Unable to fetch data from Datadog"}`)
+}
+
+// validateAPICredentials checks for required API credentials and logs missing credentials
+func validateAPICredentials(logger log.Logger, traceID string, secureData map[string]string) error {
+	if apiKey, ok := secureData["apiKey"]; !ok || apiKey == "" {
+		return createUserFriendlyError(logger, traceID,
+			fmt.Errorf("missing or empty apiKey"),
+			"Invalid Datadog API credentials",
+			map[string]interface{}{"credential": "apiKey", "present": ok, "empty": apiKey == ""})
+	}
+
+	if appKey, ok := secureData["appKey"]; !ok || appKey == "" {
+		return createUserFriendlyError(logger, traceID,
+			fmt.Errorf("missing or empty appKey"),
+			"Invalid Datadog API credentials",
+			map[string]interface{}{"credential": "appKey", "present": ok, "empty": appKey == ""})
+	}
+
+	return nil
+}
+
 // CompleteHandler handles POST /autocomplete/complete requests
 // This endpoint receives a query, cursor position, and selected item,
 // then returns the completed query with the new cursor position
@@ -1533,12 +1665,18 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 // VariableMetricsHandler handles POST /resources/metrics requests for variable queries
 func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
 	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
 
-	// Parse request body
+	// Log request start
+	logVariableRequest(logger, traceID, "/resources/metrics", req.Method, string(req.Body))
+
+	// Parse request body with enhanced validation
 	var metricsReq MetricsRequest
-	if err := json.Unmarshal(req.Body, &metricsReq); err != nil {
-		logger.Error("Failed to parse metrics request", "error", err)
+	if err := validateVariableRequest(logger, traceID, req.Body, &metricsReq); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/metrics", 400, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 400,
 			Body:   []byte(`{"error": "Invalid request format"}`),
@@ -1550,7 +1688,15 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
-		logger.Debug("Returning cached variable metrics", "namespace", metricsReq.Namespace, "searchPattern", metricsReq.SearchPattern)
+		duration := time.Since(startTime)
+		logger.Debug("Returning cached variable metrics", 
+			"traceID", traceID,
+			"namespace", metricsReq.Namespace, 
+			"searchPattern", metricsReq.SearchPattern,
+			"cacheHit", true,
+			"resultCount", len(cached.Data))
+		logVariableResponse(logger, traceID, "/resources/metrics", 200, duration, len(cached.Data), nil)
+		
 		response := VariableResponse{Values: cached.Data}
 		respData, _ := json.Marshal(response)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1559,24 +1705,18 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	// Get API credentials
-	apiKey, ok := d.SecureJSONData["apiKey"]
-	if !ok {
-		logger.Error("Missing apiKey")
+	// Validate API credentials with enhanced logging
+	if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/metrics", 401, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 401,
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
 
-	appKey, ok := d.SecureJSONData["appKey"]
-	if !ok {
-		logger.Error("Missing appKey")
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
-		})
-	}
+	apiKey := d.SecureJSONData["apiKey"]
+	appKey := d.SecureJSONData["appKey"]
 
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
@@ -1610,12 +1750,20 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 	metricsApi := datadogV2.NewMetricsApi(client)
 
 	// Fetch metrics from Datadog - ListTagConfigurations returns available metrics
+	logger.Debug("Fetching metrics from Datadog API", 
+		"traceID", traceID,
+		"namespace", metricsReq.Namespace, 
+		"searchPattern", metricsReq.SearchPattern,
+		"timeout", "30s")
+		
 	resp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
 	if err != nil {
-		logger.Error("Failed to fetch variable metrics", "error", err, "namespace", metricsReq.Namespace, "searchPattern", metricsReq.SearchPattern)
+		duration := time.Since(startTime)
+		status, body := handleVariableAPIError(logger, traceID, err, "ListTagConfigurations")
+		logVariableResponse(logger, traceID, "/resources/metrics", status, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
-			Status: 500,
-			Body:   []byte(`{"error": "Unable to fetch metrics from Datadog"}`),
+			Status: status,
+			Body:   body,
 		})
 	}
 
@@ -1657,6 +1805,16 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 	// Cache the result
 	d.SetCachedEntry(cacheKey, metrics)
 
+	// Log successful completion
+	duration := time.Since(startTime)
+	logger.Debug("Successfully fetched variable metrics",
+		"traceID", traceID,
+		"namespace", metricsReq.Namespace,
+		"searchPattern", metricsReq.SearchPattern,
+		"resultCount", len(metrics),
+		"cached", true)
+	logVariableResponse(logger, traceID, "/resources/metrics", 200, duration, len(metrics), nil)
+
 	// Return metrics as VariableResponse
 	response := VariableResponse{Values: metrics}
 	respData, _ := json.Marshal(response)
@@ -1670,12 +1828,18 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 // VariableTagKeysHandler handles POST /resources/tag-keys requests for variable queries
 func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
 	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
 
-	// Parse request body
+	// Log request start
+	logVariableRequest(logger, traceID, "/resources/tag-keys", req.Method, string(req.Body))
+
+	// Parse request body with enhanced validation
 	var tagKeysReq TagKeysRequest
-	if err := json.Unmarshal(req.Body, &tagKeysReq); err != nil {
-		logger.Error("Failed to parse tag keys request", "error", err)
+	if err := validateVariableRequest(logger, traceID, req.Body, &tagKeysReq); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/tag-keys", 400, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 400,
 			Body:   []byte(`{"error": "Invalid request format"}`),
@@ -1687,7 +1851,14 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
-		logger.Debug("Returning cached variable tag keys", "metricName", tagKeysReq.MetricName)
+		duration := time.Since(startTime)
+		logger.Debug("Returning cached variable tag keys", 
+			"traceID", traceID,
+			"metricName", tagKeysReq.MetricName,
+			"cacheHit", true,
+			"resultCount", len(cached.Data))
+		logVariableResponse(logger, traceID, "/resources/tag-keys", 200, duration, len(cached.Data), nil)
+		
 		response := VariableResponse{Values: cached.Data}
 		respData, _ := json.Marshal(response)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1696,24 +1867,18 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	// Get API credentials
-	apiKey, ok := d.SecureJSONData["apiKey"]
-	if !ok {
-		logger.Error("Missing apiKey")
+	// Validate API credentials with enhanced logging
+	if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/tag-keys", 401, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 401,
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
 
-	appKey, ok := d.SecureJSONData["appKey"]
-	if !ok {
-		logger.Error("Missing appKey")
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
-		})
-	}
+	apiKey := d.SecureJSONData["apiKey"]
+	appKey := d.SecureJSONData["appKey"]
 
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
@@ -1750,18 +1915,19 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 	if tagKeysReq.MetricName != "" {
 		// Fetch tags for specific metric using ListTagsByMetricName
-		logger.Debug("Fetching tag keys for specific metric", "metricName", tagKeysReq.MetricName)
+		logger.Debug("Fetching tag keys for specific metric", 
+			"traceID", traceID,
+			"metricName", tagKeysReq.MetricName,
+			"timeout", "30s")
 
-		resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, tagKeysReq.MetricName)
+		resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, tagKeysReq.MetricName)
 		if err != nil {
-			httpStatus := 0
-			if httpResp != nil {
-				httpStatus = httpResp.StatusCode
-			}
-			logger.Error("Failed to fetch variable tag keys", "error", err, "metricName", tagKeysReq.MetricName, "httpStatus", httpStatus)
+			duration := time.Since(startTime)
+			status, body := handleVariableAPIError(logger, traceID, err, "ListTagsByMetricName")
+			logVariableResponse(logger, traceID, "/resources/tag-keys", status, duration, 0, err)
 			return sender.Send(&backend.CallResourceResponse{
-				Status: 500,
-				Body:   []byte(`{"error": "Unable to fetch tag keys from Datadog"}`),
+				Status: status,
+				Body:   body,
 			})
 		}
 
@@ -1795,6 +1961,15 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tagKeys)
 
+	// Log successful completion
+	duration := time.Since(startTime)
+	logger.Debug("Successfully fetched variable tag keys",
+		"traceID", traceID,
+		"metricName", tagKeysReq.MetricName,
+		"resultCount", len(tagKeys),
+		"cached", true)
+	logVariableResponse(logger, traceID, "/resources/tag-keys", 200, duration, len(tagKeys), nil)
+
 	// Return tag keys as VariableResponse
 	response := VariableResponse{Values: tagKeys}
 	respData, _ := json.Marshal(response)
@@ -1808,20 +1983,32 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 // VariableTagValuesHandler handles POST /resources/tag-values requests for variable queries
 func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
 	ttl := 5 * time.Minute // 5-minute cache TTL as specified in requirements
 
-	// Parse request body
+	// Log request start
+	logVariableRequest(logger, traceID, "/resources/tag-values", req.Method, string(req.Body))
+
+	// Parse request body with enhanced validation
 	var tagValuesReq TagValuesRequest
-	if err := json.Unmarshal(req.Body, &tagValuesReq); err != nil {
-		logger.Error("Failed to parse tag values request", "error", err)
+	if err := validateVariableRequest(logger, traceID, req.Body, &tagValuesReq); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/tag-values", 400, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 400,
 			Body:   []byte(`{"error": "Invalid request format"}`),
 		})
 	}
 
-	// Validate required fields
+	// Validate required fields with enhanced logging
 	if tagValuesReq.TagKey == "" {
+		duration := time.Since(startTime)
+		err := createUserFriendlyError(logger, traceID,
+			fmt.Errorf("missing required field: tagKey"),
+			"Tag key is required",
+			map[string]interface{}{"tagKey": tagValuesReq.TagKey, "metricName": tagValuesReq.MetricName})
+		logVariableResponse(logger, traceID, "/resources/tag-values", 400, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 400,
 			Body:   []byte(`{"error": "Tag key is required"}`),
@@ -1833,7 +2020,15 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
-		logger.Debug("Returning cached variable tag values", "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey)
+		duration := time.Since(startTime)
+		logger.Debug("Returning cached variable tag values", 
+			"traceID", traceID,
+			"metricName", tagValuesReq.MetricName, 
+			"tagKey", tagValuesReq.TagKey,
+			"cacheHit", true,
+			"resultCount", len(cached.Data))
+		logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(cached.Data), nil)
+		
 		response := VariableResponse{Values: cached.Data}
 		respData, _ := json.Marshal(response)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1842,24 +2037,18 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		})
 	}
 
-	// Get API credentials
-	apiKey, ok := d.SecureJSONData["apiKey"]
-	if !ok {
-		logger.Error("Missing apiKey")
+	// Validate API credentials with enhanced logging
+	if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/tag-values", 401, duration, 0, err)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 401,
 			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
 		})
 	}
 
-	appKey, ok := d.SecureJSONData["appKey"]
-	if !ok {
-		logger.Error("Missing appKey")
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
-		})
-	}
+	apiKey := d.SecureJSONData["apiKey"]
+	appKey := d.SecureJSONData["appKey"]
 
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
@@ -1896,18 +2085,20 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	if tagValuesReq.MetricName != "" {
 		// Fetch tag values for specific metric and tag key
-		logger.Debug("Fetching tag values for specific metric and tag key", "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey)
+		logger.Debug("Fetching tag values for specific metric and tag key", 
+			"traceID", traceID,
+			"metricName", tagValuesReq.MetricName, 
+			"tagKey", tagValuesReq.TagKey,
+			"timeout", "30s")
 
-		resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, tagValuesReq.MetricName)
+		resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, tagValuesReq.MetricName)
 		if err != nil {
-			httpStatus := 0
-			if httpResp != nil {
-				httpStatus = httpResp.StatusCode
-			}
-			logger.Error("Failed to fetch variable tag values", "error", err, "metricName", tagValuesReq.MetricName, "tagKey", tagValuesReq.TagKey, "httpStatus", httpStatus)
+			duration := time.Since(startTime)
+			status, body := handleVariableAPIError(logger, traceID, err, "ListTagsByMetricName")
+			logVariableResponse(logger, traceID, "/resources/tag-values", status, duration, 0, err)
 			return sender.Send(&backend.CallResourceResponse{
-				Status: 500,
-				Body:   []byte(`{"error": "Unable to fetch tag values from Datadog"}`),
+				Status: status,
+				Body:   body,
 			})
 		}
 
@@ -1941,6 +2132,16 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tagValues)
+
+	// Log successful completion
+	duration := time.Since(startTime)
+	logger.Debug("Successfully fetched variable tag values",
+		"traceID", traceID,
+		"metricName", tagValuesReq.MetricName,
+		"tagKey", tagValuesReq.TagKey,
+		"resultCount", len(tagValues),
+		"cached", true)
+	logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
 
 	// Return tag values as VariableResponse
 	response := VariableResponse{Values: tagValues}
