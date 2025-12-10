@@ -17,7 +17,6 @@ services:
       - .:/root/wasilak-datadog-datasource
 
     environment:
-      NODE_ENV: development
       GF_LOG_FILTERS: plugin.wasilak-datadog-datasource:debug
       GF_LOG_LEVEL: debug
       GF_DATAPROXY_LOGGING: 1

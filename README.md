@@ -256,6 +256,7 @@ services:
     environment:
       GF_LOG_FILTERS: plugin.wasilak-datadog-datasource:debug      # Plugin debug logs
       GF_LOG_LEVEL: debug                                           # Grafana debug logs
+      GF_DATAPROXY_LOGGING: 1                                      # HTTP proxy debug logs
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: wasilak-datadog-datasource  # Trust plugin
 ```
 
