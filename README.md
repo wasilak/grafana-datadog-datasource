@@ -44,11 +44,13 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
    ```bash
    GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
    ```
+   
+   > **Note**: This is required because the plugin is signed for `localhost:3000` only. For production deployments on other domains, you'll need to either allow unsigned plugins or re-sign the plugin for your domain.
 4. Restart Grafana
 
 ### Option 2: Environment Variable Installation
 ```bash
-GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.4.0/wasilak-datadog-datasource-0.4.0.zip;Datadog
+GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.4.0/wasilak-datadog-datasource-0.4.0.zip;wasilak-datadog-datasource
 ```
 
 ### Option 3: Self-Signed Plugin
@@ -101,6 +103,19 @@ GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/release
 
 ### Troubleshooting
 
+#### Plugin Installation Issues
+- **"Plugin ID mismatch"**: Use `wasilak-datadog-datasource` as the plugin ID, not `Datadog`
+  ```bash
+  # Correct
+  GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/0.4.0/wasilak-datadog-datasource-0.4.0.zip;wasilak-datadog-datasource
+  ```
+- **"Invalid signature"**: The plugin is signed for `localhost:3000` only. For other domains:
+  ```bash
+  GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
+  ```
+- **Plugin not appearing**: Check Grafana logs for installation errors and ensure both environment variables above are set
+
+#### Datasource Configuration Issues
 - **"Unauthorized" error**: Check your API key and application key
 - **"Forbidden" error**: Verify your Datadog site URL is correct
 - **No metrics showing**: Ensure your Datadog account has metrics data
