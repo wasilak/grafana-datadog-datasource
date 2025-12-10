@@ -2,6 +2,7 @@ import { DataSourceInstanceSettings, CoreApp, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY } from './types';
+import { variableInterpolationService } from './utils/variableInterpolation';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
@@ -13,11 +14,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   }
 
   applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars) {
-    return {
-      ...query,
-      queryText: getTemplateSrv().replace(query.queryText, scopedVars),
-      label: getTemplateSrv().replace(query.label, scopedVars),
-    };
+    // Use the enhanced variable interpolation service for better formatting support
+    return variableInterpolationService.interpolateQuery(query, scopedVars);
   }
 
   filterQuery(query: MyQuery): boolean {
