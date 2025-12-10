@@ -2,7 +2,7 @@
 
 ## Filter Autocomplete (Tag Key:Value Pairs)
 
-- [ ] 0.  filter tag key autocomplete
+- [x] 0.  filter tag key autocomplete
 
 - [x] 0.1 Implement filter tag key autocomplete
   - Add context detection for filter section (inside `{...}` after metric name)
@@ -87,20 +87,20 @@
   - **Property 12: Filter tag value context detection**
   - **Validates: Requirements 1.1**
 
-- [ ] 0.3 Implement multi-value filter support
+- [x] 0.3 Implement multi-value filter support
   - Support comma-separated values for same tag key (e.g., `os.type:linux,windows`)
   - Detect when cursor is after comma within a tag value
   - Trigger tag value autocomplete after comma
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 0.3.1 Update parser for multi-value detection
+- [x] 0.3.1 Update parser for multi-value detection
   - File: src/utils/autocomplete/parser.ts (modify)
   - Detect comma within tag value (between `:` and next `,` or `}`)
   - Return 'filter_tag_value' context when cursor is after comma in value
   - Extract same tag key for value suggestions
   - _Requirements: 1.1_
 
-- [ ] 0.3.2 Update backend completion for multi-value
+- [x] 0.3.2 Update backend completion for multi-value
   - File: pkg/plugin/datasource.go (modify)
   - Handle comma insertion before value if needed
   - Detect if cursor is in middle of existing values
@@ -112,7 +112,7 @@
   - **Property 13: Multi-value filter detection**
   - **Validates: Requirements 1.1**
 
-- [ ] 0.4 Checkpoint - Test filter autocomplete
+- [x] 0.4 Checkpoint - Test filter autocomplete
   - Test tag key autocomplete in filter section
   - Test tag value autocomplete after selecting key
   - Test multi-value support (comma-separated values)
@@ -261,21 +261,21 @@
   - **Property 6: Empty groups are hidden**
   - **Validates: Requirements 4.4**
 
-- [ ] 6. Integrate ddqp (Datadog Query Parser) library
+- [x] 6. Integrate ddqp (Datadog Query Parser) library
   - Add ddqp Go library to backend
   - Create query parsing utilities
   - Use parsed query structure for autocomplete context
   - Improve token replacement accuracy
   - _Requirements: All autocomplete requirements_
 
-- [ ] 6.1 Add ddqp dependency and create parser utility
+- [x] 6.1 Add ddqp dependency and create parser utility
   - File: pkg/plugin/query_parser.go (new)
   - Add github.com/jonwinton/ddqp dependency
   - Create ParseDatadogQuery() function
   - Handle parsing errors gracefully
   - Return structured query object
 
-- [ ] 6.2 Create autocomplete context endpoint
+- [x] 6.2 Create autocomplete context endpoint
   - File: pkg/plugin/datasource.go (modify)
   - Add GET /autocomplete/context endpoint
   - Accept query string and cursor position
@@ -283,34 +283,34 @@
   - Return context type and current token
   - Return already-used tags/filters
 
-- [ ] 6.3 Update frontend to use context endpoint
+- [x] 6.3 Update frontend to use context endpoint
   - File: src/hooks/useQueryAutocomplete.ts (modify)
   - Call /autocomplete/context endpoint
   - Use returned context instead of frontend parsing
   - Simplify frontend parser logic
   - Remove complex regex patterns
 
-- [ ] 6.4 Improve token replacement using parsed structure
+- [x] 6.4 Improve token replacement using parsed structure
   - File: src/QueryEditor.tsx (modify)
   - Use context from backend for accurate positioning
   - Replace tokens based on parsed structure
   - Fix grouping tag replacement issue
   - Ensure cursor position is maintained
 
-- [ ] 6.5 Use ddqp in query execution
+- [x] 6.5 Use ddqp in query execution
   - File: pkg/plugin/datasource.go (modify)
   - Parse query before sending to Datadog
   - Validate query structure
   - Extract metric name without regex
   - Use parsed structure for "by {*}" addition
 
-- [ ] 14. Implement cursor-position-based popup placement
+- [x] 14. Implement cursor-position-based popup placement
   - Calculate popup position based on cursor location
   - Handle viewport edge cases (bottom, right)
   - Update position as cursor moves
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 14.1 Create position calculator utility
+- [x] 14.1 Create position calculator utility
   - File: src/hooks/useQueryAutocomplete.ts (modify)
   - Implement calculatePosition() function
   - Calculate line and character position
