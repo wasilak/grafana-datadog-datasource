@@ -18,7 +18,7 @@ jobs:
       - uses: grafana/plugin-actions/build-plugin@main
         with:
           # Optional: Add Grafana Access Policy Token for official signing
-          # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+          policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
           # Creates a signed build provenance attestation to verify the authenticity of the plugin build
           attestation: true
           # Enable automatic changelog generation
