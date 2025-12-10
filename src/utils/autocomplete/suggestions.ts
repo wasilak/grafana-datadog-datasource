@@ -166,7 +166,7 @@ function generateTagSuggestions(context: QueryContext, tagsForMetric: string[]):
     .map(tag => ({
       label: tag,
       kind: 'tag',
-      insertText: `${tag}:`,
+      insertText: tag, // Backend will add the colon
       documentation: `Tag key: ${tag}`,
       sortText: tag,
     }));
@@ -200,7 +200,7 @@ function generateFilterTagKeySuggestions(context: QueryContext, tagsForMetric: s
     .map(tag => ({
       label: tag,
       kind: 'filter_tag_key',
-      insertText: `${tag}:`,
+      insertText: tag, // Backend will add the colon
       documentation: `Filter tag key: ${tag}`,
       sortText: tag,
     }));
