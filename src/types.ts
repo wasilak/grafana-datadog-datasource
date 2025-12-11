@@ -35,9 +35,10 @@ export interface MySecureJsonData {
 export interface MyVariableQuery {
   queryType: 'metrics' | 'tag_keys' | 'tag_values';
   namespace?: string;        // Filter metrics by namespace (e.g., 'system', 'aws')
-  searchPattern?: string;    // Search pattern for metrics (e.g., 'cpu', 'memory')
+  searchPattern?: string;    // Search pattern for metrics (e.g., 'cpu', 'memory') - supports regex with /pattern/
   metricName?: string;       // Metric name for tag queries
   tagKey?: string;          // Tag key for tag value queries
+  filter?: string;          // Filter pattern for tag keys/values - supports regex with /pattern/
   rawQuery?: string;        // Legacy field for backward compatibility
 }
 
@@ -45,7 +46,7 @@ export interface MyVariableQuery {
  * Props interface for VariableQueryEditor component
  */
 export interface VariableQueryEditorProps {
-  query: MyVariableQuery;
+  query: MyVariableQuery | string | any; // Grafana can pass different formats
   onChange: (query: MyVariableQuery, definition: string) => void;
   datasource?: any; // Grafana datasource instance
 }

@@ -26,15 +26,77 @@ const QUERY_TYPE_OPTIONS: Array<SelectableValue<MyVariableQuery['queryType']>> =
 export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQueryEditorProps) => {
   const theme = useTheme2();
   
-  // Initialize state with query values or defaults
-  const [state, setState] = useState<MyVariableQuery>({
-    queryType: query.queryType || 'metrics',
-    namespace: query.namespace || '',
-    searchPattern: query.searchPattern || '',
-    metricName: query.metricName || '*',
-    tagKey: query.tagKey || '*',
-    rawQuery: query.rawQuery || '',
-  });
+  console.log('VariableQueryEditor rendered with query:', query);
+  console.log('VariableQueryEditor onChange function:', typeof onChange);
+  
+  // Handle different query formats that Grafana might pass
+  const parseQuery = (q: any): MyVariableQuery => {
+    // If query is a string, try to parse it as JSON
+    if (typeof q === 'string') {
+      if (q === '' || q === '{}') {
+        // Empty string or empty object, return defaults
+        return {
+          queryType: 'metrics',
+          namespace: '',
+          searchPattern: '',
+          metricName: '*',
+          tagKey: '*',
+          filter: '',
+          rawQuery: '',
+        };
+      }
+      try {
+        const parsed = JSON.parse(q);
+        return {
+          queryType: parsed.queryType || 'metrics',
+          namespace: parsed.namespace || '',
+          searchPattern: parsed.searchPattern || '',
+          metricName: parsed.metricName || '*',
+          tagKey: parsed.tagKey || '*',
+          filter: parsed.filter || '',
+          rawQuery: parsed.rawQuery || '',
+        };
+      } catch (e) {
+        console.warn('Failed to parse query string, using defaults:', e);
+        return {
+          queryType: 'metrics',
+          namespace: '',
+          searchPattern: '',
+          metricName: '*',
+          tagKey: '*',
+          filter: '',
+          rawQuery: q, // Store the original string in rawQuery
+        };
+      }
+    }
+    
+    // If query is an object, use it directly with defaults
+    if (q && typeof q === 'object') {
+      return {
+        queryType: q.queryType || 'metrics',
+        namespace: q.namespace || '',
+        searchPattern: q.searchPattern || '',
+        metricName: q.metricName || '*',
+        tagKey: q.tagKey || '*',
+        filter: q.filter || '',
+        rawQuery: q.rawQuery || '',
+      };
+    }
+    
+    // Fallback to defaults
+    return {
+      queryType: 'metrics',
+      namespace: '',
+      searchPattern: '',
+      metricName: '*',
+      tagKey: '*',
+      filter: '',
+      rawQuery: '',
+    };
+  };
+  
+  // Initialize state with parsed query values or defaults
+  const [state, setState] = useState<MyVariableQuery>(parseQuery(query));
 
   // Refs for autocomplete positioning
   const metricInputRef = useRef<HTMLInputElement>(null);
@@ -57,14 +119,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
   // Update state when query prop changes (for external updates)
   useEffect(() => {
-    setState({
-      queryType: query.queryType || 'metrics',
-      namespace: query.namespace || '',
-      searchPattern: query.searchPattern || '',
-      metricName: query.metricName || '*',
-      tagKey: query.tagKey || '*',
-      rawQuery: query.rawQuery || '',
-    });
+    const newState = parseQuery(query);
+    setState(newState);
   }, [query]);
 
   // Handle autocomplete for metric names
@@ -109,6 +165,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
   // Save query changes and generate definition string
   const saveQuery = (newState: MyVariableQuery) => {
+    console.log('VariableQueryEditor saveQuery called with:', newState);
     setState(newState);
     
     // Generate definition string for Grafana's variable list display
@@ -128,6 +185,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     }
     
     // Call onChange with both the query object and definition string
+    console.log('VariableQueryEditor calling onChange with:', newState, definition);
     onChange(newState, definition);
   };
 
@@ -175,73 +233,104 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
       {/* Conditional fields based on query type */}
       {state.queryType === 'metrics' && (
-        <div style={{ position: 'relative' }}>
+        <>
+          <div style={{ position: 'relative' }}>
+            <InlineField 
+              label="Metric Name" 
+              labelWidth={20} 
+              tooltip="Start typing to search for metric names. Use '*' for all metrics."
+            >
+              <Input
+                ref={metricInputRef}
+                value={state.metricName || '*'}
+                onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
+                onFocus={() => {
+                  setActiveField('metric');
+                  if (metricInputRef.current) {
+                    updateSuggestionsPosition(metricInputRef.current);
+                  }
+                  autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
+                }}
+                onBlur={() => {
+                  // Delay closing to allow for selection
+                  setTimeout(() => {
+                    if (activeField === 'metric') {
+                      autocomplete.onClose();
+                      setActiveField(null);
+                    }
+                  }, 200);
+                }}
+                placeholder="e.g., system.cpu.user or * for all"
+                width={30}
+              />
+            </InlineField>
+          </div>
           <InlineField 
-            label="Metric Name" 
+            label="Filter Pattern" 
             labelWidth={20} 
-            tooltip="Start typing to search for metric names. Use '*' for all metrics."
+            tooltip="Filter metrics by pattern. Use /regex/ for regex matching (e.g., /^system\.cpu\./ for CPU metrics)."
           >
             <Input
-              ref={metricInputRef}
-              value={state.metricName || '*'}
-              onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
-              onFocus={() => {
-                setActiveField('metric');
-                if (metricInputRef.current) {
-                  updateSuggestionsPosition(metricInputRef.current);
-                }
-                autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
-              }}
-              onBlur={() => {
-                // Delay closing to allow for selection
-                setTimeout(() => {
-                  if (activeField === 'metric') {
-                    autocomplete.onClose();
-                    setActiveField(null);
-                  }
-                }, 200);
-              }}
-              placeholder="e.g., system.cpu.user or * for all"
+              value={state.searchPattern || ''}
+              onChange={(e) => onFieldChange('searchPattern', e.currentTarget.value)}
+              placeholder="e.g., cpu, /^system\./, or leave empty"
               width={30}
             />
           </InlineField>
-        </div>
+        </>
       )}
 
       {(state.queryType === 'tag_keys' || state.queryType === 'tag_values') && (
-        <div style={{ position: 'relative' }}>
+        <>
+          <div style={{ position: 'relative' }}>
+            <InlineField 
+              label="Metric Name" 
+              labelWidth={20} 
+              tooltip={state.queryType === 'tag_keys' 
+                ? "Metric name filter (optional). Use '*' to get tag keys from all metrics, or specify a metric name."
+                : "Metric name filter (optional). Use '*' to get tag values from all metrics, or specify a metric name."
+              }
+            >
+              <Input
+                ref={metricInputRef}
+                value={state.metricName || '*'}
+                onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
+                onFocus={() => {
+                  setActiveField('metric');
+                  if (metricInputRef.current) {
+                    updateSuggestionsPosition(metricInputRef.current);
+                  }
+                  autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
+                }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    if (activeField === 'metric') {
+                      autocomplete.onClose();
+                      setActiveField(null);
+                    }
+                  }, 200);
+                }}
+                placeholder="e.g., system.cpu.user or * for all"
+                width={30}
+              />
+            </InlineField>
+          </div>
           <InlineField 
-            label="Metric Name" 
+            label="Filter Pattern" 
             labelWidth={20} 
             tooltip={state.queryType === 'tag_keys' 
-              ? "Metric name filter (optional). Use '*' to get tag keys from all metrics, or specify a metric name."
-              : "Metric name filter (optional). Use '*' to get tag values from all metrics, or specify a metric name."
+              ? "Filter tag keys by pattern. Use /regex/ for regex matching (e.g., /^host/ for keys starting with 'host')."
+              : "Filter tag values by pattern. Use /regex/ for regex matching (e.g., /prod.*/ for values starting with 'prod')."
             }
           >
             <Input
-              ref={metricInputRef}
-              value={state.metricName || '*'}
-              onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
-              onFocus={() => {
-                setActiveField('metric');
-                if (metricInputRef.current) {
-                  updateSuggestionsPosition(metricInputRef.current);
-                }
-                autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
-              }}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (activeField === 'metric') {
-                    autocomplete.onClose();
-                    setActiveField(null);
-                  }
-                }, 200);
-              }}
-              placeholder="e.g., system.cpu.user or * for all"
+              value={state.filter || ''}
+              onChange={(e) => onFieldChange('filter', e.currentTarget.value)}
+              placeholder={state.queryType === 'tag_keys' ? "e.g., host, /^env/, or leave empty" : "e.g., prod, /^web-/, or leave empty"}
               width={30}
             />
           </InlineField>
-        </div>
+        </>
       )}
 
       {state.queryType === 'tag_values' && (
@@ -282,19 +371,19 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       {/* Show helpful information */}
       {state.queryType === 'metrics' && (
         <Alert title="Tip" severity="info">
-          Use '*' to get all metrics, or specify a metric name pattern to filter results.
+          Use '*' to get all metrics, or specify a metric name pattern to filter results. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /^system\.cpu\./ for CPU metrics).
         </Alert>
       )}
 
       {state.queryType === 'tag_keys' && (
         <Alert title="Tip" severity="info">
-          Use '*' for metric name to get tag keys from all metrics, or specify a metric to get its tag keys.
+          Use '*' for metric name to get tag keys from all metrics, or specify a metric to get its tag keys. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /^host/ for keys starting with 'host').
         </Alert>
       )}
 
       {state.queryType === 'tag_values' && (
         <Alert title="Tip" severity="info">
-          Metrics and tags are independent - you can mix any metric with any tag key. Use '*' for either field to get all values.
+          Metrics and tags are independent - you can mix any metric with any tag key. Use '*' for either field to get all values. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /prod.*/ for values starting with 'prod').
         </Alert>
       )}
 

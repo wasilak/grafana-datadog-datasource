@@ -27,8 +27,29 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
    * This method is called when a template variable query is executed.
    * It handles variable queries for metrics, tag keys, and tag values.
    */
-  async metricFindQuery(query: MyVariableQuery): Promise<MetricFindValue[]> {
+  async metricFindQuery(query: MyVariableQuery | string): Promise<MetricFindValue[]> {
     try {
+      console.log('metricFindQuery called with:', query);
+      console.log('metricFindQuery query type:', typeof query, typeof query === 'object' ? Object.keys(query) : 'N/A');
+      
+      // Handle string queries (legacy format)
+      if (typeof query === 'string') {
+        console.log('Received string query, attempting to parse:', query);
+        try {
+          const parsedQuery = JSON.parse(query) as MyVariableQuery;
+          query = parsedQuery;
+        } catch (e) {
+          console.error('Failed to parse string query as JSON:', e);
+          return [];
+        }
+      }
+      
+      // Ensure we have a valid query object
+      if (!query || typeof query !== 'object' || !query.queryType) {
+        console.error('Invalid query object:', query);
+        return [];
+      }
+      
       // Determine the resource endpoint based on query type
       let resourcePath = '';
       const params: Record<string, string> = {};
@@ -40,28 +61,35 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
             params.namespace = query.namespace;
           }
           if (query.searchPattern && query.searchPattern !== '*') {
-            params.search = query.searchPattern;
+            params.searchPattern = query.searchPattern;
           }
           // For metrics, we can use metricName as a search pattern
-          if (query.metricName && query.metricName !== '*') {
-            params.search = query.metricName;
+          // Include '*' as well since backend handles it
+          if (query.metricName) {
+            params.searchPattern = query.metricName;
           }
           break;
 
         case 'tag_keys':
           resourcePath = 'tag-keys';
           if (query.metricName && query.metricName !== '*') {
-            params.metric = query.metricName;
+            params.metricName = query.metricName;
+          }
+          if (query.filter && query.filter !== '*') {
+            params.filter = query.filter;
           }
           break;
 
         case 'tag_values':
           resourcePath = 'tag-values';
           if (query.metricName && query.metricName !== '*') {
-            params.metric = query.metricName;
+            params.metricName = query.metricName;
           }
           if (query.tagKey && query.tagKey !== '*') {
-            params.tag_key = query.tagKey;
+            params.tagKey = query.tagKey;
+          }
+          if (query.filter && query.filter !== '*') {
+            params.filter = query.filter;
           }
           break;
 
@@ -72,9 +100,13 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       // Build URL without query parameters (backend expects POST with JSON body)
       const url = `/api/datasources/uid/${this.uid}/resources/${resourcePath}`;
 
+      console.log('Making request to:', url, 'with params:', params);
+
       // Make the request to the backend resource handler
       // Backend expects POST requests with JSON body for variable resource handlers
       const response = await getBackendSrv().post(url, params);
+
+      console.log('Response received:', response);
 
       // Handle the response - backend should return { values: string[] }
       if (response && Array.isArray(response.values)) {

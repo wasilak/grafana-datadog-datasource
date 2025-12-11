@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -1264,12 +1265,14 @@ type MetricsRequest struct {
 // TagKeysRequest represents the request for /resources/tag-keys endpoint
 type TagKeysRequest struct {
 	MetricName string `json:"metricName,omitempty"`
+	Filter     string `json:"filter,omitempty"` // Filter pattern for tag keys (supports regex with /pattern/)
 }
 
 // TagValuesRequest represents the request for /resources/tag-values endpoint
 type TagValuesRequest struct {
 	MetricName string `json:"metricName,omitempty"`
 	TagKey     string `json:"tagKey"`
+	Filter     string `json:"filter,omitempty"` // Filter pattern for tag values (supports regex with /pattern/)
 }
 
 // VariableResponse represents the response for variable resource endpoints
@@ -1389,6 +1392,31 @@ func handleVariableAPIError(logger log.Logger, traceID string, err error, operat
 
 	// Default to 500 for other errors
 	return 500, []byte(`{"error": "Unable to fetch data from Datadog"}`)
+}
+
+// matchesFilter checks if a value matches a filter pattern, supporting regex syntax
+// If pattern is wrapped in /.../, it's treated as a regex pattern
+// Otherwise, it's treated as a simple substring match
+func matchesFilter(value, pattern string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	
+	// Check if pattern is a regex (wrapped in forward slashes)
+	if len(pattern) >= 2 && pattern[0] == '/' && pattern[len(pattern)-1] == '/' {
+		// Extract regex pattern (remove surrounding slashes)
+		regexPattern := pattern[1 : len(pattern)-1]
+		
+		// Compile and match regex
+		if regex, err := regexp.Compile(regexPattern); err == nil {
+			return regex.MatchString(value)
+		}
+		// If regex compilation fails, fall back to substring match
+		return strings.Contains(value, regexPattern)
+	}
+	
+	// Default substring match
+	return strings.Contains(value, pattern)
 }
 
 // validateAPICredentials checks for required API credentials and logs missing credentials
@@ -1797,13 +1825,13 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 		}
 
 		if metricName != "" {
-			// Apply namespace filter if specified
-			if metricsReq.Namespace != "" && !strings.HasPrefix(metricName, metricsReq.Namespace) {
+			// Apply namespace filter if specified (namespace uses prefix matching, not regex)
+			if metricsReq.Namespace != "" && metricsReq.Namespace != "*" && !strings.HasPrefix(metricName, metricsReq.Namespace) {
 				continue
 			}
 
-			// Apply search pattern filter if specified
-			if metricsReq.SearchPattern != "" && !strings.Contains(metricName, metricsReq.SearchPattern) {
+			// Apply search pattern filter with regex support
+			if metricsReq.SearchPattern != "" && metricsReq.SearchPattern != "*" && !matchesFilter(metricName, metricsReq.SearchPattern) {
 				continue
 			}
 
@@ -1855,8 +1883,8 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	// Build cache key based on metric name
-	cacheKey := fmt.Sprintf("var-tag-keys:%s", tagKeysReq.MetricName)
+	// Build cache key based on metric name and filter
+	cacheKey := fmt.Sprintf("var-tag-keys:%s:%s", tagKeysReq.MetricName, tagKeysReq.Filter)
 
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
@@ -2008,6 +2036,22 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		}
 	}
 
+	// Apply filter to tag keys if specified
+	if tagKeysReq.Filter != "" && tagKeysReq.Filter != "*" {
+		filteredTagKeys := []string{}
+		for _, tagKey := range tagKeys {
+			if matchesFilter(tagKey, tagKeysReq.Filter) {
+				filteredTagKeys = append(filteredTagKeys, tagKey)
+			}
+		}
+		tagKeys = filteredTagKeys
+		logger.Debug("Applied filter to tag keys", 
+			"traceID", traceID,
+			"filter", tagKeysReq.Filter,
+			"originalCount", len(tagKeys),
+			"filteredCount", len(filteredTagKeys))
+	}
+
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tagKeys)
 
@@ -2016,6 +2060,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	logger.Debug("Successfully fetched variable tag keys",
 		"traceID", traceID,
 		"metricName", tagKeysReq.MetricName,
+		"filter", tagKeysReq.Filter,
 		"resultCount", len(tagKeys),
 		"cached", true)
 	logVariableResponse(logger, traceID, "/resources/tag-keys", 200, duration, len(tagKeys), nil)
@@ -2051,8 +2096,8 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		})
 	}
 
-	// Build cache key based on metric name and tag key
-	cacheKey := fmt.Sprintf("var-tag-values:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey)
+	// Build cache key based on metric name, tag key, and filter
+	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
 
 	// Handle case where tag key is empty or "*" - use comprehensive endpoint
 	if tagValuesReq.TagKey == "" || tagValuesReq.TagKey == "*" {
@@ -2241,6 +2286,22 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		tagValues = []string{}
 	}
 
+	// Apply filter to tag values if specified
+	if tagValuesReq.Filter != "" && tagValuesReq.Filter != "*" {
+		filteredTagValues := []string{}
+		for _, tagValue := range tagValues {
+			if matchesFilter(tagValue, tagValuesReq.Filter) {
+				filteredTagValues = append(filteredTagValues, tagValue)
+			}
+		}
+		tagValues = filteredTagValues
+		logger.Debug("Applied filter to tag values", 
+			"traceID", traceID,
+			"filter", tagValuesReq.Filter,
+			"originalCount", len(tagValues),
+			"filteredCount", len(filteredTagValues))
+	}
+
 	// Cache the result
 	d.SetCachedEntry(cacheKey, tagValues)
 
@@ -2250,6 +2311,7 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		"traceID", traceID,
 		"metricName", tagValuesReq.MetricName,
 		"tagKey", tagValuesReq.TagKey,
+		"filter", tagValuesReq.Filter,
 		"resultCount", len(tagValues),
 		"cached", true)
 	logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
