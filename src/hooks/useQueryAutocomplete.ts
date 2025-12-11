@@ -3,7 +3,7 @@ import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery } from '../utils/autocomplete/parser';
 import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
-import { getBackendSrv, getTemplateSrv } from '@grafana/runtime';
+import { getBackendSrv } from '@grafana/runtime';
 import { variableInterpolationService } from '../utils/variableInterpolation';
 
 const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
