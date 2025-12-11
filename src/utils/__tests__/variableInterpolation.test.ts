@@ -1,5 +1,5 @@
 import { VariableInterpolationService } from '../variableInterpolation';
-import { MyQuery, VariableFormat } from '../../types';
+import { MyQuery } from '../../types';
 import { ScopedVars } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 

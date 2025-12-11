@@ -1,4 +1,5 @@
-import { getTemplateSrv, ScopedVars } from '@grafana/runtime';
+import { getTemplateSrv } from '@grafana/runtime';
+import { ScopedVars } from '@grafana/data';
 import { MyQuery, VariableFormat, VariableInterpolationContext } from '../types';
 
 /**
