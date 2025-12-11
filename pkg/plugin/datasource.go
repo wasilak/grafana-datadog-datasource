@@ -82,7 +82,7 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	// Get secure JSON data (API keys)
 	ds.SecureJSONData = settings.DecryptedSecureJSONData
 
-	logger.Info("Datasource initialized", "site", opts.Site)
+	logger.Error("CRITICAL DEBUG - Datasource initialized successfully", "site", opts.Site, "uid", settings.UID)
 
 	return ds, nil
 }
