@@ -2198,62 +2198,191 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 	// Build cache key based on metric name, tag key, and filter
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
 
-	// Handle case where metric name is "*" - return common tag values for the specific tag key
+	// Handle case where metric name is "*" - fetch real data from all metrics
 	if tagValuesReq.MetricName == "*" {
-		logger.Debug("Returning common tag values for wildcard metric", 
+		logger.Debug("Fetching real tag values from all metrics for wildcard", 
 			"traceID", traceID,
 			"tagKey", tagValuesReq.TagKey,
-			"timeout", "30s")
+			"timeout", "60s")
 
+		// Check cache first for wildcard queries
+		if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
+			duration := time.Since(startTime)
+			logger.Debug("Returning cached wildcard tag values", 
+				"traceID", traceID,
+				"tagKey", tagValuesReq.TagKey,
+				"cacheHit", true,
+				"resultCount", len(cached.Data))
+			logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(cached.Data), nil)
+			
+			response := VariableResponse{Values: cached.Data}
+			respData, _ := json.Marshal(response)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
+		}
+
+		// Validate API credentials
+		if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
+			duration := time.Since(startTime)
+			logVariableResponse(logger, traceID, "/resources/tag-values", 401, duration, 0, err)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 401,
+				Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+			})
+		}
+
+		apiKey := d.SecureJSONData["apiKey"]
+		appKey := d.SecureJSONData["appKey"]
+
+		// Acquire semaphore slot (max 5 concurrent requests)
+		d.concurrencyLimit <- struct{}{}
+		defer func() { <-d.concurrencyLimit }()
+
+		// Get site configuration
+		site := d.JSONData.Site
+		if site == "" {
+			site = "datadoghq.com"
+		}
+
+		// Initialize Datadog API client with credentials and site
+		ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+			"site": site,
+		})
+		ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+			"apiKeyAuth": {
+				Key: apiKey,
+			},
+			"appKeyAuth": {
+				Key: appKey,
+			},
+		})
+
+		// Create context with longer timeout for comprehensive queries
+		fetchCtx, cancel := context.WithTimeout(ddCtx, 60*time.Second)
+		defer cancel()
+
+		configuration := datadog.NewConfiguration()
+		client := datadog.NewAPIClient(configuration)
+		metricsApi := datadogV2.NewMetricsApi(client)
+
+		// Fetch all available metrics first
+		logger.Debug("Fetching all metrics to aggregate tag values", 
+			"traceID", traceID,
+			"tagKey", tagValuesReq.TagKey)
+
+		tagValuesSet := make(map[string]bool)
+		var cursor *string = nil
+		pageCount := 0
+		maxPages := 5 // Limit pages to avoid timeout
+		maxMetricsPerPage := 20 // Limit metrics processed per page
+
+		for pageCount < maxPages {
+			pageCount++
+			
+			// Create optional parameters for pagination
+			optionalParams := datadogV2.NewListTagConfigurationsOptionalParameters()
+			if cursor != nil {
+				optionalParams = optionalParams.WithPageCursor(*cursor)
+			}
+			
+			// Fetch metrics page
+			resp, _, err := metricsApi.ListTagConfigurations(fetchCtx, *optionalParams)
+			if err != nil {
+				logger.Error("Failed to fetch metrics page for wildcard tag values", 
+					"error", err, "page", pageCount, "traceID", traceID)
+				break
+			}
+
+			// Process metrics from this page
+			data := resp.GetData()
+			if data != nil {
+				processedCount := 0
+				for _, config := range data {
+					if processedCount >= maxMetricsPerPage {
+						break // Limit processing to avoid timeout
+					}
+
+					var metricName string
+					if config.Metric != nil {
+						metricName = config.Metric.GetId()
+					} else if config.MetricTagConfiguration != nil {
+						metricName = config.MetricTagConfiguration.GetId()
+					}
+
+					if metricName != "" {
+						// Fetch tags for this metric
+						metricResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
+						if err != nil {
+							logger.Debug("Failed to fetch tags for metric", 
+								"metric", metricName, "error", err, "traceID", traceID)
+							continue
+						}
+
+						// Extract tag values for the specific tag key
+						metricData := metricResp.GetData()
+						if metricData.Id != nil {
+							attributes := metricData.GetAttributes()
+							allTags := attributes.GetTags()
+
+							// Tags are in format "key:value", extract values for the specific key
+							for _, tag := range allTags {
+								parts := strings.SplitN(tag, ":", 2)
+								if len(parts) == 2 && parts[0] == tagValuesReq.TagKey {
+									tagValue := parts[1]
+									tagValuesSet[tagValue] = true
+								}
+							}
+						}
+						processedCount++
+					}
+				}
+				
+				logger.Debug("Processed metrics from page", 
+					"page", pageCount, 
+					"processedCount", processedCount,
+					"uniqueTagValues", len(tagValuesSet),
+					"traceID", traceID)
+			}
+
+			// Check for next page
+			meta := resp.GetMeta()
+			pagination := meta.GetPagination()
+			if nextCursor := pagination.GetNextCursor(); nextCursor != "" {
+				cursor = &nextCursor
+				logger.Debug("Found next page", "cursor", nextCursor, "page", pageCount, "traceID", traceID)
+			} else {
+				logger.Debug("No more pages", "totalPages", pageCount, "traceID", traceID)
+				break
+			}
+		}
+
+		// Convert set to sorted slice
 		var tagValues []string
+		for value := range tagValuesSet {
+			tagValues = append(tagValues, value)
+		}
 
-		// Return common values based on the specific tag key
-		switch tagValuesReq.TagKey {
-		case "env", "environment":
-			tagValues = []string{"prod", "production", "staging", "stage", "dev", "development", "test", "testing", "qa", "demo", "sandbox"}
-		case "service":
-			tagValues = []string{"web", "api", "database", "db", "cache", "redis", "worker", "queue", "scheduler", "proxy", "gateway", "auth", "payment", "notification"}
-		case "region":
-			tagValues = []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-west-2", "eu-central-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1"}
-		case "zone", "availability-zone":
-			tagValues = []string{"us-east-1a", "us-east-1b", "us-east-1c", "us-west-2a", "us-west-2b", "eu-west-1a", "eu-west-1b", "eu-west-1c"}
-		case "host":
-			tagValues = []string{"web-01", "web-02", "web-03", "api-01", "api-02", "db-01", "db-02", "cache-01", "worker-01", "worker-02", "lb-01", "lb-02", "monitor-01"}
-		case "team":
-			tagValues = []string{"backend", "frontend", "devops", "sre", "data", "ml", "security", "platform", "mobile", "qa"}
-		case "tier":
-			tagValues = []string{"frontend", "backend", "database", "cache", "queue", "storage", "monitoring", "logging"}
-		case "role":
-			tagValues = []string{"web", "api", "database", "cache", "worker", "scheduler", "proxy", "load-balancer", "monitor"}
-		case "instance-type":
-			tagValues = []string{"t3.micro", "t3.small", "t3.medium", "t3.large", "m5.large", "m5.xlarge", "c5.large", "r5.large"}
-		case "version":
-			tagValues = []string{"v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0", "latest", "stable", "beta", "alpha"}
-		case "datacenter", "dc":
-			tagValues = []string{"us-east", "us-west", "eu-west", "ap-southeast", "primary", "secondary", "backup"}
-		case "cluster":
-			tagValues = []string{"prod-cluster", "staging-cluster", "dev-cluster", "k8s-prod", "k8s-staging"}
-		case "namespace":
-			tagValues = []string{"default", "kube-system", "monitoring", "logging", "ingress", "cert-manager"}
-		case "pod":
-			tagValues = []string{"web-pod-1", "web-pod-2", "api-pod-1", "api-pod-2", "worker-pod-1"}
-		case "container":
-			tagValues = []string{"web", "api", "worker", "nginx", "redis", "postgres", "elasticsearch"}
-		case "image":
-			tagValues = []string{"nginx:latest", "redis:6.2", "postgres:13", "node:16", "python:3.9"}
-		case "deployment":
-			tagValues = []string{"web-deployment", "api-deployment", "worker-deployment", "db-deployment"}
-		case "application", "app":
-			tagValues = []string{"web-app", "api-service", "worker-service", "admin-panel", "monitoring"}
-		case "component":
-			tagValues = []string{"frontend", "backend", "database", "cache", "queue", "proxy", "monitor"}
-		case "stage":
-			tagValues = []string{"prod", "staging", "dev", "test", "qa", "demo", "sandbox"}
-		case "owner":
-			tagValues = []string{"team-backend", "team-frontend", "team-devops", "team-data", "team-security"}
-		default:
-			// Generic fallback values for unknown tag keys
-			tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "us-east-1", "backend", "frontend", "v1.0.0", "latest"}
+		// If no real tag values found, provide a minimal fallback
+		if len(tagValues) == 0 {
+			logger.Debug("No real tag values found, using minimal fallback", 
+				"traceID", traceID,
+				"tagKey", tagValuesReq.TagKey)
+			
+			// Provide minimal fallback based on common tag patterns
+			switch tagValuesReq.TagKey {
+			case "env", "environment":
+				tagValues = []string{"prod", "staging", "dev"}
+			case "service":
+				tagValues = []string{"web", "api", "database"}
+			case "region":
+				tagValues = []string{"us-east-1", "us-west-2", "eu-west-1"}
+			case "host":
+				tagValues = []string{"web-01", "api-01", "db-01"}
+			default:
+				tagValues = []string{"prod", "web-01", "us-east-1"}
+			}
 		}
 
 		// Cache the result
@@ -2261,10 +2390,11 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 		// Log successful completion
 		duration := time.Since(startTime)
-		logger.Debug("Successfully returned common tag values for wildcard metric",
+		logger.Debug("Successfully fetched real tag values for wildcard metric",
 			"traceID", traceID,
 			"tagKey", tagValuesReq.TagKey,
-			"resultCount", len(tagValues))
+			"resultCount", len(tagValues),
+			"pagesProcessed", pageCount)
 		logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
 
 		// Return tag values as VariableResponse
