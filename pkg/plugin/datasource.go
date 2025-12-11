@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -575,6 +576,8 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.VariableTagKeysHandler(ctx, req, sender)
 	case req.Method == "POST" && req.Path == "resources/tag-values":
 		return d.VariableTagValuesHandler(ctx, req, sender)
+	case req.Method == "POST" && req.Path == "resources/all-tags":
+		return d.VariableAllTagsHandler(ctx, req, sender)
 	default:
 		logger.Warn("Unknown resource path", "path", req.Path, "method", req.Method)
 		return sender.Send(&backend.CallResourceResponse{
@@ -1954,8 +1957,49 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 			tagKeys = append(tagKeys, key)
 		}
 	} else {
-		// Return commonly used tag keys when no metric is specified or * is used
-		tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+		// Use the all-tags endpoint to get comprehensive tag keys from organization
+		logger.Debug("Fetching comprehensive tag keys using all-tags endpoint", 
+			"traceID", traceID,
+			"timeout", "30s")
+
+		// Create a request for all tag keys
+		allTagsReq := AllTagsRequest{
+			QueryType: "tag_keys",
+		}
+		reqBody, _ := json.Marshal(allTagsReq)
+
+		// Create a new request for the all-tags handler
+		allTagsRequest := &backend.CallResourceRequest{
+			Method: "POST",
+			Path:   "resources/all-tags",
+			Body:   reqBody,
+		}
+
+		// Create a response sender that captures the response
+		var allTagsResponse *backend.CallResourceResponse
+		allTagsSender := backend.CallResourceResponseSenderFunc(func(res *backend.CallResourceResponse) error {
+			allTagsResponse = res
+			return nil
+		})
+
+		// Call the all-tags handler
+		if err := d.VariableAllTagsHandler(ctx, allTagsRequest, allTagsSender); err != nil {
+			logger.Error("Failed to fetch comprehensive tag keys", "error", err, "traceID", traceID)
+			// Fallback to common tag keys
+			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+		} else if allTagsResponse != nil && allTagsResponse.Status == 200 {
+			// Parse the response from all-tags handler
+			var allTagsResp VariableResponse
+			if err := json.Unmarshal(allTagsResponse.Body, &allTagsResp); err == nil {
+				tagKeys = allTagsResp.Values
+			} else {
+				// Fallback to common tag keys
+				tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+			}
+		} else {
+			// Fallback to common tag keys
+			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+		}
 	}
 
 	// Cache the result
@@ -2004,20 +2048,71 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 	// Build cache key based on metric name and tag key
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey)
 
-	// Handle case where tag key is empty or "*" - return common tag values
+	// Handle case where tag key is empty or "*" - use comprehensive endpoint
 	if tagValuesReq.TagKey == "" || tagValuesReq.TagKey == "*" {
-		// Return common tag values when no specific tag key is requested
-		tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+		// Use the all-tags endpoint to get comprehensive tag values from organization
+		logger.Debug("Fetching comprehensive tag values using all-tags endpoint", 
+			"traceID", traceID,
+			"metricName", tagValuesReq.MetricName,
+			"timeout", "30s")
+
+		// Create a request for all tag values
+		allTagsReq := AllTagsRequest{
+			QueryType: "tag_values",
+			TagKey:    tagValuesReq.TagKey, // Pass through the tag key (might be "*")
+		}
+		reqBody, _ := json.Marshal(allTagsReq)
+
+		// Create a new request for the all-tags handler
+		allTagsRequest := &backend.CallResourceRequest{
+			Method: "POST",
+			Path:   "resources/all-tags",
+			Body:   reqBody,
+		}
+
+		// Create a response sender that captures the response
+		var allTagsResponse *backend.CallResourceResponse
+		allTagsSender := backend.CallResourceResponseSenderFunc(func(res *backend.CallResourceResponse) error {
+			allTagsResponse = res
+			return nil
+		})
+
+		// Call the all-tags handler
+		if err := d.VariableAllTagsHandler(ctx, allTagsRequest, allTagsSender); err != nil {
+			logger.Error("Failed to fetch comprehensive tag values", "error", err, "traceID", traceID)
+			// Fallback to common tag values
+			tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+			d.SetCachedEntry(cacheKey, tagValues)
+			
+			response := VariableResponse{Values: tagValues}
+			respData, _ := json.Marshal(response)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
+		} else if allTagsResponse != nil && allTagsResponse.Status == 200 {
+			// Parse and return the response from all-tags handler
+			var allTagsResp VariableResponse
+			if err := json.Unmarshal(allTagsResponse.Body, &allTagsResp); err == nil {
+				// Cache and return the comprehensive results
+				d.SetCachedEntry(cacheKey, allTagsResp.Values)
+				
+				duration := time.Since(startTime)
+				logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(allTagsResp.Values), nil)
+				
+				respData, _ := json.Marshal(allTagsResp)
+				return sender.Send(&backend.CallResourceResponse{
+					Status: 200,
+					Body:   respData,
+				})
+			}
+		}
 		
-		// Cache the result
+		// Fallback to common tag values if all-tags failed
+		tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
 		d.SetCachedEntry(cacheKey, tagValues)
 		
 		duration := time.Since(startTime)
-		logger.Debug("Returning common tag values for wildcard query",
-			"traceID", traceID,
-			"metricName", tagValuesReq.MetricName,
-			"tagKey", tagValuesReq.TagKey,
-			"resultCount", len(tagValues))
 		logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
 		
 		response := VariableResponse{Values: tagValues}
@@ -2155,6 +2250,189 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	// Return tag values as VariableResponse
 	response := VariableResponse{Values: tagValues}
+	respData, _ := json.Marshal(response)
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+// AllTagsRequest represents the request for /resources/all-tags endpoint
+type AllTagsRequest struct {
+	QueryType string `json:"queryType"` // "tag_keys" or "tag_values"
+	TagKey    string `json:"tagKey,omitempty"` // For tag_values queries
+}
+
+// VariableAllTagsHandler handles POST /resources/all-tags requests for variable queries
+// This uses Datadog's Tags API to get all tags across the organization
+func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+	ttl := 10 * time.Minute // 10-minute cache TTL for organization-wide tags
+
+	// Log request start
+	logVariableRequest(logger, traceID, "/resources/all-tags", req.Method, string(req.Body))
+
+	// Parse request body with enhanced validation
+	var allTagsReq AllTagsRequest
+	if err := validateVariableRequest(logger, traceID, req.Body, &allTagsReq); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/all-tags", 400, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "Invalid request format"}`),
+		})
+	}
+
+	// Build cache key based on query type and tag key
+	cacheKey := fmt.Sprintf("var-all-tags:%s:%s", allTagsReq.QueryType, allTagsReq.TagKey)
+
+	// Check cache first
+	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {
+		duration := time.Since(startTime)
+		logger.Debug("Returning cached organization tags", 
+			"traceID", traceID,
+			"queryType", allTagsReq.QueryType,
+			"tagKey", allTagsReq.TagKey,
+			"cacheHit", true,
+			"resultCount", len(cached.Data))
+		logVariableResponse(logger, traceID, "/resources/all-tags", 200, duration, len(cached.Data), nil)
+		
+		response := VariableResponse{Values: cached.Data}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Validate API credentials with enhanced logging
+	if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/all-tags", 401, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	apiKey := d.SecureJSONData["apiKey"]
+	appKey := d.SecureJSONData["appKey"]
+
+	// Acquire semaphore slot (max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: apiKey,
+		},
+		"appKeyAuth": {
+			Key: appKey,
+		},
+	})
+
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
+	defer cancel()
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	tagsApi := datadogV1.NewTagsApi(client)
+
+	// Fetch all host tags from Datadog organization
+	logger.Debug("Fetching all organization tags using Tags API", 
+		"traceID", traceID,
+		"queryType", allTagsReq.QueryType,
+		"tagKey", allTagsReq.TagKey,
+		"timeout", "30s")
+
+	resp, _, err := tagsApi.ListHostTags(fetchCtx, *datadogV1.NewListHostTagsOptionalParameters())
+	if err != nil {
+		duration := time.Since(startTime)
+		status, body := handleVariableAPIError(logger, traceID, err, "ListHostTags")
+		logVariableResponse(logger, traceID, "/resources/all-tags", status, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: status,
+			Body:   body,
+		})
+	}
+
+	var result []string
+
+	// Process the response based on query type
+	if allTagsReq.QueryType == "tag_keys" {
+		// Extract unique tag keys from all tags
+		tagKeysSet := make(map[string]bool)
+		
+		// Get tags from the response
+		if tags, ok := resp.GetTagsOk(); ok {
+			for tagKey, _ := range *tags {
+				// tagKey is the key, we only need the keys for this query type
+				tagKeysSet[tagKey] = true
+			}
+		}
+
+		// Convert set to slice
+		for key := range tagKeysSet {
+			result = append(result, key)
+		}
+
+	} else if allTagsReq.QueryType == "tag_values" {
+		// Extract tag values for specific tag key
+		tagValuesSet := make(map[string]bool)
+		
+		// Get tags from the response
+		if tags, ok := resp.GetTagsOk(); ok {
+			for tagKey, tagValuesList := range *tags {
+				// If specific tag key requested, filter by it
+				if allTagsReq.TagKey != "" && allTagsReq.TagKey != "*" {
+					if tagKey == allTagsReq.TagKey {
+						for _, tagValue := range tagValuesList {
+							tagValuesSet[tagValue] = true
+						}
+					}
+				} else {
+					// If no specific tag key, return all values from all keys
+					for _, tagValue := range tagValuesList {
+						tagValuesSet[tagValue] = true
+					}
+				}
+			}
+		}
+
+		// Convert set to slice
+		for value := range tagValuesSet {
+			result = append(result, value)
+		}
+	}
+
+	// Cache the result
+	d.SetCachedEntry(cacheKey, result)
+
+	// Log successful completion
+	duration := time.Since(startTime)
+	logger.Debug("Successfully fetched organization tags",
+		"traceID", traceID,
+		"queryType", allTagsReq.QueryType,
+		"tagKey", allTagsReq.TagKey,
+		"resultCount", len(result),
+		"cached", true)
+	logVariableResponse(logger, traceID, "/resources/all-tags", 200, duration, len(result), nil)
+
+	// Return results as VariableResponse
+	response := VariableResponse{Values: result}
 	respData, _ := json.Marshal(response)
 
 	return sender.Send(&backend.CallResourceResponse{
