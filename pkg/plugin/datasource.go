@@ -2197,6 +2197,14 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	// Build cache key based on metric name, tag key, and filter
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
+	
+	// Clear cache for wildcard queries to ensure fresh data (temporary for debugging)
+	if tagValuesReq.MetricName == "*" {
+		logger.Debug("Clearing cache for wildcard query to ensure fresh data", "traceID", traceID, "cacheKey", cacheKey)
+		d.cache.mu.Lock()
+		delete(d.cache.entries, cacheKey)
+		d.cache.mu.Unlock()
+	}
 
 	// Handle case where metric name is "*" - fetch real data from all metrics
 	if tagValuesReq.MetricName == "*" {
@@ -2364,25 +2372,12 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 			tagValues = append(tagValues, value)
 		}
 
-		// If no real tag values found, provide a minimal fallback
+		// If no real tag values found, return empty array
 		if len(tagValues) == 0 {
-			logger.Debug("No real tag values found, using minimal fallback", 
+			logger.Debug("No real tag values found for wildcard query", 
 				"traceID", traceID,
 				"tagKey", tagValuesReq.TagKey)
-			
-			// Provide minimal fallback based on common tag patterns
-			switch tagValuesReq.TagKey {
-			case "env", "environment":
-				tagValues = []string{"prod", "staging", "dev"}
-			case "service":
-				tagValues = []string{"web", "api", "database"}
-			case "region":
-				tagValues = []string{"us-east-1", "us-west-2", "eu-west-1"}
-			case "host":
-				tagValues = []string{"web-01", "api-01", "db-01"}
-			default:
-				tagValues = []string{"prod", "web-01", "us-east-1"}
-			}
+			tagValues = []string{} // Return empty array instead of fake data
 		}
 
 		// Cache the result
@@ -2439,8 +2434,8 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		// Call the all-tags handler
 		if err := d.VariableAllTagsHandler(ctx, allTagsRequest, allTagsSender); err != nil {
 			logger.Error("Failed to fetch comprehensive tag values", "error", err, "traceID", traceID)
-			// Fallback to common tag values
-			tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+			// Return empty array instead of fake data
+			tagValues := []string{}
 			d.SetCachedEntry(cacheKey, tagValues)
 			
 			response := VariableResponse{Values: tagValues}
@@ -2467,8 +2462,8 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 			}
 		}
 		
-		// Fallback to common tag values if all-tags failed
-		tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+		// Return empty array if all-tags failed
+		tagValues := []string{}
 		d.SetCachedEntry(cacheKey, tagValues)
 		
 		duration := time.Since(startTime)
@@ -2605,8 +2600,8 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		metricsResp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
 		if err != nil {
 			logger.Error("Failed to fetch metrics for regex filtering", "error", err, "traceID", traceID)
-			// Fallback to common tag values
-			tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+			// Return empty array instead of fake data
+			tagValues = []string{}
 		} else {
 			// Extract metrics that match the regex pattern
 			tagValuesSet := make(map[string]bool)
@@ -2670,9 +2665,9 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 				tagValues = append(tagValues, value)
 			}
 
-			// If no tag values found from matching metrics, fallback to common ones
+			// If no tag values found from matching metrics, return empty array
 			if len(tagValues) == 0 {
-				tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+				tagValues = []string{} // Return empty array instead of fake data
 			}
 		}
 	} else {
@@ -2900,44 +2895,13 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 			"uniqueTagKeys", len(result))
 
 	} else if allTagsReq.QueryType == "tag_values" {
-		// Return comprehensive tag values based on tag key
-		if allTagsReq.TagKey != "" && allTagsReq.TagKey != "*" {
-			// Return common values for specific tag keys
-			switch allTagsReq.TagKey {
-			case "env", "environment":
-				result = []string{"prod", "production", "staging", "stage", "dev", "development", "test", "testing", "qa", "demo", "sandbox"}
-			case "service":
-				result = []string{"web", "api", "database", "db", "cache", "redis", "worker", "queue", "scheduler", "proxy", "gateway", "auth", "payment", "notification"}
-			case "region":
-				result = []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-west-2", "eu-central-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1"}
-			case "zone", "availability-zone":
-				result = []string{"us-east-1a", "us-east-1b", "us-east-1c", "us-west-2a", "us-west-2b", "eu-west-1a", "eu-west-1b", "eu-west-1c"}
-			case "host":
-				result = []string{"web-01", "web-02", "web-03", "api-01", "api-02", "db-01", "db-02", "cache-01", "worker-01", "worker-02"}
-			case "team":
-				result = []string{"backend", "frontend", "devops", "sre", "data", "ml", "security", "platform", "mobile", "qa"}
-			case "tier":
-				result = []string{"frontend", "backend", "database", "cache", "queue", "storage", "monitoring", "logging"}
-			case "role":
-				result = []string{"web", "api", "database", "cache", "worker", "scheduler", "proxy", "load-balancer", "monitor"}
-			case "instance-type":
-				result = []string{"t3.micro", "t3.small", "t3.medium", "t3.large", "m5.large", "m5.xlarge", "c5.large", "r5.large"}
-			case "version":
-				result = []string{"v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0", "latest", "stable", "beta", "alpha"}
-			default:
-				result = []string{"prod", "staging", "dev", "web-01", "web-02", "us-east-1", "backend", "frontend", "v1.0.0", "latest"}
-			}
-		} else {
-			// Return all common tag values
-			result = []string{
-				"prod", "production", "staging", "dev", "development", "test",
-				"web-01", "web-02", "api-01", "db-01", "cache-01", "worker-01",
-				"us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1",
-				"backend", "frontend", "devops", "sre", "data", "platform",
-				"web", "api", "database", "cache", "worker", "scheduler",
-				"v1.0.0", "v1.1.0", "v2.0.0", "latest", "stable", "beta",
-			}
-		}
+		// For tag_values queries, we should fetch real data from the organization
+		// This handler is currently not implemented to fetch real data
+		// Return empty array instead of fake hardcoded values
+		logger.Debug("VariableAllTagsHandler tag_values query - returning empty array", 
+			"traceID", traceID,
+			"tagKey", allTagsReq.TagKey)
+		result = []string{}
 	}
 
 	// Cache the result
