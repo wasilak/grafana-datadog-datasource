@@ -1950,7 +1950,12 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 	var tagKeys []string
 
-	if tagKeysReq.MetricName != "" && tagKeysReq.MetricName != "*" {
+	// Check if metric name is a regex pattern
+	isRegexPattern := len(tagKeysReq.MetricName) >= 2 && 
+		tagKeysReq.MetricName[0] == '/' && 
+		tagKeysReq.MetricName[len(tagKeysReq.MetricName)-1] == '/'
+
+	if tagKeysReq.MetricName != "" && tagKeysReq.MetricName != "*" && !isRegexPattern {
 		// Fetch tags for specific metric using ListTagsByMetricName
 		logger.Debug("Fetching tag keys for specific metric", 
 			"traceID", traceID,
@@ -1989,6 +1994,87 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		// Convert set to slice
 		for key := range tagKeysSet {
 			tagKeys = append(tagKeys, key)
+		}
+	} else if isRegexPattern {
+		// Handle regex pattern for metric name - need to get all metrics first, then filter
+		logger.Debug("Fetching tag keys for regex metric pattern", 
+			"traceID", traceID,
+			"metricPattern", tagKeysReq.MetricName,
+			"timeout", "30s")
+
+		// First, get all available metrics
+		metricsResp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
+		if err != nil {
+			logger.Error("Failed to fetch metrics for regex filtering", "error", err, "traceID", traceID)
+			// Fallback to comprehensive tag keys
+			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+		} else {
+			// Extract metrics that match the regex pattern
+			tagKeysSet := make(map[string]bool)
+			data := metricsResp.GetData()
+			matchingMetrics := []string{}
+
+			if data != nil {
+				for _, config := range data {
+					var metricName string
+					if config.Metric != nil {
+						metricName = config.Metric.GetId()
+					} else if config.MetricTagConfiguration != nil {
+						metricName = config.MetricTagConfiguration.GetId()
+					}
+
+					if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
+						matchingMetrics = append(matchingMetrics, metricName)
+					}
+				}
+			}
+
+			logger.Debug("Found matching metrics for regex pattern", 
+				"traceID", traceID,
+				"pattern", tagKeysReq.MetricName,
+				"matchingCount", len(matchingMetrics))
+
+			// Now get tag keys for each matching metric (limit to first 10 to avoid too many API calls)
+			maxMetrics := 10
+			if len(matchingMetrics) > maxMetrics {
+				matchingMetrics = matchingMetrics[:maxMetrics]
+				logger.Debug("Limited matching metrics to avoid too many API calls", 
+					"traceID", traceID,
+					"limitedCount", maxMetrics)
+			}
+
+			for _, metric := range matchingMetrics {
+				resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
+				if err != nil {
+					logger.Debug("Failed to fetch tags for metric", "metric", metric, "error", err, "traceID", traceID)
+					continue
+				}
+
+				data := resp.GetData()
+				if data.Id != nil {
+					attributes := data.GetAttributes()
+					allTags := attributes.GetTags()
+
+					// Tags are in format "key:value", extract unique keys
+					for _, tag := range allTags {
+						parts := strings.SplitN(tag, ":", 2)
+						if len(parts) >= 1 {
+							tagKey := parts[0]
+							tagKeysSet[tagKey] = true
+						}
+					}
+				}
+			}
+
+			// Convert set to slice
+			for key := range tagKeysSet {
+				tagKeys = append(tagKeys, key)
+			}
+
+			// If no tag keys found from matching metrics, fallback to common ones
+			if len(tagKeys) == 0 {
+				tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+			}
 		}
 	} else {
 		// Use the all-tags endpoint to get comprehensive tag keys from organization
