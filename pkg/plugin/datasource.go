@@ -1452,6 +1452,87 @@ func validateAPICredentials(logger log.Logger, traceID string, secureData map[st
 	return nil
 }
 
+// Helper functions to eliminate code duplication in variable handlers
+
+// setupDatadogClient creates a configured Datadog API client with credentials and site
+func (d *Datasource) setupDatadogClient(ctx context.Context) (*datadogV2.MetricsApi, context.Context, error) {
+	// Get site configuration
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Initialize Datadog API client with credentials and site
+	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
+		"site": site,
+	})
+	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
+		"apiKeyAuth": {
+			Key: d.SecureJSONData["apiKey"],
+		},
+		"appKeyAuth": {
+			Key: d.SecureJSONData["appKey"],
+		},
+	})
+
+	configuration := datadog.NewConfiguration()
+	client := datadog.NewAPIClient(configuration)
+	metricsApi := datadogV2.NewMetricsApi(client)
+
+	return metricsApi, ddCtx, nil
+}
+
+// extractMetricName extracts metric name from ListTagConfigurations response config
+func extractMetricName(config datadogV2.MetricsAndMetricTagConfigurations) string {
+	// Check MetricTagConfiguration first (this is where the data usually is)
+	if config.MetricTagConfiguration != nil {
+		return config.MetricTagConfiguration.GetId()
+	}
+	// Fallback to Metric field
+	if config.Metric != nil {
+		return config.Metric.GetId()
+	}
+	return ""
+}
+
+// extractTagKeysFromTags extracts unique tag keys from "key:value" formatted tags
+func extractTagKeysFromTags(tags []string) []string {
+	tagKeysSet := make(map[string]bool)
+	for _, tag := range tags {
+		parts := strings.SplitN(tag, ":", 2)
+		if len(parts) >= 1 {
+			tagKey := parts[0]
+			tagKeysSet[tagKey] = true
+		}
+	}
+	
+	// Convert set to slice
+	tagKeys := make([]string, 0, len(tagKeysSet))
+	for key := range tagKeysSet {
+		tagKeys = append(tagKeys, key)
+	}
+	return tagKeys
+}
+
+// extractTagValuesForKey extracts tag values for a specific key from "key:value" formatted tags
+func extractTagValuesForKey(tags []string, targetKey string) []string {
+	tagValuesSet := make(map[string]bool)
+	for _, tag := range tags {
+		parts := strings.SplitN(tag, ":", 2)
+		if len(parts) == 2 && parts[0] == targetKey {
+			tagValue := parts[1]
+			tagValuesSet[tagValue] = true
+		}
+	}
+	
+	// Convert set to slice
+	tagValues := make([]string, 0, len(tagValuesSet))
+	for value := range tagValuesSet {
+		tagValues = append(tagValues, value)
+	}
+	return tagValues
+}
+
 // CompleteHandler handles POST /autocomplete/complete requests
 // This endpoint receives a query, cursor position, and selected item,
 // then returns the completed query with the new cursor position
@@ -1723,12 +1804,6 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/metrics", req.Method, string(req.Body))
 
-	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
-	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
-	d.cache.mu.Lock()
-	d.cache.entries = make(map[string]*CacheEntry)
-	d.cache.mu.Unlock()
-
 	// Parse request body with enhanced validation
 	var metricsReq MetricsRequest
 	if err := validateVariableRequest(logger, traceID, req.Body, &metricsReq); err != nil {
@@ -1772,39 +1847,24 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	apiKey := d.SecureJSONData["apiKey"]
-	appKey := d.SecureJSONData["appKey"]
-
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Get site configuration
-	site := d.JSONData.Site
-	if site == "" {
-		site = "datadoghq.com" // Default to US
+	// Setup Datadog API client
+	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
+	if err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/metrics", 500, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "Failed to setup Datadog client"}`),
+		})
 	}
-
-	// Initialize Datadog API client with credentials and site
-	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
-		"site": site,
-	})
-	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
-		"apiKeyAuth": {
-			Key: apiKey,
-		},
-		"appKeyAuth": {
-			Key: appKey,
-		},
-	})
 
 	// Create context with timeout
 	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
 	defer cancel()
-
-	configuration := datadog.NewConfiguration()
-	client := datadog.NewAPIClient(configuration)
-	metricsApi := datadogV2.NewMetricsApi(client)
 
 	// Fetch metrics from Datadog - ListTagConfigurations returns available metrics
 	logger.Debug("Fetching metrics from Datadog API", 
@@ -1837,13 +1897,7 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 
 	metrics := []string{}
 	for _, config := range data {
-		var metricName string
-		if config.Metric != nil {
-			metricName = config.Metric.GetId()
-		} else if config.MetricTagConfiguration != nil {
-			metricName = config.MetricTagConfiguration.GetId()
-		}
-
+		metricName := extractMetricName(config)
 		if metricName != "" {
 			// Apply namespace filter if specified (namespace uses prefix matching, not regex)
 			if metricsReq.Namespace != "" && metricsReq.Namespace != "*" && !strings.HasPrefix(metricName, metricsReq.Namespace) {
@@ -1892,12 +1946,6 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/tag-keys", req.Method, string(req.Body))
 
-	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
-	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
-	d.cache.mu.Lock()
-	d.cache.entries = make(map[string]*CacheEntry)
-	d.cache.mu.Unlock()
-
 	// Parse request body with enhanced validation
 	var tagKeysReq TagKeysRequest
 	if err := validateVariableRequest(logger, traceID, req.Body, &tagKeysReq); err != nil {
@@ -1930,7 +1978,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	// Validate API credentials with enhanced logging
+	// Validate API credentials
 	if err := validateAPICredentials(logger, traceID, d.SecureJSONData); err != nil {
 		duration := time.Since(startTime)
 		logVariableResponse(logger, traceID, "/resources/tag-keys", 401, duration, 0, err)
@@ -1940,39 +1988,24 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	apiKey := d.SecureJSONData["apiKey"]
-	appKey := d.SecureJSONData["appKey"]
-
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Get site configuration
-	site := d.JSONData.Site
-	if site == "" {
-		site = "datadoghq.com"
+	// Setup Datadog API client
+	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
+	if err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/tag-keys", 500, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "Failed to setup Datadog client"}`),
+		})
 	}
-
-	// Initialize Datadog API client with credentials and site
-	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
-		"site": site,
-	})
-	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
-		"apiKeyAuth": {
-			Key: apiKey,
-		},
-		"appKeyAuth": {
-			Key: appKey,
-		},
-	})
 
 	// Create context with timeout
 	fetchCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
 	defer cancel()
-
-	configuration := datadog.NewConfiguration()
-	client := datadog.NewAPIClient(configuration)
-	metricsApi := datadogV2.NewMetricsApi(client)
 
 	var tagKeys []string
 
@@ -2000,26 +2033,11 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		}
 
 		// Extract tag keys from response
-		tagKeysSet := make(map[string]bool)
 		data := resp.GetData()
-
 		if data.Id != nil {
 			attributes := data.GetAttributes()
 			allTags := attributes.GetTags()
-
-			// Tags are in format "key:value", extract unique keys
-			for _, tag := range allTags {
-				parts := strings.SplitN(tag, ":", 2)
-				if len(parts) >= 1 {
-					tagKey := parts[0]
-					tagKeysSet[tagKey] = true
-				}
-			}
-		}
-
-		// Convert set to slice
-		for key := range tagKeysSet {
-			tagKeys = append(tagKeys, key)
+			tagKeys = extractTagKeysFromTags(allTags)
 		}
 	} else if isRegexPattern {
 		// Handle regex pattern for metric name - need to get all metrics first, then filter
@@ -2042,13 +2060,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 			if data != nil {
 				for _, config := range data {
-					var metricName string
-					if config.Metric != nil {
-						metricName = config.Metric.GetId()
-					} else if config.MetricTagConfiguration != nil {
-						metricName = config.MetricTagConfiguration.GetId()
-					}
-
+					metricName := extractMetricName(config)
 					if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
 						matchingMetrics = append(matchingMetrics, metricName)
 					}
@@ -2060,7 +2072,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 				"pattern", tagKeysReq.MetricName,
 				"matchingCount", len(matchingMetrics))
 
-			// Now get tag keys for each matching metric (limit to first 10 to avoid too many API calls)
+			// Limit to first 10 metrics to avoid too many API calls
 			maxMetrics := 10
 			if len(matchingMetrics) > maxMetrics {
 				matchingMetrics = matchingMetrics[:maxMetrics]
@@ -2069,6 +2081,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 					"limitedCount", maxMetrics)
 			}
 
+			// Get tag keys for each matching metric
 			for _, metric := range matchingMetrics {
 				resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
 				if err != nil {
@@ -2080,14 +2093,11 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 				if data.Id != nil {
 					attributes := data.GetAttributes()
 					allTags := attributes.GetTags()
-
-					// Tags are in format "key:value", extract unique keys
-					for _, tag := range allTags {
-						parts := strings.SplitN(tag, ":", 2)
-						if len(parts) >= 1 {
-							tagKey := parts[0]
-							tagKeysSet[tagKey] = true
-						}
+					metricTagKeys := extractTagKeysFromTags(allTags)
+					
+					// Add to set
+					for _, key := range metricTagKeys {
+						tagKeysSet[key] = true
 					}
 				}
 			}
@@ -2095,11 +2105,6 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 			// Convert set to slice
 			for key := range tagKeysSet {
 				tagKeys = append(tagKeys, key)
-			}
-
-			// If no tag keys found from matching metrics, return empty array
-			if len(tagKeys) == 0 {
-				tagKeys = []string{}
 			}
 		}
 	} else {
@@ -2143,8 +2148,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 				tagKeys = []string{}
 			}
 		} else {
-			logger.Error("CRITICAL DEBUG - No data from all-tags handler or failed", "traceID", traceID)
-			// Return empty array instead of fake data
+			// Return empty array if all-tags handler failed
 			tagKeys = []string{}
 		}
 	}
@@ -2182,13 +2186,6 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	response := VariableResponse{Values: tagKeys}
 	respData, _ := json.Marshal(response)
 
-	// CRITICAL DEBUG: Log exactly what we're returning for tag keys
-	logger.Error("CRITICAL DEBUG - VariableTagKeysHandler returning data", 
-		"traceID", traceID,
-		"metricName", tagKeysReq.MetricName,
-		"tagKeys", tagKeys,
-		"responseBody", string(respData))
-
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
 		Body:   respData,
@@ -2218,13 +2215,6 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	// Build cache key based on metric name, tag key, and filter
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
-	
-	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
-	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
-	d.cache.mu.Lock()
-	// Clear all cache entries to ensure no old mock data
-	d.cache.entries = make(map[string]*CacheEntry)
-	d.cache.mu.Unlock()
 
 	// Handle case where metric name is "*" - fetch real data from all metrics
 	if tagValuesReq.MetricName == "*" {
@@ -2261,39 +2251,24 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 			})
 		}
 
-		apiKey := d.SecureJSONData["apiKey"]
-		appKey := d.SecureJSONData["appKey"]
-
 		// Acquire semaphore slot (max 5 concurrent requests)
 		d.concurrencyLimit <- struct{}{}
 		defer func() { <-d.concurrencyLimit }()
 
-		// Get site configuration
-		site := d.JSONData.Site
-		if site == "" {
-			site = "datadoghq.com"
+		// Setup Datadog API client
+		metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
+		if err != nil {
+			duration := time.Since(startTime)
+			logVariableResponse(logger, traceID, "/resources/tag-values", 500, duration, 0, err)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "Failed to setup Datadog client"}`),
+			})
 		}
-
-		// Initialize Datadog API client with credentials and site
-		ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
-			"site": site,
-		})
-		ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
-			"apiKeyAuth": {
-				Key: apiKey,
-			},
-			"appKeyAuth": {
-				Key: appKey,
-			},
-		})
 
 		// Create context with longer timeout for comprehensive queries
 		fetchCtx, cancel := context.WithTimeout(ddCtx, 60*time.Second)
 		defer cancel()
-
-		configuration := datadog.NewConfiguration()
-		client := datadog.NewAPIClient(configuration)
-		metricsApi := datadogV2.NewMetricsApi(client)
 
 		// Fetch all available metrics first
 		logger.Debug("Fetching all metrics to aggregate tag values", 
@@ -2325,27 +2300,14 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 			// Process metrics from this page
 			data := resp.GetData()
-			logger.Error("CRITICAL DEBUG - TagValues ListTagConfigurations response", "page", pageCount, "hasData", data != nil, "traceID", traceID)
 			if data != nil {
-				logger.Error("CRITICAL DEBUG - TagValues Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
 				processedCount := 0
 				for _, config := range data {
 					if processedCount >= maxMetricsPerPage {
 						break // Limit processing to avoid timeout
 					}
 
-					var metricName string
-					// Check both possible fields in the response - same order as tag keys handler
-					if config.MetricTagConfiguration != nil {
-						metricName = config.MetricTagConfiguration.GetId()
-						logger.Error("CRITICAL DEBUG - TagValues Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
-					} else if config.Metric != nil {
-						metricName = config.Metric.GetId()
-						logger.Error("CRITICAL DEBUG - TagValues Found Metric", "metricName", metricName, "traceID", traceID)
-					} else {
-						logger.Error("CRITICAL DEBUG - TagValues Config has neither Metric nor MetricTagConfiguration", "traceID", traceID)
-					}
-
+					metricName := extractMetricName(config)
 					if metricName != "" {
 						// Fetch tags for this metric
 						metricResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
@@ -2360,14 +2322,11 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 						if metricData.Id != nil {
 							attributes := metricData.GetAttributes()
 							allTags := attributes.GetTags()
-
-							// Tags are in format "key:value", extract values for the specific key
-							for _, tag := range allTags {
-								parts := strings.SplitN(tag, ":", 2)
-								if len(parts) == 2 && parts[0] == tagValuesReq.TagKey {
-									tagValue := parts[1]
-									tagValuesSet[tagValue] = true
-								}
+							metricTagValues := extractTagValuesForKey(allTags, tagValuesReq.TagKey)
+							
+							// Add to set
+							for _, value := range metricTagValues {
+								tagValuesSet[value] = true
 							}
 						}
 						processedCount++
@@ -2422,12 +2381,6 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		// Return tag values as VariableResponse
 		response := VariableResponse{Values: tagValues}
 		respData, _ := json.Marshal(response)
-
-		// CRITICAL DEBUG: Log exactly what we're returning
-		logger.Error("CRITICAL DEBUG - VariableTagValuesHandler returning wildcard data", 
-			"traceID", traceID,
-			"tagValues", tagValues,
-			"responseBody", string(respData))
 
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 200,
@@ -2765,12 +2718,6 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/all-tags", req.Method, string(req.Body))
 
-	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
-	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
-	d.cache.mu.Lock()
-	d.cache.entries = make(map[string]*CacheEntry)
-	d.cache.mu.Unlock()
-
 	// Parse request body with enhanced validation
 	var allTagsReq AllTagsRequest
 	if err := validateVariableRequest(logger, traceID, req.Body, &allTagsReq); err != nil {
@@ -2814,39 +2761,24 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 		})
 	}
 
-	apiKey := d.SecureJSONData["apiKey"]
-	appKey := d.SecureJSONData["appKey"]
-
 	// Acquire semaphore slot (max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Get site configuration
-	site := d.JSONData.Site
-	if site == "" {
-		site = "datadoghq.com"
+	// Setup Datadog API client
+	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
+	if err != nil {
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/resources/all-tags", 500, duration, 0, err)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "Failed to setup Datadog client"}`),
+		})
 	}
-
-	// Initialize Datadog API client with credentials and site
-	ddCtx := context.WithValue(ctx, datadog.ContextServerVariables, map[string]string{
-		"site": site,
-	})
-	ddCtx = context.WithValue(ddCtx, datadog.ContextAPIKeys, map[string]datadog.APIKey{
-		"apiKeyAuth": {
-			Key: apiKey,
-		},
-		"appKeyAuth": {
-			Key: appKey,
-		},
-	})
 
 	// Create context with timeout (longer for paginated requests)
 	fetchCtx, cancel := context.WithTimeout(ddCtx, 60*time.Second)
 	defer cancel()
-
-	configuration := datadog.NewConfiguration()
-	client := datadog.NewAPIClient(configuration)
-	metricsApi := datadogV2.NewMetricsApi(client)
 
 	var result []string
 
@@ -2883,26 +2815,14 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 			// Process metrics from this page
 			data := resp.GetData()
-			logger.Error("CRITICAL DEBUG - ListTagConfigurations response", "page", pageCount, "hasData", data != nil, "traceID", traceID)
 			if data != nil {
-				logger.Error("CRITICAL DEBUG - Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
 				
 				for _, config := range data {
 					if metricsProcessed >= maxMetricsToProcess {
 						break
 					}
 					
-					var metricName string
-					// Check both possible fields in the response
-					if config.MetricTagConfiguration != nil {
-						metricName = config.MetricTagConfiguration.GetId()
-						logger.Error("CRITICAL DEBUG - Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
-					} else if config.Metric != nil {
-						metricName = config.Metric.GetId()
-						logger.Error("CRITICAL DEBUG - Found Metric", "metricName", metricName, "traceID", traceID)
-					} else {
-						logger.Error("CRITICAL DEBUG - Config has neither Metric nor MetricTagConfiguration", "traceID", traceID)
-					}
+					metricName := extractMetricName(config)
 					
 					if metricName != "" {
 						metricsProcessed++
@@ -2919,14 +2839,11 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 						if tagsData.Id != nil {
 							attributes := tagsData.GetAttributes()
 							allTags := attributes.GetTags()
-
-							// Tags are in format "key:value", extract unique keys
-							for _, tag := range allTags {
-								parts := strings.SplitN(tag, ":", 2)
-								if len(parts) >= 1 {
-									tagKey := parts[0]
-									tagKeysSet[tagKey] = true
-								}
+							metricTagKeys := extractTagKeysFromTags(allTags)
+							
+							// Add to set
+							for _, key := range metricTagKeys {
+								tagKeysSet[key] = true
 							}
 						}
 					}
