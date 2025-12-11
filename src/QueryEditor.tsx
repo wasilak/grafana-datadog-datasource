@@ -497,7 +497,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     // Add metadata for Explore mode visualization hints
     meta: {
       ...query.meta,
-      preferredVisualisationType: 'graph', // Default to graph for time series data
+      preferredVisualisationType: 'graph' as const, // Default to graph for time series data
       exploreMode: true,
     }
   } : query;
