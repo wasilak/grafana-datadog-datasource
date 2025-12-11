@@ -2001,22 +2001,32 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		})
 	}
 
-	// Validate required fields with enhanced logging
-	if tagValuesReq.TagKey == "" {
-		duration := time.Since(startTime)
-		err := createUserFriendlyError(logger, traceID,
-			fmt.Errorf("missing required field: tagKey"),
-			"Tag key is required",
-			map[string]interface{}{"tagKey": tagValuesReq.TagKey, "metricName": tagValuesReq.MetricName})
-		logVariableResponse(logger, traceID, "/resources/tag-values", 400, duration, 0, err)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 400,
-			Body:   []byte(`{"error": "Tag key is required"}`),
-		})
-	}
-
 	// Build cache key based on metric name and tag key
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey)
+
+	// Handle case where tag key is empty or "*" - return common tag values
+	if tagValuesReq.TagKey == "" || tagValuesReq.TagKey == "*" {
+		// Return common tag values when no specific tag key is requested
+		tagValues := []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+		
+		// Cache the result
+		d.SetCachedEntry(cacheKey, tagValues)
+		
+		duration := time.Since(startTime)
+		logger.Debug("Returning common tag values for wildcard query",
+			"traceID", traceID,
+			"metricName", tagValuesReq.MetricName,
+			"tagKey", tagValuesReq.TagKey,
+			"resultCount", len(tagValues))
+		logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
+		
+		response := VariableResponse{Values: tagValues}
+		respData, _ := json.Marshal(response)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
 
 	// Check cache first
 	if cached := d.GetCachedEntry(cacheKey, ttl); cached != nil {

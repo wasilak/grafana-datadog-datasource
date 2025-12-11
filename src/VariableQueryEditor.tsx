@@ -214,8 +214,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
             label="Metric Name" 
             labelWidth={20} 
             tooltip={state.queryType === 'tag_keys' 
-              ? "The metric name to query tag keys for. Use '*' to get all tag keys across all metrics."
-              : "The metric name to query tag values for. Use '*' to get tag values across all metrics."
+              ? "Metric name filter (optional). Use '*' to get tag keys from all metrics, or specify a metric name."
+              : "Metric name filter (optional). Use '*' to get tag values from all metrics, or specify a metric name."
             }
           >
             <Input
@@ -249,7 +249,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           <InlineField 
             label="Tag Key" 
             labelWidth={20} 
-            tooltip="The tag key to query values for. Use '*' for all tag keys. Start typing to see available tag keys."
+            tooltip="Tag key to get values for. Independent of metric selection - you can use any tag key with any metric. Use '*' for all tag keys."
           >
             <Input
               ref={tagKeyInputRef}
@@ -279,22 +279,22 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         </div>
       )}
 
-      {/* Show validation hints */}
-      {state.queryType === 'metrics' && (!state.metricName || state.metricName.trim() === '') && (
-        <Alert title="Configuration Required" severity="info">
-          Please specify a metric name or use '*' for all metrics.
+      {/* Show helpful information */}
+      {state.queryType === 'metrics' && (
+        <Alert title="Tip" severity="info">
+          Use '*' to get all metrics, or specify a metric name pattern to filter results.
         </Alert>
       )}
 
-      {(state.queryType === 'tag_keys' || state.queryType === 'tag_values') && (!state.metricName || state.metricName.trim() === '') && (
-        <Alert title="Configuration Required" severity="info">
-          Please specify a metric name or use '*' for all metrics.
+      {state.queryType === 'tag_keys' && (
+        <Alert title="Tip" severity="info">
+          Use '*' for metric name to get tag keys from all metrics, or specify a metric to get its tag keys.
         </Alert>
       )}
 
-      {state.queryType === 'tag_values' && (!state.tagKey || state.tagKey.trim() === '') && (
-        <Alert title="Configuration Required" severity="info">
-          Please specify a tag key or use '*' for all tag keys.
+      {state.queryType === 'tag_values' && (
+        <Alert title="Tip" severity="info">
+          Metrics and tags are independent - you can mix any metric with any tag key. Use '*' for either field to get all values.
         </Alert>
       )}
 
