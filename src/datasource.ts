@@ -5,6 +5,9 @@ import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './
 import { variableInterpolationService } from './utils/variableInterpolation';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
+  // Enable annotation support
+  annotations = {};
+
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
   }
