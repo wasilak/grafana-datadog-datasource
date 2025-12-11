@@ -1722,6 +1722,12 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/metrics", req.Method, string(req.Body))
 
+	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
+	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
+	d.cache.mu.Lock()
+	d.cache.entries = make(map[string]*CacheEntry)
+	d.cache.mu.Unlock()
+
 	// Parse request body with enhanced validation
 	var metricsReq MetricsRequest
 	if err := validateVariableRequest(logger, traceID, req.Body, &metricsReq); err != nil {
@@ -1884,6 +1890,12 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/tag-keys", req.Method, string(req.Body))
+
+	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
+	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
+	d.cache.mu.Lock()
+	d.cache.entries = make(map[string]*CacheEntry)
+	d.cache.mu.Unlock()
 
 	// Parse request body with enhanced validation
 	var tagKeysReq TagKeysRequest
@@ -2198,13 +2210,12 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 	// Build cache key based on metric name, tag key, and filter
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
 	
-	// Clear cache for wildcard queries to ensure fresh data (temporary for debugging)
-	if tagValuesReq.MetricName == "*" {
-		logger.Debug("Clearing cache for wildcard query to ensure fresh data", "traceID", traceID, "cacheKey", cacheKey)
-		d.cache.mu.Lock()
-		delete(d.cache.entries, cacheKey)
-		d.cache.mu.Unlock()
-	}
+	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
+	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
+	d.cache.mu.Lock()
+	// Clear all cache entries to ensure no old mock data
+	d.cache.entries = make(map[string]*CacheEntry)
+	d.cache.mu.Unlock()
 
 	// Handle case where metric name is "*" - fetch real data from all metrics
 	if tagValuesReq.MetricName == "*" {
@@ -2731,6 +2742,12 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 	// Log request start
 	logVariableRequest(logger, traceID, "/resources/all-tags", req.Method, string(req.Body))
+
+	// Clear ALL cache entries to ensure no old mock data is returned (temporary for debugging)
+	logger.Debug("Clearing ALL cache entries to remove any old mock data", "traceID", traceID)
+	d.cache.mu.Lock()
+	d.cache.entries = make(map[string]*CacheEntry)
+	d.cache.mu.Unlock()
 
 	// Parse request body with enhanced validation
 	var allTagsReq AllTagsRequest
