@@ -54,9 +54,10 @@ type CacheEntry struct {
 
 // QueryModel represents a query from the frontend
 type QueryModel struct {
-	QueryText string `json:"queryText"`
-	Label     string `json:"label"`
-	Hide      bool   `json:"hide"`
+	QueryText         string `json:"queryText"`
+	Label             string `json:"label"`
+	InterpolatedLabel string `json:"interpolatedLabel"`
+	Hide              bool   `json:"hide"`
 }
 
 // NewDatasource creates a new Datasource factory function
@@ -509,11 +510,18 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 			continue
 		}
 
-		// Build series name - if custom label is provided, use it as template; otherwise use default format
+		// Build series name - use interpolated label if available, otherwise fall back to raw label
 		seriesName := metric // Default to the query text if no labels and no custom label
-		if qm.Label != "" {
-			// Use custom label as template, replacing variables with label values
-			seriesName = replaceTemplateVariables(qm.Label, labels)
+		
+		// Prefer interpolated label (with variables already resolved) over raw label
+		labelToUse := qm.InterpolatedLabel
+		if labelToUse == "" {
+			labelToUse = qm.Label
+		}
+		
+		if labelToUse != "" {
+			// Use the label as template, replacing any remaining template variables with label values
+			seriesName = replaceTemplateVariables(labelToUse, labels)
 		} else if len(labels) > 0 {
 			// Use default format: metric + labels
 			var labelStrings []string
