@@ -2876,14 +2876,21 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 			// Process metrics from this page
 			data := resp.GetData()
 			if data != nil {
+				logger.Debug("Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
+				
 				for _, config := range data {
 					if metricsProcessed >= maxMetricsToProcess {
 						break
 					}
 					
 					var metricName string
+					// Check both possible fields in the response
 					if config.MetricTagConfiguration != nil {
 						metricName = config.MetricTagConfiguration.GetId()
+						logger.Debug("Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
+					} else if config.Metric != nil {
+						metricName = config.Metric.GetId()
+						logger.Debug("Found Metric", "metricName", metricName, "traceID", traceID)
 					}
 					
 					if metricName != "" {
