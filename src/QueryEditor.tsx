@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
-import { Input, CodeEditor, Stack, Alert, useTheme2 } from '@grafana/ui';
+import { Input, CodeEditor, Stack, Alert, useTheme2, Button } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
@@ -7,6 +7,7 @@ import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
+import { QueryEditorHelp } from './QueryEditorHelp';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -15,6 +16,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
 
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
+  const [showHelp, setShowHelp] = useState(false);
   
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -482,12 +484,27 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     <Stack gap={2} direction="column">
       {/* Query field - full width */}
       <div style={{ position: 'relative' }}>
-        <label style={{ 
-          display: 'block', 
-          marginBottom: theme.spacing(1), 
-          fontWeight: theme.typography.fontWeightMedium,
-          color: theme.colors.text.primary
-        }}>Query</label>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: theme.spacing(1)
+        }}>
+          <label style={{ 
+            fontWeight: theme.typography.fontWeightMedium,
+            color: theme.colors.text.primary,
+            margin: 0
+          }}>Query</label>
+          
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowHelp(!showHelp)}
+            icon={showHelp ? "angle-up" : "question-circle"}
+          >
+            {showHelp ? 'Hide Help' : 'Variable Examples'}
+          </Button>
+        </div>
 
         <CodeEditor
           value={queryText || ''}
@@ -670,6 +687,16 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
           </div>
         )}
       </div>
+
+      {/* Variable Help Component */}
+      {showHelp && (
+        <QueryEditorHelp 
+          onClickExample={(exampleQuery) => {
+            onChange({ ...query, ...exampleQuery });
+            setShowHelp(false); // Hide help after selecting an example
+          }} 
+        />
+      )}
 
       {/* Label field - full width */}
       <div>

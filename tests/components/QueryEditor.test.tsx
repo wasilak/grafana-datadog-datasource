@@ -13,6 +13,51 @@ jest.mock('@grafana/ui', () => ({
   )),
   Input: (props: any) => <input {...props} />,
   Spinner: () => <div data-testid="spinner">Loading...</div>,
+  Button: ({ onClick, children, icon, ...props }: any) => (
+    <button onClick={onClick} data-icon={icon} {...props}>
+      {children}
+    </button>
+  ),
+  CodeEditor: ({ onChange, value, ...props }: any) => (
+    <textarea onChange={(e) => onChange(e.target.value)} value={value} {...props} />
+  ),
+  Stack: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  Alert: ({ children, title, ...props }: any) => (
+    <div data-testid="alert" {...props}>
+      {title && <div>{title}</div>}
+      {children}
+    </div>
+  ),
+  useTheme2: () => ({
+    colors: {
+      text: { primary: '#000', secondary: '#666' },
+      background: { primary: '#fff', secondary: '#f5f5f5' },
+      border: { weak: '#ddd' },
+      action: { selected: '#333' },
+      primary: { text: '#007bff' }
+    },
+    spacing: (n: number) => `${n * 8}px`,
+    typography: {
+      fontWeightMedium: 500,
+      h5: { fontSize: '16px' },
+      bodySmall: { fontSize: '12px' },
+      fontFamilyMonospace: 'monospace'
+    },
+    shape: { radius: { default: '4px' } },
+    shadows: { z3: '0 2px 4px rgba(0,0,0,0.1)' },
+    isDark: false
+  }),
+  Card: ({ children, ...props }: any) => <div data-testid="card" {...props}>{children}</div>
+}));
+
+jest.mock('../../src/QueryEditorHelp', () => ({
+  QueryEditorHelp: ({ onClickExample }: any) => (
+    <div data-testid="query-editor-help">
+      <button onClick={() => onClickExample({ queryText: 'test-query', label: 'test-label' })}>
+        Use Example
+      </button>
+    </div>
+  )
 }));
 
 describe('QueryEditor', () => {
@@ -416,5 +461,105 @@ describe('QueryEditor', () => {
         queryText: expect.stringContaining('#'),
       })
     );
+  });
+
+  it('should show help button', () => {
+    const mockHook = {
+      state: {
+        isOpen: false,
+        suggestions: [],
+        isLoading: false,
+        selectedIndex: 0,
+        error: undefined,
+        validationError: undefined,
+      },
+      onInput: jest.fn(),
+      onKeyDown: jest.fn(),
+      onItemSelect: jest.fn(),
+      onClose: jest.fn(),
+    };
+
+    (useQueryAutocompleteModule.useQueryAutocomplete as jest.Mock).mockReturnValue(mockHook);
+
+    render(<QueryEditor {...defaultProps} />);
+
+    expect(screen.getByText('Variable Examples')).toBeInTheDocument();
+  });
+
+  it('should toggle help component when help button is clicked', () => {
+    const mockHook = {
+      state: {
+        isOpen: false,
+        suggestions: [],
+        isLoading: false,
+        selectedIndex: 0,
+        error: undefined,
+        validationError: undefined,
+      },
+      onInput: jest.fn(),
+      onKeyDown: jest.fn(),
+      onItemSelect: jest.fn(),
+      onClose: jest.fn(),
+    };
+
+    (useQueryAutocompleteModule.useQueryAutocomplete as jest.Mock).mockReturnValue(mockHook);
+
+    render(<QueryEditor {...defaultProps} />);
+
+    // Help should not be visible initially
+    expect(screen.queryByTestId('query-editor-help')).not.toBeInTheDocument();
+
+    // Click help button
+    fireEvent.click(screen.getByText('Variable Examples'));
+
+    // Help should now be visible
+    expect(screen.getByTestId('query-editor-help')).toBeInTheDocument();
+    expect(screen.getByText('Hide Help')).toBeInTheDocument();
+
+    // Click help button again
+    fireEvent.click(screen.getByText('Hide Help'));
+
+    // Help should be hidden again
+    expect(screen.queryByTestId('query-editor-help')).not.toBeInTheDocument();
+    expect(screen.getByText('Variable Examples')).toBeInTheDocument();
+  });
+
+  it('should handle example selection from help component', () => {
+    const mockHook = {
+      state: {
+        isOpen: false,
+        suggestions: [],
+        isLoading: false,
+        selectedIndex: 0,
+        error: undefined,
+        validationError: undefined,
+      },
+      onInput: jest.fn(),
+      onKeyDown: jest.fn(),
+      onItemSelect: jest.fn(),
+      onClose: jest.fn(),
+    };
+
+    (useQueryAutocompleteModule.useQueryAutocomplete as jest.Mock).mockReturnValue(mockHook);
+
+    render(<QueryEditor {...defaultProps} />);
+
+    // Show help
+    fireEvent.click(screen.getByText('Variable Examples'));
+    expect(screen.getByTestId('query-editor-help')).toBeInTheDocument();
+
+    // Click example
+    fireEvent.click(screen.getByText('Use Example'));
+
+    // Should call onChange with example query
+    expect(mockOnChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryText: 'test-query',
+        label: 'test-label'
+      })
+    );
+
+    // Help should be hidden after selecting example
+    expect(screen.queryByTestId('query-editor-help')).not.toBeInTheDocument();
   });
 });
