@@ -31,8 +31,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     queryType: query.queryType || 'metrics',
     namespace: query.namespace || '',
     searchPattern: query.searchPattern || '',
-    metricName: query.metricName || '',
-    tagKey: query.tagKey || '',
+    metricName: query.metricName || '*',
+    tagKey: query.tagKey || '*',
     rawQuery: query.rawQuery || '',
   });
 
@@ -61,8 +61,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       queryType: query.queryType || 'metrics',
       namespace: query.namespace || '',
       searchPattern: query.searchPattern || '',
-      metricName: query.metricName || '',
-      tagKey: query.tagKey || '',
+      metricName: query.metricName || '*',
+      tagKey: query.tagKey || '*',
       rawQuery: query.rawQuery || '',
     });
   }, [query]);
@@ -118,16 +118,10 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         definition = `metrics(${newState.metricName || '*'})`;
         break;
       case 'tag_keys':
-        definition = `tag_keys(${newState.metricName || 'all_metrics'})`;
+        definition = `tag_keys(${newState.metricName || '*'})`;
         break;
       case 'tag_values':
-        if (newState.metricName && newState.tagKey) {
-          definition = `tag_values(${newState.metricName}, ${newState.tagKey})`;
-        } else if (newState.tagKey) {
-          definition = `tag_values(all_metrics, ${newState.tagKey})`;
-        } else {
-          definition = `tag_values(${newState.metricName || 'all_metrics'}, *)`;
-        }
+        definition = `tag_values(${newState.metricName || '*'}, ${newState.tagKey || '*'})`;
         break;
       default:
         definition = newState.rawQuery || 'unknown query';
@@ -147,11 +141,11 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       const newState = {
         ...state,
         queryType: option.value,
-        // Clear fields that don't apply to the new query type
+        // Set default values for new query type
         namespace: '',
         searchPattern: '',
-        metricName: option.value !== 'metrics' ? state.metricName : '',
-        tagKey: option.value === 'tag_values' ? state.tagKey : '',
+        metricName: option.value !== 'metrics' ? (state.metricName || '*') : '*',
+        tagKey: option.value === 'tag_values' ? (state.tagKey || '*') : '*',
       };
       saveQuery(newState);
     }
@@ -185,18 +179,18 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           <InlineField 
             label="Metric Name" 
             labelWidth={20} 
-            tooltip="Start typing to search for metric names. Leave empty for all metrics."
+            tooltip="Start typing to search for metric names. Use '*' for all metrics."
           >
             <Input
               ref={metricInputRef}
-              value={state.metricName || ''}
+              value={state.metricName || '*'}
               onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
               onFocus={() => {
                 setActiveField('metric');
                 if (metricInputRef.current) {
                   updateSuggestionsPosition(metricInputRef.current);
                 }
-                autocomplete.onInput(state.metricName || 'system', 0);
+                autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
               }}
               onBlur={() => {
                 // Delay closing to allow for selection
@@ -207,7 +201,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
                   }
                 }, 200);
               }}
-              placeholder="e.g., system.cpu.user (leave empty for all)"
+              placeholder="e.g., system.cpu.user or * for all"
               width={30}
             />
           </InlineField>
@@ -220,20 +214,20 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
             label="Metric Name" 
             labelWidth={20} 
             tooltip={state.queryType === 'tag_keys' 
-              ? "The metric name to query tag keys for. Leave empty to get all tag keys across all metrics."
-              : "The metric name to query tag values for. Leave empty to get tag values across all metrics."
+              ? "The metric name to query tag keys for. Use '*' to get all tag keys across all metrics."
+              : "The metric name to query tag values for. Use '*' to get tag values across all metrics."
             }
           >
             <Input
               ref={metricInputRef}
-              value={state.metricName || ''}
+              value={state.metricName || '*'}
               onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
               onFocus={() => {
                 setActiveField('metric');
                 if (metricInputRef.current) {
                   updateSuggestionsPosition(metricInputRef.current);
                 }
-                autocomplete.onInput(state.metricName || 'system', 0);
+                autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
               }}
               onBlur={() => {
                 setTimeout(() => {
@@ -243,7 +237,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
                   }
                 }, 200);
               }}
-              placeholder="e.g., system.cpu.user (optional)"
+              placeholder="e.g., system.cpu.user or * for all"
               width={30}
             />
           </InlineField>
@@ -255,18 +249,19 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           <InlineField 
             label="Tag Key" 
             labelWidth={20} 
-            tooltip="The tag key to query values for. Start typing to see available tag keys."
+            tooltip="The tag key to query values for. Use '*' for all tag keys. Start typing to see available tag keys."
           >
             <Input
               ref={tagKeyInputRef}
-              value={state.tagKey || ''}
+              value={state.tagKey || '*'}
               onChange={(e) => handleTagKeyInputChange(e.currentTarget.value)}
               onFocus={() => {
                 setActiveField('tagKey');
                 if (tagKeyInputRef.current) {
                   updateSuggestionsPosition(tagKeyInputRef.current);
                 }
-                const queryForTags = state.metricName ? `avg:${state.metricName}{${state.tagKey}` : `avg:system.cpu{${state.tagKey}`;
+                const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
+                const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
                 autocomplete.onInput(queryForTags, queryForTags.length - 1);
               }}
               onBlur={() => {
@@ -277,7 +272,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
                   }
                 }, 200);
               }}
-              placeholder="e.g., host, service, env"
+              placeholder="e.g., host, service, env or * for all"
               width={30}
             />
           </InlineField>
@@ -285,9 +280,21 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       )}
 
       {/* Show validation hints */}
-      {state.queryType === 'tag_values' && !state.tagKey && (
+      {state.queryType === 'metrics' && (!state.metricName || state.metricName.trim() === '') && (
         <Alert title="Configuration Required" severity="info">
-          Please specify a tag key to query values for.
+          Please specify a metric name or use '*' for all metrics.
+        </Alert>
+      )}
+
+      {(state.queryType === 'tag_keys' || state.queryType === 'tag_values') && (!state.metricName || state.metricName.trim() === '') && (
+        <Alert title="Configuration Required" severity="info">
+          Please specify a metric name or use '*' for all metrics.
+        </Alert>
+      )}
+
+      {state.queryType === 'tag_values' && (!state.tagKey || state.tagKey.trim() === '') && (
+        <Alert title="Configuration Required" severity="info">
+          Please specify a tag key or use '*' for all tag keys.
         </Alert>
       )}
 

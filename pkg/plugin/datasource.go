@@ -1913,7 +1913,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 
 	var tagKeys []string
 
-	if tagKeysReq.MetricName != "" {
+	if tagKeysReq.MetricName != "" && tagKeysReq.MetricName != "*" {
 		// Fetch tags for specific metric using ListTagsByMetricName
 		logger.Debug("Fetching tag keys for specific metric", 
 			"traceID", traceID,
@@ -1954,8 +1954,8 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 			tagKeys = append(tagKeys, key)
 		}
 	} else {
-		// Return commonly used tag keys when no metric is specified
-		tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type"}
+		// Return commonly used tag keys when no metric is specified or * is used
+		tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
 	}
 
 	// Cache the result
@@ -2083,7 +2083,7 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	var tagValues []string
 
-	if tagValuesReq.MetricName != "" {
+	if tagValuesReq.MetricName != "" && tagValuesReq.MetricName != "*" {
 		// Fetch tag values for specific metric and tag key
 		logger.Debug("Fetching tag values for specific metric and tag key", 
 			"traceID", traceID,

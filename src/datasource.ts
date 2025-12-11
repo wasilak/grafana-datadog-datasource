@@ -36,27 +36,31 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       switch (query.queryType) {
         case 'metrics':
           resourcePath = 'metrics';
-          if (query.namespace) {
+          if (query.namespace && query.namespace !== '*') {
             params.namespace = query.namespace;
           }
-          if (query.searchPattern) {
+          if (query.searchPattern && query.searchPattern !== '*') {
             params.search = query.searchPattern;
+          }
+          // For metrics, we can use metricName as a search pattern
+          if (query.metricName && query.metricName !== '*') {
+            params.search = query.metricName;
           }
           break;
 
         case 'tag_keys':
           resourcePath = 'tag-keys';
-          if (query.metricName) {
+          if (query.metricName && query.metricName !== '*') {
             params.metric = query.metricName;
           }
           break;
 
         case 'tag_values':
           resourcePath = 'tag-values';
-          if (query.metricName) {
+          if (query.metricName && query.metricName !== '*') {
             params.metric = query.metricName;
           }
-          if (query.tagKey) {
+          if (query.tagKey && query.tagKey !== '*') {
             params.tag_key = query.tagKey;
           }
           break;
