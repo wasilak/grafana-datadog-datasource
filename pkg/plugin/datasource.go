@@ -2181,6 +2181,13 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	response := VariableResponse{Values: tagKeys}
 	respData, _ := json.Marshal(response)
 
+	// CRITICAL DEBUG: Log exactly what we're returning for tag keys
+	logger.Error("CRITICAL DEBUG - VariableTagKeysHandler returning data", 
+		"traceID", traceID,
+		"metricName", tagKeysReq.MetricName,
+		"tagKeys", tagKeys,
+		"responseBody", string(respData))
+
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,
 		Body:   respData,
