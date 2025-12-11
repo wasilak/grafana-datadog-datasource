@@ -125,15 +125,31 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
   // Check if a value is a regex pattern (wrapped in forward slashes)
   const isRegexPattern = (value: string): boolean => {
-    return value.length >= 2 && value.startsWith('/') && value.endsWith('/');
+    const trimmed = value.trim();
+    return trimmed.length >= 2 && trimmed.startsWith('/') && trimmed.endsWith('/');
+  };
+
+  // Smart trim that preserves regex patterns but trims whitespace outside /regex/
+  const smartTrim = (value: string): string => {
+    const trimmed = value.trim();
+    
+    // If it's a regex pattern, return the trimmed version (removes spaces outside //)
+    if (trimmed.length >= 2 && trimmed.startsWith('/') && trimmed.endsWith('/')) {
+      return trimmed;
+    }
+    
+    // For non-regex values, return trimmed
+    return trimmed;
   };
 
   // Handle autocomplete for metric names
   const handleMetricInputChange = (value: string) => {
-    onFieldChange('metricName', value);
+    // Smart trim whitespace (preserves spaces inside regex patterns)
+    const cleanValue = smartTrim(value);
+    onFieldChange('metricName', cleanValue);
     
     // Only trigger autocomplete if it's NOT a regex pattern
-    if (!isRegexPattern(value)) {
+    if (!isRegexPattern(cleanValue)) {
       setActiveField('metric');
       
       // Trigger autocomplete with a simple query to get metrics
@@ -142,7 +158,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           updateSuggestionsPosition(metricInputRef.current);
         }
         // Use a simple query that will trigger metric suggestions
-        autocomplete.onInput(value || 'system', 0);
+        autocomplete.onInput(cleanValue || 'system', 0);
       }, 0);
     } else {
       // Close autocomplete for regex patterns
@@ -153,10 +169,12 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
   // Handle autocomplete for tag keys
   const handleTagKeyInputChange = (value: string) => {
-    onFieldChange('tagKey', value);
+    // Smart trim whitespace (preserves spaces inside regex patterns)
+    const cleanValue = smartTrim(value);
+    onFieldChange('tagKey', cleanValue);
     
     // Only trigger autocomplete if it's NOT a regex pattern
-    if (!isRegexPattern(value)) {
+    if (!isRegexPattern(cleanValue)) {
       setActiveField('tagKey');
       
       // Trigger autocomplete for tag keys
@@ -165,7 +183,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           updateSuggestionsPosition(tagKeyInputRef.current);
         }
         // Use the metric name to get tag suggestions, or empty for all tags
-        const queryForTags = state.metricName ? `avg:${state.metricName}{${value}` : `avg:system.cpu{${value}`;
+        const queryForTags = state.metricName ? `avg:${state.metricName}{${cleanValue}` : `avg:system.cpu{${cleanValue}`;
         autocomplete.onInput(queryForTags, queryForTags.length - 1);
       }, 0);
     } else {
