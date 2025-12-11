@@ -34,13 +34,13 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     // If query is a string, try to parse it as JSON
     if (typeof q === 'string') {
       if (q === '' || q === '{}') {
-        // Empty string or empty object, return defaults
+        // Empty string or empty object, return defaults with empty fields
         return {
           queryType: 'metrics',
           namespace: '',
           searchPattern: '',
-          metricName: '*',
-          tagKey: '*',
+          metricName: '',
+          tagKey: '',
           filter: '',
           rawQuery: '',
         };
@@ -51,8 +51,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           queryType: parsed.queryType || 'metrics',
           namespace: parsed.namespace || '',
           searchPattern: parsed.searchPattern || '',
-          metricName: parsed.metricName || '*',
-          tagKey: parsed.tagKey || '*',
+          metricName: parsed.metricName || '',
+          tagKey: parsed.tagKey || '',
           filter: parsed.filter || '',
           rawQuery: parsed.rawQuery || '',
         };
@@ -62,8 +62,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           queryType: 'metrics',
           namespace: '',
           searchPattern: '',
-          metricName: '*',
-          tagKey: '*',
+          metricName: '',
+          tagKey: '',
           filter: '',
           rawQuery: q, // Store the original string in rawQuery
         };
@@ -76,20 +76,20 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         queryType: q.queryType || 'metrics',
         namespace: q.namespace || '',
         searchPattern: q.searchPattern || '',
-        metricName: q.metricName || '*',
-        tagKey: q.tagKey || '*',
+        metricName: q.metricName || '',
+        tagKey: q.tagKey || '',
         filter: q.filter || '',
         rawQuery: q.rawQuery || '',
       };
     }
     
-    // Fallback to defaults
+    // Fallback to defaults with empty fields
     return {
       queryType: 'metrics',
       namespace: '',
       searchPattern: '',
-      metricName: '*',
-      tagKey: '*',
+      metricName: '',
+      tagKey: '',
       filter: '',
       rawQuery: '',
     };
@@ -97,6 +97,9 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
   
   // Initialize state with parsed query values or defaults
   const [state, setState] = useState<MyVariableQuery>(parseQuery(query));
+  
+  // Validation state for empty fields
+  const [showValidationWarning, setShowValidationWarning] = useState(false);
 
   // Refs for autocomplete positioning
   const metricInputRef = useRef<HTMLInputElement>(null);
@@ -202,22 +205,57 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     });
   };
 
+  // Validate query fields - check for empty required fields
+  const validateQuery = (queryState: MyVariableQuery): { isValid: boolean; emptyFields: string[] } => {
+    const emptyFields: string[] = [];
+    
+    switch (queryState.queryType) {
+      case 'metrics':
+        if (!queryState.metricName || queryState.metricName.trim() === '') {
+          emptyFields.push('Metric Name');
+        }
+        break;
+      case 'tag_keys':
+        if (!queryState.metricName || queryState.metricName.trim() === '') {
+          emptyFields.push('Metric Name');
+        }
+        break;
+      case 'tag_values':
+        if (!queryState.metricName || queryState.metricName.trim() === '') {
+          emptyFields.push('Metric Name');
+        }
+        if (!queryState.tagKey || queryState.tagKey.trim() === '') {
+          emptyFields.push('Tag Key');
+        }
+        break;
+    }
+    
+    return {
+      isValid: emptyFields.length === 0,
+      emptyFields
+    };
+  };
+
   // Save query changes and generate definition string
   const saveQuery = (newState: MyVariableQuery) => {
     console.log('VariableQueryEditor saveQuery called with:', newState);
     setState(newState);
     
+    // Validate the query and show warning if needed
+    const validation = validateQuery(newState);
+    setShowValidationWarning(!validation.isValid);
+    
     // Generate definition string for Grafana's variable list display
     let definition = '';
     switch (newState.queryType) {
       case 'metrics':
-        definition = `metrics(${newState.metricName || '*'})`;
+        definition = `metrics(${newState.metricName || 'empty'})`;
         break;
       case 'tag_keys':
-        definition = `tag_keys(${newState.metricName || '*'})`;
+        definition = `tag_keys(${newState.metricName || 'empty'})`;
         break;
       case 'tag_values':
-        definition = `tag_values(${newState.metricName || '*'}, ${newState.tagKey || '*'})`;
+        definition = `tag_values(${newState.metricName || 'empty'}, ${newState.tagKey || 'empty'})`;
         break;
       default:
         definition = newState.rawQuery || 'unknown query';
@@ -238,11 +276,11 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       const newState = {
         ...state,
         queryType: option.value,
-        // Set default values for new query type
+        // Keep existing values or empty for new query type
         namespace: '',
         searchPattern: '',
-        metricName: option.value !== 'metrics' ? (state.metricName || '*') : '*',
-        tagKey: option.value === 'tag_values' ? (state.tagKey || '*') : '*',
+        metricName: option.value !== 'metrics' ? (state.metricName || '') : (state.metricName || ''),
+        tagKey: option.value === 'tag_values' ? (state.tagKey || '') : (state.tagKey || ''),
       };
       saveQuery(newState);
     }
@@ -280,16 +318,17 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           >
             <Input
               ref={metricInputRef}
-              value={state.metricName || '*'}
+              value={state.metricName || ''}
               onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
               onFocus={() => {
-                // Only trigger autocomplete if not a regex pattern
-                if (!isRegexPattern(state.metricName || '')) {
+                // Only trigger autocomplete if not a regex pattern and not empty
+                const currentValue = state.metricName || '';
+                if (currentValue && !isRegexPattern(currentValue)) {
                   setActiveField('metric');
                   if (metricInputRef.current) {
                     updateSuggestionsPosition(metricInputRef.current);
                   }
-                  autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
+                  autocomplete.onInput(currentValue, 0);
                 }
               }}
               onBlur={() => {
@@ -320,16 +359,17 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           >
             <Input
               ref={metricInputRef}
-              value={state.metricName || '*'}
+              value={state.metricName || ''}
               onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
               onFocus={() => {
-                // Only trigger autocomplete if not a regex pattern
-                if (!isRegexPattern(state.metricName || '')) {
+                // Only trigger autocomplete if not a regex pattern and not empty
+                const currentValue = state.metricName || '';
+                if (currentValue && !isRegexPattern(currentValue)) {
                   setActiveField('metric');
                   if (metricInputRef.current) {
                     updateSuggestionsPosition(metricInputRef.current);
                   }
-                  autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
+                  autocomplete.onInput(currentValue, 0);
                 }
               }}
               onBlur={() => {
@@ -356,17 +396,18 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           >
             <Input
               ref={tagKeyInputRef}
-              value={state.tagKey || '*'}
+              value={state.tagKey || ''}
               onChange={(e) => handleTagKeyInputChange(e.currentTarget.value)}
               onFocus={() => {
-                // Only trigger autocomplete if not a regex pattern
-                if (!isRegexPattern(state.tagKey || '')) {
+                // Only trigger autocomplete if not a regex pattern and not empty
+                const currentValue = state.tagKey || '';
+                if (currentValue && !isRegexPattern(currentValue)) {
                   setActiveField('tagKey');
                   if (tagKeyInputRef.current) {
                     updateSuggestionsPosition(tagKeyInputRef.current);
                   }
-                  const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
-                  const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
+                  const metricForTags = state.metricName || 'system.cpu';
+                  const queryForTags = `avg:${metricForTags}{${currentValue}`;
                   autocomplete.onInput(queryForTags, queryForTags.length - 1);
                 }
               }}
@@ -394,17 +435,18 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           >
             <Input
               ref={tagKeyInputRef}
-              value={state.tagKey || '*'}
+              value={state.tagKey || ''}
               onChange={(e) => handleTagKeyInputChange(e.currentTarget.value)}
               onFocus={() => {
-                // Only trigger autocomplete if not a regex pattern
-                if (!isRegexPattern(state.tagKey || '')) {
+                // Only trigger autocomplete if not a regex pattern and not empty
+                const currentValue = state.tagKey || '';
+                if (currentValue && !isRegexPattern(currentValue)) {
                   setActiveField('tagKey');
                   if (tagKeyInputRef.current) {
                     updateSuggestionsPosition(tagKeyInputRef.current);
                   }
-                  const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
-                  const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
+                  const metricForTags = state.metricName || 'system.cpu';
+                  const queryForTags = `avg:${metricForTags}{${currentValue}`;
                   autocomplete.onInput(queryForTags, queryForTags.length - 1);
                 }
               }}
@@ -421,6 +463,14 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
             />
           </InlineField>
         </div>
+      )}
+
+      {/* Show validation warning if fields are empty */}
+      {showValidationWarning && (
+        <Alert title="Required Fields" severity="warning">
+          <strong>Empty fields detected:</strong> Please fill in all required fields before running the query.<br/>
+          Use specific values (e.g., "system.cpu"), regex patterns (e.g., "/^system\./"), or "*" for all values.
+        </Alert>
       )}
 
       {/* Show helpful information */}

@@ -50,6 +50,38 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
         return [];
       }
       
+      // Validate required fields and return empty results if any are empty
+      const validateAndConvertField = (value: string | undefined): string => {
+        // Convert empty/undefined to '*' for backend compatibility
+        return (value && value.trim() !== '') ? value : '*';
+      };
+
+      const isFieldEmpty = (value: string | undefined): boolean => {
+        return !value || value.trim() === '';
+      };
+
+      // Check for empty required fields based on query type
+      switch (query.queryType) {
+        case 'metrics':
+          if (isFieldEmpty(query.metricName)) {
+            console.log('Metrics query has empty metricName field, returning empty results');
+            return [];
+          }
+          break;
+        case 'tag_keys':
+          if (isFieldEmpty(query.metricName)) {
+            console.log('Tag keys query has empty metricName field, returning empty results');
+            return [];
+          }
+          break;
+        case 'tag_values':
+          if (isFieldEmpty(query.metricName) || isFieldEmpty(query.tagKey)) {
+            console.log('Tag values query has empty required fields, returning empty results');
+            return [];
+          }
+          break;
+      }
+      
       // Determine the resource endpoint based on query type
       let resourcePath = '';
       const params: Record<string, string> = {};
@@ -60,17 +92,14 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           if (query.namespace && query.namespace !== '*') {
             params.namespace = query.namespace;
           }
-          // Use metricName as search pattern (supports both autocomplete and regex)
-          if (query.metricName && query.metricName !== '*') {
-            params.searchPattern = query.metricName;
-          }
+          // Convert metricName to '*' if empty, otherwise use as-is
+          params.searchPattern = validateAndConvertField(query.metricName);
           break;
 
         case 'tag_keys':
           resourcePath = 'tag-keys';
-          if (query.metricName && query.metricName !== '*') {
-            params.metricName = query.metricName;
-          }
+          // Convert metricName to '*' if empty, otherwise use as-is
+          params.metricName = validateAndConvertField(query.metricName);
           // Use tagKey as filter pattern for tag keys (supports both autocomplete and regex)
           if (query.tagKey && query.tagKey !== '*') {
             params.filter = query.tagKey;
@@ -79,14 +108,9 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
 
         case 'tag_values':
           resourcePath = 'tag-values';
-          if (query.metricName && query.metricName !== '*') {
-            params.metricName = query.metricName;
-          }
-          if (query.tagKey && query.tagKey !== '*') {
-            params.tagKey = query.tagKey;
-          }
-          // For tag values, we could use a separate filter field if needed
-          // For now, the tagKey field serves as both selector and filter
+          // Convert fields to '*' if empty, otherwise use as-is
+          params.metricName = validateAndConvertField(query.metricName);
+          params.tagKey = validateAndConvertField(query.tagKey);
           break;
 
         default:
