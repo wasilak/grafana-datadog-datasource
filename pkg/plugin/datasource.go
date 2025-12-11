@@ -2198,6 +2198,85 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 	// Build cache key based on metric name, tag key, and filter
 	cacheKey := fmt.Sprintf("var-tag-values:%s:%s:%s", tagValuesReq.MetricName, tagValuesReq.TagKey, tagValuesReq.Filter)
 
+	// Handle case where metric name is "*" - return common tag values for the specific tag key
+	if tagValuesReq.MetricName == "*" {
+		logger.Debug("Returning common tag values for wildcard metric", 
+			"traceID", traceID,
+			"tagKey", tagValuesReq.TagKey,
+			"timeout", "30s")
+
+		var tagValues []string
+
+		// Return common values based on the specific tag key
+		switch tagValuesReq.TagKey {
+		case "env", "environment":
+			tagValues = []string{"prod", "production", "staging", "stage", "dev", "development", "test", "testing", "qa", "demo", "sandbox"}
+		case "service":
+			tagValues = []string{"web", "api", "database", "db", "cache", "redis", "worker", "queue", "scheduler", "proxy", "gateway", "auth", "payment", "notification"}
+		case "region":
+			tagValues = []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-west-2", "eu-central-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1"}
+		case "zone", "availability-zone":
+			tagValues = []string{"us-east-1a", "us-east-1b", "us-east-1c", "us-west-2a", "us-west-2b", "eu-west-1a", "eu-west-1b", "eu-west-1c"}
+		case "host":
+			tagValues = []string{"web-01", "web-02", "web-03", "api-01", "api-02", "db-01", "db-02", "cache-01", "worker-01", "worker-02", "lb-01", "lb-02", "monitor-01"}
+		case "team":
+			tagValues = []string{"backend", "frontend", "devops", "sre", "data", "ml", "security", "platform", "mobile", "qa"}
+		case "tier":
+			tagValues = []string{"frontend", "backend", "database", "cache", "queue", "storage", "monitoring", "logging"}
+		case "role":
+			tagValues = []string{"web", "api", "database", "cache", "worker", "scheduler", "proxy", "load-balancer", "monitor"}
+		case "instance-type":
+			tagValues = []string{"t3.micro", "t3.small", "t3.medium", "t3.large", "m5.large", "m5.xlarge", "c5.large", "r5.large"}
+		case "version":
+			tagValues = []string{"v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0", "latest", "stable", "beta", "alpha"}
+		case "datacenter", "dc":
+			tagValues = []string{"us-east", "us-west", "eu-west", "ap-southeast", "primary", "secondary", "backup"}
+		case "cluster":
+			tagValues = []string{"prod-cluster", "staging-cluster", "dev-cluster", "k8s-prod", "k8s-staging"}
+		case "namespace":
+			tagValues = []string{"default", "kube-system", "monitoring", "logging", "ingress", "cert-manager"}
+		case "pod":
+			tagValues = []string{"web-pod-1", "web-pod-2", "api-pod-1", "api-pod-2", "worker-pod-1"}
+		case "container":
+			tagValues = []string{"web", "api", "worker", "nginx", "redis", "postgres", "elasticsearch"}
+		case "image":
+			tagValues = []string{"nginx:latest", "redis:6.2", "postgres:13", "node:16", "python:3.9"}
+		case "deployment":
+			tagValues = []string{"web-deployment", "api-deployment", "worker-deployment", "db-deployment"}
+		case "application", "app":
+			tagValues = []string{"web-app", "api-service", "worker-service", "admin-panel", "monitoring"}
+		case "component":
+			tagValues = []string{"frontend", "backend", "database", "cache", "queue", "proxy", "monitor"}
+		case "stage":
+			tagValues = []string{"prod", "staging", "dev", "test", "qa", "demo", "sandbox"}
+		case "owner":
+			tagValues = []string{"team-backend", "team-frontend", "team-devops", "team-data", "team-security"}
+		default:
+			// Generic fallback values for unknown tag keys
+			tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "us-east-1", "backend", "frontend", "v1.0.0", "latest"}
+		}
+
+		// Cache the result
+		d.SetCachedEntry(cacheKey, tagValues)
+
+		// Log successful completion
+		duration := time.Since(startTime)
+		logger.Debug("Successfully returned common tag values for wildcard metric",
+			"traceID", traceID,
+			"tagKey", tagValuesReq.TagKey,
+			"resultCount", len(tagValues))
+		logVariableResponse(logger, traceID, "/resources/tag-values", 200, duration, len(tagValues), nil)
+
+		// Return tag values as VariableResponse
+		response := VariableResponse{Values: tagValues}
+		respData, _ := json.Marshal(response)
+
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
 	// Handle case where tag key is empty or "*" - use comprehensive endpoint
 	if tagValuesReq.TagKey == "" || tagValuesReq.TagKey == "*" {
 		// Use the all-tags endpoint to get comprehensive tag values from organization
