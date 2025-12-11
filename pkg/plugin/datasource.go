@@ -557,6 +557,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 // CallResource handles resource calls (autocomplete endpoints)
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
+	
+	// Debug: Log all incoming requests
+	logger.Info("CallResource received request", 
+		"method", req.Method, 
+		"path", req.Path, 
+		"bodyLength", len(req.Body),
+		"body", string(req.Body))
 
 	// Route requests to appropriate handlers
 	switch {
@@ -568,14 +575,14 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.TagValuesHandler(ctx, req, sender)
 	case req.Method == "POST" && req.Path == "autocomplete/complete":
 		return d.CompleteHandler(ctx, req, sender)
-	// Variable resource handlers
-	case req.Method == "POST" && req.Path == "resources/metrics":
+	// Variable resource handlers - Grafana strips "resources/" prefix
+	case req.Method == "POST" && req.Path == "metrics":
 		return d.VariableMetricsHandler(ctx, req, sender)
-	case req.Method == "POST" && req.Path == "resources/tag-keys":
+	case req.Method == "POST" && req.Path == "tag-keys":
 		return d.VariableTagKeysHandler(ctx, req, sender)
-	case req.Method == "POST" && req.Path == "resources/tag-values":
+	case req.Method == "POST" && req.Path == "tag-values":
 		return d.VariableTagValuesHandler(ctx, req, sender)
-	case req.Method == "POST" && req.Path == "resources/all-tags":
+	case req.Method == "POST" && req.Path == "all-tags":
 		return d.VariableAllTagsHandler(ctx, req, sender)
 	default:
 		logger.Warn("Unknown resource path", "path", req.Path, "method", req.Method)
