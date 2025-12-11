@@ -50,7 +50,7 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 
 ### Option 2: Environment Variable Installation
 ```bash
-GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.1/wasilak-datadog-datasource-v0.4.1.zip;wasilak-datadog-datasource
+GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
 ```
 
 ### Option 3: Self-Signed Plugin
@@ -107,9 +107,9 @@ GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/release
 - **"Plugin ID mismatch"**: Use `wasilak-datadog-datasource` as the plugin ID, not `Datadog`
   ```bash
   # Correct
-  GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.1/wasilak-datadog-datasource-v0.4.1.zip;wasilak-datadog-datasource
+  GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
   ```
-- **"Invalid signature"**: For v0.4.1+, the plugin uses modern Grafana signing. If you still get signature errors:
+- **"Invalid signature"**: For v0.4.2+, the plugin uses modern Grafana signing. If you still get signature errors:
   ```bash
   GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
   ```
