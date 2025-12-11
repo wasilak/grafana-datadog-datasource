@@ -2844,17 +2844,20 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 	// Process the request based on query type
 	if allTagsReq.QueryType == "tag_keys" {
-		// Fetch all metrics with pagination to get comprehensive tag keys
-		logger.Debug("Fetching all metrics with pagination for tag keys", 
+		// Fetch all available metrics to get their tag keys
+		logger.Debug("Fetching all available metrics to extract tag keys", 
 			"traceID", traceID,
 			"timeout", "60s")
 
 		tagKeysSet := make(map[string]bool)
 		var cursor *string = nil
 		pageCount := 0
-		maxPages := 10 // Limit to prevent infinite loops
+		maxPages := 5 // Limit to prevent too many API calls
+		metricsProcessed := 0
+		maxMetricsToProcess := 50 // Limit metrics to process for performance
 
-		for pageCount < maxPages {
+		// First, get available metrics using ListTagConfigurations (which gives us metrics)
+		for pageCount < maxPages && metricsProcessed < maxMetricsToProcess {
 			pageCount++
 			
 			// Create optional parameters for pagination
@@ -2874,14 +2877,38 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 			data := resp.GetData()
 			if data != nil {
 				for _, config := range data {
+					if metricsProcessed >= maxMetricsToProcess {
+						break
+					}
+					
+					var metricName string
 					if config.MetricTagConfiguration != nil {
-						// Extract metric name as a potential tag key context
-						metricId := config.MetricTagConfiguration.GetId()
-						if metricId != "" {
-							// Add common tag keys that would be associated with this metric
-							commonKeys := []string{"host", "service", "env", "region", "team", "version"}
-							for _, key := range commonKeys {
-								tagKeysSet[key] = true
+						metricName = config.MetricTagConfiguration.GetId()
+					}
+					
+					if metricName != "" {
+						metricsProcessed++
+						
+						// Fetch tags for this specific metric
+						tagsResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
+						if err != nil {
+							logger.Debug("Failed to fetch tags for metric", "metric", metricName, "error", err, "traceID", traceID)
+							continue
+						}
+
+						// Extract tag keys from the tags
+						tagsData := tagsResp.GetData()
+						if tagsData.Id != nil {
+							attributes := tagsData.GetAttributes()
+							allTags := attributes.GetTags()
+
+							// Tags are in format "key:value", extract unique keys
+							for _, tag := range allTags {
+								parts := strings.SplitN(tag, ":", 2)
+								if len(parts) >= 1 {
+									tagKey := parts[0]
+									tagKeysSet[tagKey] = true
+								}
 							}
 						}
 					}
@@ -2891,25 +2918,24 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 			// Check for next page
 			meta := resp.GetMeta()
 			pagination := meta.GetPagination()
-			if nextCursor := pagination.GetNextCursor(); nextCursor != "" {
+			if nextCursor := pagination.GetNextCursor(); nextCursor != "" && metricsProcessed < maxMetricsToProcess {
 				cursor = &nextCursor
-				logger.Debug("Found next page", "cursor", nextCursor, "page", pageCount, "traceID", traceID)
+				logger.Debug("Found next page", "cursor", nextCursor, "page", pageCount, "metricsProcessed", metricsProcessed, "traceID", traceID)
 			} else {
-				logger.Debug("No more pages", "totalPages", pageCount, "traceID", traceID)
+				logger.Debug("No more pages or reached metric limit", "totalPages", pageCount, "metricsProcessed", metricsProcessed, "traceID", traceID)
 				break
 			}
 		}
-
-		// No hardcoded fallback values - only use real data from Datadog API
 
 		// Convert set to slice
 		for key := range tagKeysSet {
 			result = append(result, key)
 		}
 
-		logger.Debug("Completed tag keys collection", 
+		logger.Debug("Completed tag keys collection from real metrics", 
 			"traceID", traceID,
 			"totalPages", pageCount,
+			"metricsProcessed", metricsProcessed,
 			"uniqueTagKeys", len(result))
 
 	} else if allTagsReq.QueryType == "tag_values" {
