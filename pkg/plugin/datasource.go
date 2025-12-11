@@ -862,11 +862,11 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 			tags = append(tags, key)
 		}
 	} else {
-		// Handle regex pattern for metric name - return common tag keys
-		logger.Debug("Regex pattern detected for autocomplete tags, returning common tag keys", "pattern", metric)
-		// For autocomplete with regex patterns, return common tag keys since we can't efficiently 
+		// Handle regex pattern for metric name - return empty array
+		logger.Debug("Regex pattern detected for autocomplete tags, returning empty array", "pattern", metric)
+		// For autocomplete with regex patterns, return empty array since we can't efficiently 
 		// fetch and aggregate tags from all matching metrics in real-time
-		tags = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+		tags = []string{}
 	}
 	
 	logger.Debug("Extracted tag keys", "metric", metric, "tagCount", len(tags), "tags", tags)
@@ -2019,8 +2019,8 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		metricsResp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
 		if err != nil {
 			logger.Error("Failed to fetch metrics for regex filtering", "error", err, "traceID", traceID)
-			// Fallback to comprehensive tag keys
-			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+			// Return empty array instead of fake data
+			tagKeys = []string{}
 		} else {
 			// Extract metrics that match the regex pattern
 			tagKeysSet := make(map[string]bool)
@@ -2084,9 +2084,9 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 				tagKeys = append(tagKeys, key)
 			}
 
-			// If no tag keys found from matching metrics, fallback to common ones
+			// If no tag keys found from matching metrics, return empty array
 			if len(tagKeys) == 0 {
-				tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+				tagKeys = []string{}
 			}
 		}
 	} else {
@@ -2118,20 +2118,20 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 		// Call the all-tags handler
 		if err := d.VariableAllTagsHandler(ctx, allTagsRequest, allTagsSender); err != nil {
 			logger.Error("Failed to fetch comprehensive tag keys", "error", err, "traceID", traceID)
-			// Fallback to common tag keys
-			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+			// Return empty array instead of fake data
+			tagKeys = []string{}
 		} else if allTagsResponse != nil && allTagsResponse.Status == 200 {
 			// Parse the response from all-tags handler
 			var allTagsResp VariableResponse
 			if err := json.Unmarshal(allTagsResponse.Body, &allTagsResp); err == nil {
 				tagKeys = allTagsResp.Values
 			} else {
-				// Fallback to common tag keys
-				tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+				// Return empty array instead of fake data
+				tagKeys = []string{}
 			}
 		} else {
-			// Fallback to common tag keys
-			tagKeys = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
+			// Return empty array instead of fake data
+			tagKeys = []string{}
 		}
 	}
 
@@ -2869,20 +2869,7 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 			}
 		}
 
-		// Add comprehensive set of common tag keys
-		commonTagKeys := []string{
-			"host", "service", "env", "environment", "version", "region", "zone", 
-			"availability-zone", "instance-type", "team", "project", "datacenter",
-			"cluster", "namespace", "pod", "container", "image", "deployment",
-			"application", "component", "tier", "role", "stage", "owner",
-			"cost-center", "business-unit", "product", "feature", "release",
-			"build", "commit", "branch", "pipeline", "job", "task", "worker",
-			"queue", "topic", "partition", "shard", "replica", "node",
-		}
-		
-		for _, key := range commonTagKeys {
-			tagKeysSet[key] = true
-		}
+		// No hardcoded fallback values - only use real data from Datadog API
 
 		// Convert set to slice
 		for key := range tagKeysSet {
