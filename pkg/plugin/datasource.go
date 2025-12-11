@@ -559,12 +559,13 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
 	
-	// Debug: Log all incoming requests
-	logger.Info("CallResource received request", 
+	// CRITICAL DEBUG: Log all incoming requests with ERROR level to ensure visibility
+	logger.Error("CRITICAL DEBUG - CallResource received request", 
 		"method", req.Method, 
 		"path", req.Path, 
 		"bodyLength", len(req.Body),
-		"body", string(req.Body))
+		"body", string(req.Body),
+		"headers", req.Headers)
 
 	// Route requests to appropriate handlers
 	switch {
@@ -2406,6 +2407,12 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		// Return tag values as VariableResponse
 		response := VariableResponse{Values: tagValues}
 		respData, _ := json.Marshal(response)
+
+		// CRITICAL DEBUG: Log exactly what we're returning
+		logger.Error("CRITICAL DEBUG - VariableTagValuesHandler returning wildcard data", 
+			"traceID", traceID,
+			"tagValues", tagValues,
+			"responseBody", string(respData))
 
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 200,
