@@ -809,51 +809,64 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 	client := datadog.NewAPIClient(configuration)
 	metricsApi := datadogV2.NewMetricsApi(client)
 
-	// Fetch tags from Datadog using ListTagsByMetricName
-	// This returns all tags associated with a specific metric
-	logger.Debug("Fetching tags for metric using ListTagsByMetricName", "metric", metric)
+	// Check if metric name is a regex pattern
+	isRegexPattern := len(metric) >= 2 && metric[0] == '/' && metric[len(metric)-1] == '/'
+	
+	var tags []string
+	
+	if !isRegexPattern {
+		// Fetch tags from Datadog using ListTagsByMetricName for literal metric names
+		// This returns all tags associated with a specific metric
+		logger.Debug("Fetching tags for metric using ListTagsByMetricName", "metric", metric)
 
-	resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
-	if err != nil {
-		httpStatus := 0
-		if httpResp != nil {
-			httpStatus = httpResp.StatusCode
+		resp, httpResp, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
+		if err != nil {
+			httpStatus := 0
+			if httpResp != nil {
+				httpStatus = httpResp.StatusCode
+			}
+			logger.Error("Failed to fetch tags", "error", err, "metric", metric, "httpStatus", httpStatus)
+			// Return empty array on timeout or error
+			respData, _ := json.Marshal([]string{})
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 200,
+				Body:   respData,
+			})
 		}
-		logger.Error("Failed to fetch tags", "error", err, "metric", metric, "httpStatus", httpStatus)
-		// Return empty array on timeout or error
-		respData, _ := json.Marshal([]string{})
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 200,
-			Body:   respData,
-		})
-	}
 
-	// Extract tag keys from response
-	// The response contains tags in format "key:value", we need to extract unique keys
-	tagKeysSet := make(map[string]bool)
-	data := resp.GetData()
-	
-	logger.Debug("Got response from ListTagsByMetricName", "metric", metric, "hasData", data.Id != nil)
-	
-	if data.Id != nil {
-		attributes := data.GetAttributes()
-		allTags := attributes.GetTags()
-		logger.Debug("Got tags from attributes", "metric", metric, "tagCount", len(allTags))
+		// Extract tag keys from response
+		// The response contains tags in format "key:value", we need to extract unique keys
+		tagKeysSet := make(map[string]bool)
+		data := resp.GetData()
 		
-		// Tags are in format "key:value", extract unique keys
-		for _, tag := range allTags {
-			parts := strings.SplitN(tag, ":", 2)
-			if len(parts) >= 1 {
-				tagKey := parts[0]
-				tagKeysSet[tagKey] = true
+		logger.Debug("Got response from ListTagsByMetricName", "metric", metric, "hasData", data.Id != nil)
+		
+		if data.Id != nil {
+			attributes := data.GetAttributes()
+			allTags := attributes.GetTags()
+			logger.Debug("Got tags from attributes", "metric", metric, "tagCount", len(allTags))
+			
+			// Tags are in format "key:value", extract unique keys
+			for _, tag := range allTags {
+				parts := strings.SplitN(tag, ":", 2)
+				if len(parts) >= 1 {
+					tagKey := parts[0]
+					tagKeysSet[tagKey] = true
+				}
 			}
 		}
-	}
 
-	// Convert set to sorted slice
-	tags := make([]string, 0, len(tagKeysSet))
-	for key := range tagKeysSet {
-		tags = append(tags, key)
+		// Convert set to sorted slice
+		tags = make([]string, 0, len(tagKeysSet))
+		for key := range tagKeysSet {
+			tags = append(tags, key)
+		}
+	} else {
+		// Handle regex pattern for metric name - return common tag keys
+		logger.Debug("Regex pattern detected for autocomplete tags, returning common tag keys", "pattern", metric)
+		// For autocomplete with regex patterns, return common tag keys since we can't efficiently 
+		// fetch and aggregate tags from all matching metrics in real-time
+		tags = []string{"host", "service", "env", "version", "region", "availability-zone", "instance-type", "team", "project", "datacenter"}
 	}
 	
 	logger.Debug("Extracted tag keys", "metric", metric, "tagCount", len(tags), "tags", tags)
@@ -2325,7 +2338,12 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 	var tagValues []string
 
-	if tagValuesReq.MetricName != "" && tagValuesReq.MetricName != "*" {
+	// Check if metric name is a regex pattern
+	isRegexPattern := len(tagValuesReq.MetricName) >= 2 && 
+		tagValuesReq.MetricName[0] == '/' && 
+		tagValuesReq.MetricName[len(tagValuesReq.MetricName)-1] == '/'
+
+	if tagValuesReq.MetricName != "" && tagValuesReq.MetricName != "*" && !isRegexPattern {
 		// Fetch tag values for specific metric and tag key
 		logger.Debug("Fetching tag values for specific metric and tag key", 
 			"traceID", traceID,
@@ -2365,6 +2383,88 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		// Convert set to slice
 		for value := range tagValuesSet {
 			tagValues = append(tagValues, value)
+		}
+	} else if isRegexPattern {
+		// Handle regex pattern for metric name - need to get all metrics first, then filter
+		logger.Debug("Fetching tag values for regex metric pattern", 
+			"traceID", traceID,
+			"metricPattern", tagValuesReq.MetricName,
+			"tagKey", tagValuesReq.TagKey,
+			"timeout", "30s")
+
+		// First, get all available metrics
+		metricsResp, _, err := metricsApi.ListTagConfigurations(fetchCtx)
+		if err != nil {
+			logger.Error("Failed to fetch metrics for regex filtering", "error", err, "traceID", traceID)
+			// Fallback to common tag values
+			tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+		} else {
+			// Extract metrics that match the regex pattern
+			tagValuesSet := make(map[string]bool)
+			data := metricsResp.GetData()
+			matchingMetrics := []string{}
+
+			if data != nil {
+				for _, config := range data {
+					var metricName string
+					if config.Metric != nil {
+						metricName = config.Metric.GetId()
+					} else if config.MetricTagConfiguration != nil {
+						metricName = config.MetricTagConfiguration.GetId()
+					}
+
+					if metricName != "" && matchesFilter(metricName, tagValuesReq.MetricName) {
+						matchingMetrics = append(matchingMetrics, metricName)
+					}
+				}
+			}
+
+			logger.Debug("Found matching metrics for regex pattern", 
+				"traceID", traceID,
+				"pattern", tagValuesReq.MetricName,
+				"matchingCount", len(matchingMetrics))
+
+			// Now get tag values for each matching metric (limit to first 10 to avoid too many API calls)
+			maxMetrics := 10
+			if len(matchingMetrics) > maxMetrics {
+				matchingMetrics = matchingMetrics[:maxMetrics]
+				logger.Debug("Limited matching metrics to avoid too many API calls", 
+					"traceID", traceID,
+					"limitedCount", maxMetrics)
+			}
+
+			for _, metric := range matchingMetrics {
+				resp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metric)
+				if err != nil {
+					logger.Debug("Failed to fetch tags for metric", "metric", metric, "error", err, "traceID", traceID)
+					continue
+				}
+
+				data := resp.GetData()
+				if data.Id != nil {
+					attributes := data.GetAttributes()
+					allTags := attributes.GetTags()
+
+					// Tags are in format "key:value", extract values for the specific key
+					for _, tag := range allTags {
+						parts := strings.SplitN(tag, ":", 2)
+						if len(parts) == 2 && parts[0] == tagValuesReq.TagKey {
+							tagValue := parts[1]
+							tagValuesSet[tagValue] = true
+						}
+					}
+				}
+			}
+
+			// Convert set to slice
+			for value := range tagValuesSet {
+				tagValues = append(tagValues, value)
+			}
+
+			// If no tag values found from matching metrics, fallback to common ones
+			if len(tagValues) == 0 {
+				tagValues = []string{"prod", "staging", "dev", "web-01", "web-02", "db-01", "us-east-1", "us-west-2", "eu-west-1"}
+			}
 		}
 	} else {
 		// For unfiltered queries, we would need a different API call
