@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
-import { Input, CodeEditor, Stack, Alert, useTheme2, Button } from '@grafana/ui';
+import { Input, CodeEditor, Stack, Alert, useTheme2, Button, Icon } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
@@ -10,6 +10,52 @@ import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter'
 import { QueryEditorHelp } from './QueryEditorHelp';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
+
+/**
+ * Helper function to check if a query contains variable placeholders
+ * @param queryText - The query text to check
+ * @returns True if the query contains variables
+ */
+function hasVariablePlaceholders(queryText: string): boolean {
+  if (!queryText) return false;
+  // Check for both ${variable:format} and $variable patterns
+  return /\$\{[^}]+\}|\$[a-zA-Z_][a-zA-Z0-9_]*/.test(queryText);
+}
+
+/**
+ * Helper function to extract variable names from a query
+ * @param queryText - The query text to analyze
+ * @returns Array of variable names found
+ */
+function extractVariableNames(queryText: string): string[] {
+  if (!queryText) return [];
+  
+  const variables: string[] = [];
+  
+  // Extract from ${variable:format} patterns
+  const formatMatches = queryText.match(/\$\{([^}:]+):[^}]+\}/g);
+  if (formatMatches) {
+    formatMatches.forEach(match => {
+      const varName = match.match(/\$\{([^}:]+):/)?.[1];
+      if (varName && !variables.includes(varName)) {
+        variables.push(varName);
+      }
+    });
+  }
+  
+  // Extract from $variable patterns
+  const simpleMatches = queryText.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g);
+  if (simpleMatches) {
+    simpleMatches.forEach(match => {
+      const varName = match.substring(1); // Remove the $
+      if (!variables.includes(varName)) {
+        variables.push(varName);
+      }
+    });
+  }
+  
+  return variables;
+}
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
   const theme = useTheme2();
@@ -571,6 +617,25 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           <Alert title="Query Validation" severity="warning" style={{ marginTop: '8px' }}>
             {autocomplete.state.validationError}
           </Alert>
+        )}
+
+        {/* Display variable information */}
+        {hasVariablePlaceholders(queryText || '') && (
+          <div style={{ 
+            marginTop: '8px', 
+            padding: '8px', 
+            backgroundColor: theme.colors.background.secondary,
+            border: `1px solid ${theme.colors.border.weak}`,
+            borderRadius: theme.shape.radius.default,
+            fontSize: theme.typography.size.sm,
+            color: theme.colors.text.secondary
+          }}>
+            <Icon name="info-circle" size="sm" style={{ marginRight: '4px' }} />
+            Variables detected: {extractVariableNames(queryText || '').join(', ')}
+            <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
+              (Variables will be interpolated when query executes)
+            </span>
+          </div>
         )}
 
         {/* Display backend error */}

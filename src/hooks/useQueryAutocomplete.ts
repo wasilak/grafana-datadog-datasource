@@ -3,7 +3,8 @@ import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery } from '../utils/autocomplete/parser';
 import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
-import { getBackendSrv } from '@grafana/runtime';
+import { getBackendSrv, getTemplateSrv } from '@grafana/runtime';
+import { variableInterpolationService } from '../utils/variableInterpolation';
 
 const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
 
@@ -211,8 +212,22 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         clearTimeout(debounceTimerRef.current);
       }
 
-      // Parse query to get context
-      const context = parseQuery(queryText, cursorPosition);
+      // Check if query contains variables for better context analysis
+      const hasVariables = variableInterpolationService.hasVariables(queryText);
+      let contextQuery = queryText;
+      
+      if (hasVariables) {
+        // For autocomplete context analysis, we need to understand the structure
+        // even with variables present. We'll use the original query for parsing
+        // but log that variables are present for debugging
+        console.log('Query contains variables:', {
+          queryText,
+          variables: variableInterpolationService.extractVariableNames(queryText)
+        });
+      }
+
+      // Parse query to get context (parser now handles variable preprocessing internally)
+      const context = parseQuery(contextQuery, cursorPosition);
       contextRef.current = context;
 
       console.log('onInput - context detected:', {
@@ -221,6 +236,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         contextType: context.contextType,
         currentToken: context.currentToken,
         metricName: context.metricName,
+        hasVariables,
       });
 
       // Set debounce timer for API call
@@ -229,7 +245,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
       }, debounceMs);
     },
     [debounceMs, fetchAndUpdateSuggestions]
-  );
+  );;
 
   /**
    * Handle keyboard navigation and selection

@@ -12,6 +12,13 @@ export function registerDatadogLanguage(monaco: typeof monacoType): void {
   monaco.languages.setMonarchTokensProvider('datadog', {
     tokenizer: {
       root: [
+        // Variable placeholders: $variable and ${variable:format}
+        [/\$\{[^}:]+:[^}]+\}/, 'variable.formatted'],
+        [/\$[a-zA-Z_][a-zA-Z0-9_]*/, 'variable.simple'],
+
+        // Built-in variables: $__from, $__to, etc.
+        [/\$__[a-zA-Z_][a-zA-Z0-9_]*/, 'variable.builtin'],
+
         // Aggregators: avg, sum, min, max, count, etc.
         [
           /\b(avg|sum|min|max|count|last|percentile|cardinality|pct_95|pct_99|median|stddev|rate)\b/,
@@ -48,6 +55,9 @@ export function registerDatadogLanguage(monaco: typeof monacoType): void {
     base: 'vs-dark',
     inherit: true,
     rules: [
+      { token: 'variable.formatted', foreground: 'DCDCAA', fontStyle: 'italic' }, // Yellow for ${var:format}
+      { token: 'variable.simple', foreground: 'DCDCAA' }, // Yellow for $var
+      { token: 'variable.builtin', foreground: '4FC1FF', fontStyle: 'bold' }, // Light blue for built-ins
       { token: 'keyword.aggregator', foreground: 'C586C0', fontStyle: 'bold' }, // Purple for aggregators
       { token: 'keyword', foreground: '569CD6' }, // Blue for keywords
       { token: 'type.metric', foreground: '4EC9B0' }, // Teal for metrics
@@ -64,6 +74,9 @@ export function registerDatadogLanguage(monaco: typeof monacoType): void {
     base: 'vs',
     inherit: true,
     rules: [
+      { token: 'variable.formatted', foreground: 'B8860B', fontStyle: 'italic' }, // Dark goldenrod for ${var:format}
+      { token: 'variable.simple', foreground: 'B8860B' }, // Dark goldenrod for $var
+      { token: 'variable.builtin', foreground: '0066CC', fontStyle: 'bold' }, // Blue for built-ins
       { token: 'keyword.aggregator', foreground: 'AF00DB', fontStyle: 'bold' }, // Purple for aggregators
       { token: 'keyword', foreground: '0000FF' }, // Blue for keywords
       { token: 'type.metric', foreground: '267F99' }, // Teal for metrics

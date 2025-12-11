@@ -13,13 +13,53 @@ import { QueryContext } from '../../types';
  * @param cursorPosition - The character position of the cursor
  * @returns QueryContext with detected context type and metadata
  */
+/**
+ * Pre-processes a query by interpolating variables for autocomplete context analysis.
+ * This allows the parser to understand the structure even when variables are present.
+ * @param queryText - The original query text with variables
+ * @returns The query text with variables replaced by placeholder values for parsing
+ */
+function preprocessQueryForAutocomplete(queryText: string): string {
+  if (!queryText) {
+    return queryText;
+  }
+
+  // Replace formatted variables ${var:format} with placeholder values
+  let processedQuery = queryText.replace(/\$\{([^}:]+):[^}]+\}/g, (match, varName) => {
+    // Return a placeholder that maintains query structure
+    // For metrics context, use a metric-like placeholder
+    // For tag context, use a tag-like placeholder
+    return `placeholder_${varName}`;
+  });
+
+  // Replace simple variables $var with placeholder values
+  processedQuery = processedQuery.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, varName) => {
+    // Handle built-in variables
+    if (varName.startsWith('__')) {
+      switch (varName) {
+        case '__from':
+        case '__to':
+          return '1234567890'; // Timestamp placeholder
+        default:
+          return `builtin_${varName}`;
+      }
+    }
+    return `placeholder_${varName}`;
+  });
+
+  return processedQuery;
+}
+
 export function parseQuery(queryText: string, cursorPosition: number): QueryContext {
   if (!queryText) {
     return createEmptyContext(cursorPosition);
   }
 
+  // Pre-process the query to handle variables for better autocomplete context
+  const processedQuery = preprocessQueryForAutocomplete(queryText);
+
   // Get the line containing the cursor
-  const lines = queryText.split('\n');
+  const lines = processedQuery.split('\n');
   let charCount = 0;
   let cursorLine = 0;
   let positionInLine = cursorPosition;
@@ -65,7 +105,7 @@ export function parseQuery(queryText: string, cursorPosition: number): QueryCont
     currentToken = extractCurrentToken(lineContent, positionInLine);
   }
 
-  // Extract metric name if in tag/tag_value context
+  // Extract metric name if in tag/tag_value context (use processed query for better parsing)
   const metricName = extractMetricName(lineContent, positionInLine);
 
   // Extract tag key if in filter_tag_value context
