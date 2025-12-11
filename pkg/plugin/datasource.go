@@ -407,7 +407,7 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 
 	// Debug: Log the response to understand what Datadog is returning
 	responseContent, _ := json.MarshalIndent(resp, "", "  ")
-	logger.Info("Datadog API Response", "response", string(responseContent))
+	// logger.Debug("Datadog API Response", "response", string(responseContent))
 
 	// Build frames from response
 	var frames data.Frames
