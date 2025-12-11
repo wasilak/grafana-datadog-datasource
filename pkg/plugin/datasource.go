@@ -2143,6 +2143,7 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 				tagKeys = []string{}
 			}
 		} else {
+			logger.Error("CRITICAL DEBUG - No data from all-tags handler or failed", "traceID", traceID)
 			// Return empty array instead of fake data
 			tagKeys = []string{}
 		}
@@ -2324,7 +2325,9 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 
 			// Process metrics from this page
 			data := resp.GetData()
+			logger.Error("CRITICAL DEBUG - TagValues ListTagConfigurations response", "page", pageCount, "hasData", data != nil, "traceID", traceID)
 			if data != nil {
+				logger.Error("CRITICAL DEBUG - TagValues Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
 				processedCount := 0
 				for _, config := range data {
 					if processedCount >= maxMetricsPerPage {
@@ -2332,10 +2335,15 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 					}
 
 					var metricName string
-					if config.Metric != nil {
-						metricName = config.Metric.GetId()
-					} else if config.MetricTagConfiguration != nil {
+					// Check both possible fields in the response - same order as tag keys handler
+					if config.MetricTagConfiguration != nil {
 						metricName = config.MetricTagConfiguration.GetId()
+						logger.Error("CRITICAL DEBUG - TagValues Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
+					} else if config.Metric != nil {
+						metricName = config.Metric.GetId()
+						logger.Error("CRITICAL DEBUG - TagValues Found Metric", "metricName", metricName, "traceID", traceID)
+					} else {
+						logger.Error("CRITICAL DEBUG - TagValues Config has neither Metric nor MetricTagConfiguration", "traceID", traceID)
 					}
 
 					if metricName != "" {
@@ -2875,8 +2883,9 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 			// Process metrics from this page
 			data := resp.GetData()
+			logger.Error("CRITICAL DEBUG - ListTagConfigurations response", "page", pageCount, "hasData", data != nil, "traceID", traceID)
 			if data != nil {
-				logger.Debug("Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
+				logger.Error("CRITICAL DEBUG - Processing metrics page", "page", pageCount, "configCount", len(data), "traceID", traceID)
 				
 				for _, config := range data {
 					if metricsProcessed >= maxMetricsToProcess {
@@ -2887,10 +2896,12 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 					// Check both possible fields in the response
 					if config.MetricTagConfiguration != nil {
 						metricName = config.MetricTagConfiguration.GetId()
-						logger.Debug("Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
+						logger.Error("CRITICAL DEBUG - Found MetricTagConfiguration", "metricName", metricName, "traceID", traceID)
 					} else if config.Metric != nil {
 						metricName = config.Metric.GetId()
-						logger.Debug("Found Metric", "metricName", metricName, "traceID", traceID)
+						logger.Error("CRITICAL DEBUG - Found Metric", "metricName", metricName, "traceID", traceID)
+					} else {
+						logger.Error("CRITICAL DEBUG - Config has neither Metric nor MetricTagConfiguration", "traceID", traceID)
 					}
 					
 					if metricName != "" {
