@@ -60,12 +60,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           if (query.namespace && query.namespace !== '*') {
             params.namespace = query.namespace;
           }
-          if (query.searchPattern && query.searchPattern !== '*') {
-            params.searchPattern = query.searchPattern;
-          }
-          // For metrics, we can use metricName as a search pattern
-          // Include '*' as well since backend handles it
-          if (query.metricName) {
+          // Use metricName as search pattern (supports both autocomplete and regex)
+          if (query.metricName && query.metricName !== '*') {
             params.searchPattern = query.metricName;
           }
           break;
@@ -75,8 +71,9 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           if (query.metricName && query.metricName !== '*') {
             params.metricName = query.metricName;
           }
-          if (query.filter && query.filter !== '*') {
-            params.filter = query.filter;
+          // Use tagKey as filter pattern for tag keys (supports both autocomplete and regex)
+          if (query.tagKey && query.tagKey !== '*') {
+            params.filter = query.tagKey;
           }
           break;
 
@@ -88,9 +85,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           if (query.tagKey && query.tagKey !== '*') {
             params.tagKey = query.tagKey;
           }
-          if (query.filter && query.filter !== '*') {
-            params.filter = query.filter;
-          }
+          // For tag values, we could use a separate filter field if needed
+          // For now, the tagKey field serves as both selector and filter
           break;
 
         default:

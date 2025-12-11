@@ -123,35 +123,56 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     setState(newState);
   }, [query]);
 
+  // Check if a value is a regex pattern (wrapped in forward slashes)
+  const isRegexPattern = (value: string): boolean => {
+    return value.length >= 2 && value.startsWith('/') && value.endsWith('/');
+  };
+
   // Handle autocomplete for metric names
   const handleMetricInputChange = (value: string) => {
     onFieldChange('metricName', value);
-    setActiveField('metric');
     
-    // Trigger autocomplete with a simple query to get metrics
-    setTimeout(() => {
-      if (metricInputRef.current) {
-        updateSuggestionsPosition(metricInputRef.current);
-      }
-      // Use a simple query that will trigger metric suggestions
-      autocomplete.onInput(value || 'system', 0);
-    }, 0);
+    // Only trigger autocomplete if it's NOT a regex pattern
+    if (!isRegexPattern(value)) {
+      setActiveField('metric');
+      
+      // Trigger autocomplete with a simple query to get metrics
+      setTimeout(() => {
+        if (metricInputRef.current) {
+          updateSuggestionsPosition(metricInputRef.current);
+        }
+        // Use a simple query that will trigger metric suggestions
+        autocomplete.onInput(value || 'system', 0);
+      }, 0);
+    } else {
+      // Close autocomplete for regex patterns
+      autocomplete.onClose();
+      setActiveField(null);
+    }
   };
 
   // Handle autocomplete for tag keys
   const handleTagKeyInputChange = (value: string) => {
     onFieldChange('tagKey', value);
-    setActiveField('tagKey');
     
-    // Trigger autocomplete for tag keys
-    setTimeout(() => {
-      if (tagKeyInputRef.current) {
-        updateSuggestionsPosition(tagKeyInputRef.current);
-      }
-      // Use the metric name to get tag suggestions, or empty for all tags
-      const queryForTags = state.metricName ? `avg:${state.metricName}{${value}` : `avg:system.cpu{${value}`;
-      autocomplete.onInput(queryForTags, queryForTags.length - 1);
-    }, 0);
+    // Only trigger autocomplete if it's NOT a regex pattern
+    if (!isRegexPattern(value)) {
+      setActiveField('tagKey');
+      
+      // Trigger autocomplete for tag keys
+      setTimeout(() => {
+        if (tagKeyInputRef.current) {
+          updateSuggestionsPosition(tagKeyInputRef.current);
+        }
+        // Use the metric name to get tag suggestions, or empty for all tags
+        const queryForTags = state.metricName ? `avg:${state.metricName}{${value}` : `avg:system.cpu{${value}`;
+        autocomplete.onInput(queryForTags, queryForTags.length - 1);
+      }, 0);
+    } else {
+      // Close autocomplete for regex patterns
+      autocomplete.onClose();
+      setActiveField(null);
+    }
   };
 
   // Update suggestions position based on input field
@@ -233,125 +254,103 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
       {/* Conditional fields based on query type */}
       {state.queryType === 'metrics' && (
-        <>
-          <div style={{ position: 'relative' }}>
-            <InlineField 
-              label="Metric Name" 
-              labelWidth={20} 
-              tooltip="Start typing to search for metric names. Use '*' for all metrics."
-            >
-              <Input
-                ref={metricInputRef}
-                value={state.metricName || '*'}
-                onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
-                onFocus={() => {
+        <div style={{ position: 'relative' }}>
+          <InlineField 
+            label="Metric Name" 
+            labelWidth={20} 
+            tooltip="Start typing for autocomplete, or use /regex/ for pattern matching. Use '*' for all metrics."
+          >
+            <Input
+              ref={metricInputRef}
+              value={state.metricName || '*'}
+              onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
+              onFocus={() => {
+                // Only trigger autocomplete if not a regex pattern
+                if (!isRegexPattern(state.metricName || '')) {
                   setActiveField('metric');
                   if (metricInputRef.current) {
                     updateSuggestionsPosition(metricInputRef.current);
                   }
                   autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
-                }}
-                onBlur={() => {
-                  // Delay closing to allow for selection
-                  setTimeout(() => {
-                    if (activeField === 'metric') {
-                      autocomplete.onClose();
-                      setActiveField(null);
-                    }
-                  }, 200);
-                }}
-                placeholder="e.g., system.cpu.user or * for all"
-                width={30}
-              />
-            </InlineField>
-          </div>
-          <InlineField 
-            label="Filter Pattern" 
-            labelWidth={20} 
-            tooltip="Filter metrics by pattern. Use /regex/ for regex matching (e.g., /^system\.cpu\./ for CPU metrics)."
-          >
-            <Input
-              value={state.searchPattern || ''}
-              onChange={(e) => onFieldChange('searchPattern', e.currentTarget.value)}
-              placeholder="e.g., cpu, /^system\./, or leave empty"
+                }
+              }}
+              onBlur={() => {
+                // Delay closing to allow for selection
+                setTimeout(() => {
+                  if (activeField === 'metric') {
+                    autocomplete.onClose();
+                    setActiveField(null);
+                  }
+                }, 200);
+              }}
+              placeholder="e.g., system.cpu.user, /^system\.cpu\./, or * for all"
               width={30}
             />
           </InlineField>
-        </>
+        </div>
       )}
 
       {(state.queryType === 'tag_keys' || state.queryType === 'tag_values') && (
-        <>
-          <div style={{ position: 'relative' }}>
-            <InlineField 
-              label="Metric Name" 
-              labelWidth={20} 
-              tooltip={state.queryType === 'tag_keys' 
-                ? "Metric name filter (optional). Use '*' to get tag keys from all metrics, or specify a metric name."
-                : "Metric name filter (optional). Use '*' to get tag values from all metrics, or specify a metric name."
-              }
-            >
-              <Input
-                ref={metricInputRef}
-                value={state.metricName || '*'}
-                onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
-                onFocus={() => {
+        <div style={{ position: 'relative' }}>
+          <InlineField 
+            label="Metric Name" 
+            labelWidth={20} 
+            tooltip={state.queryType === 'tag_keys' 
+              ? "Metric name filter (optional). Start typing for autocomplete, or use /regex/ for pattern matching. Use '*' for all metrics."
+              : "Metric name filter (optional). Start typing for autocomplete, or use /regex/ for pattern matching. Use '*' for all metrics."
+            }
+          >
+            <Input
+              ref={metricInputRef}
+              value={state.metricName || '*'}
+              onChange={(e) => handleMetricInputChange(e.currentTarget.value)}
+              onFocus={() => {
+                // Only trigger autocomplete if not a regex pattern
+                if (!isRegexPattern(state.metricName || '')) {
                   setActiveField('metric');
                   if (metricInputRef.current) {
                     updateSuggestionsPosition(metricInputRef.current);
                   }
                   autocomplete.onInput(state.metricName === '*' ? 'system' : state.metricName || 'system', 0);
-                }}
-                onBlur={() => {
-                  setTimeout(() => {
-                    if (activeField === 'metric') {
-                      autocomplete.onClose();
-                      setActiveField(null);
-                    }
-                  }, 200);
-                }}
-                placeholder="e.g., system.cpu.user or * for all"
-                width={30}
-              />
-            </InlineField>
-          </div>
-          <InlineField 
-            label="Filter Pattern" 
-            labelWidth={20} 
-            tooltip={state.queryType === 'tag_keys' 
-              ? "Filter tag keys by pattern. Use /regex/ for regex matching (e.g., /^host/ for keys starting with 'host')."
-              : "Filter tag values by pattern. Use /regex/ for regex matching (e.g., /prod.*/ for values starting with 'prod')."
-            }
-          >
-            <Input
-              value={state.filter || ''}
-              onChange={(e) => onFieldChange('filter', e.currentTarget.value)}
-              placeholder={state.queryType === 'tag_keys' ? "e.g., host, /^env/, or leave empty" : "e.g., prod, /^web-/, or leave empty"}
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  if (activeField === 'metric') {
+                    autocomplete.onClose();
+                    setActiveField(null);
+                  }
+                }, 200);
+              }}
+              placeholder="e.g., system.cpu.user, /^system\./, or * for all"
               width={30}
             />
           </InlineField>
-        </>
+        </div>
       )}
 
-      {state.queryType === 'tag_values' && (
+      {state.queryType === 'tag_keys' && (
         <div style={{ position: 'relative' }}>
           <InlineField 
-            label="Tag Key" 
+            label="Tag Key Filter" 
             labelWidth={20} 
-            tooltip="Tag key to get values for. Independent of metric selection - you can use any tag key with any metric. Use '*' for all tag keys."
+            tooltip="Filter tag keys by pattern. Start typing for autocomplete, or use /regex/ for pattern matching. Use '*' for all tag keys."
           >
             <Input
               ref={tagKeyInputRef}
               value={state.tagKey || '*'}
               onChange={(e) => handleTagKeyInputChange(e.currentTarget.value)}
               onFocus={() => {
-                setActiveField('tagKey');
-                if (tagKeyInputRef.current) {
-                  updateSuggestionsPosition(tagKeyInputRef.current);
+                // Only trigger autocomplete if not a regex pattern
+                if (!isRegexPattern(state.tagKey || '')) {
+                  setActiveField('tagKey');
+                  if (tagKeyInputRef.current) {
+                    updateSuggestionsPosition(tagKeyInputRef.current);
+                  }
+                  const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
+                  const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
+                  autocomplete.onInput(queryForTags, queryForTags.length - 1);
                 }
-                const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
-                const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
-                autocomplete.onInput(queryForTags, queryForTags.length - 1);
               }}
               onBlur={() => {
                 setTimeout(() => {
@@ -361,7 +360,45 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
                   }
                 }, 200);
               }}
-              placeholder="e.g., host, service, env or * for all"
+              placeholder="e.g., host, /^env/, or * for all"
+              width={30}
+            />
+          </InlineField>
+        </div>
+      )}
+
+      {state.queryType === 'tag_values' && (
+        <div style={{ position: 'relative' }}>
+          <InlineField 
+            label="Tag Key" 
+            labelWidth={20} 
+            tooltip="Tag key to get values for. Start typing for autocomplete, or use /regex/ for pattern matching. Use '*' for all tag keys."
+          >
+            <Input
+              ref={tagKeyInputRef}
+              value={state.tagKey || '*'}
+              onChange={(e) => handleTagKeyInputChange(e.currentTarget.value)}
+              onFocus={() => {
+                // Only trigger autocomplete if not a regex pattern
+                if (!isRegexPattern(state.tagKey || '')) {
+                  setActiveField('tagKey');
+                  if (tagKeyInputRef.current) {
+                    updateSuggestionsPosition(tagKeyInputRef.current);
+                  }
+                  const metricForTags = state.metricName === '*' ? 'system.cpu' : state.metricName || 'system.cpu';
+                  const queryForTags = `avg:${metricForTags}{${state.tagKey === '*' ? 'host' : state.tagKey || 'host'}`;
+                  autocomplete.onInput(queryForTags, queryForTags.length - 1);
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  if (activeField === 'tagKey') {
+                    autocomplete.onClose();
+                    setActiveField(null);
+                  }
+                }, 200);
+              }}
+              placeholder="e.g., host, service, /^env/, or * for all"
               width={30}
             />
           </InlineField>
@@ -370,20 +407,27 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
       {/* Show helpful information */}
       {state.queryType === 'metrics' && (
-        <Alert title="Tip" severity="info">
-          Use '*' to get all metrics, or specify a metric name pattern to filter results. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /^system\.cpu\./ for CPU metrics).
+        <Alert title="Smart Filtering" severity="info">
+          <strong>Autocomplete:</strong> Type metric names (e.g., "system.cpu") for suggestions<br/>
+          <strong>Regex:</strong> Use /pattern/ for advanced filtering (e.g., /^system\.cpu\./ for CPU metrics)<br/>
+          <strong>Wildcard:</strong> Use '*' for all metrics
         </Alert>
       )}
 
       {state.queryType === 'tag_keys' && (
-        <Alert title="Tip" severity="info">
-          Use '*' for metric name to get tag keys from all metrics, or specify a metric to get its tag keys. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /^host/ for keys starting with 'host').
+        <Alert title="Smart Filtering" severity="info">
+          <strong>Metric Name:</strong> Type for autocomplete or use /regex/ for pattern matching<br/>
+          <strong>Tag Key Filter:</strong> Type for autocomplete or use /regex/ (e.g., /^host/ for keys starting with 'host')<br/>
+          <strong>Wildcard:</strong> Use '*' for all values
         </Alert>
       )}
 
       {state.queryType === 'tag_values' && (
-        <Alert title="Tip" severity="info">
-          Metrics and tags are independent - you can mix any metric with any tag key. Use '*' for either field to get all values. Filter Pattern supports regex: wrap in /.../ for regex matching (e.g., /prod.*/ for values starting with 'prod').
+        <Alert title="Smart Filtering" severity="info">
+          <strong>Independent Fields:</strong> Metric and tag key selections are independent<br/>
+          <strong>Autocomplete:</strong> Type in any field for suggestions<br/>
+          <strong>Regex:</strong> Use /pattern/ for advanced filtering (e.g., /prod.*/ for values starting with 'prod')<br/>
+          <strong>Wildcard:</strong> Use '*' for all values
         </Alert>
       )}
 
