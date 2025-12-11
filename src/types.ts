@@ -6,6 +6,12 @@ export interface MyQuery extends DataQuery {
   // Variable interpolation support - these fields will be populated by applyTemplateVariables
   interpolatedQueryText?: string;
   interpolatedLabel?: string;
+  // Explore mode metadata for visualization hints
+  meta?: {
+    preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';
+    exploreMode?: boolean;
+    [key: string]: any;
+  };
 }
 
 export const DEFAULT_QUERY: Partial<MyQuery> = {

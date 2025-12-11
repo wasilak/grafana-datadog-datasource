@@ -11,9 +11,20 @@ import { QueryEditorHelp } from './QueryEditorHelp';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
-export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) {
+export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
+  
+  // Detect if we're in Explore mode
+  const isExploreMode = window.location.pathname.includes('/explore') || 
+                       (restProps as any).app === 'explore' ||
+                       (restProps as any).context === 'explore';
+  
+  console.log('QueryEditor mode detection:', {
+    pathname: window.location.pathname,
+    isExploreMode,
+    restProps: Object.keys(restProps as any),
+  });
 
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
@@ -63,8 +74,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       
       console.log('Backend completion result:', result);
 
-      // Update the query with the backend result
-      onChange({ ...query, queryText: result.newQuery });
+      // Update the query with the backend result, preserving Explore mode metadata
+      onChange({ ...enhancedQuery, queryText: result.newQuery });
 
       // Set cursor position after a delay to ensure React has updated
       setTimeout(() => {
@@ -278,8 +289,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     // Store the desired cursor position before the state update
     const newCursorPos = start + insertValue.length;
 
-    // Update the query
-    onChange({ ...query, queryText: newValue });
+    // Update the query, preserving Explore mode metadata
+    onChange({ ...enhancedQuery, queryText: newValue });
 
     // Set focus back to editor with new cursor position after a slight delay
     // to ensure React has updated the DOM
@@ -322,8 +333,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
   const onQueryTextChange = (newValue: string) => {
-    // Update the query state first
-    onChange({ ...query, queryText: newValue });
+    // Update the query state first, preserving Explore mode metadata
+    onChange({ ...enhancedQuery, queryText: newValue });
 
     // Get cursor position AFTER the text change by using setTimeout
     // This ensures Monaco has updated its internal state
@@ -350,7 +361,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
   };
 
   const onLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, label: event.target.value });
+    onChange({ ...enhancedQuery, label: event.target.value });
     // Don't run query automatically when label changes
   };
 
@@ -480,8 +491,21 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
   const { queryText, label } = query;
 
+  // Add visualization type hints for Explore mode
+  const enhancedQuery = isExploreMode ? {
+    ...query,
+    // Add metadata for Explore mode visualization hints
+    meta: {
+      ...query.meta,
+      preferredVisualisationType: 'graph', // Default to graph for time series data
+      exploreMode: true,
+    }
+  } : query;
+
   return (
     <Stack gap={2} direction="column">
+      {/* Explore mode is detected but no UI changes needed - functionality is identical */}
+      
       {/* Query field - full width */}
       <div style={{ position: 'relative' }}>
         <div style={{ 
@@ -515,8 +539,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
             autocomplete.onClose();
           }}
           onSave={(value) => {
-            // Update query when user saves (Cmd+S)
-            onChange({ ...query, queryText: value });
+            // Update query when user saves (Cmd+S), preserving Explore mode metadata
+            onChange({ ...enhancedQuery, queryText: value });
           }}
           onChange={onQueryTextChange}
           onEditorDidMount={handleEditorDidMount}
