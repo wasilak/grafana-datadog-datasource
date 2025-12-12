@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -55,11 +56,15 @@ type CacheEntry struct {
 // QueryModel represents a query from the frontend
 type QueryModel struct {
 	QueryText         string `json:"queryText"`
-	Label             string `json:"label"`
 	LegendMode        string `json:"legendMode"`
 	LegendTemplate    string `json:"legendTemplate"`
 	InterpolatedLabel string `json:"interpolatedLabel"`
 	Hide              bool   `json:"hide"`
+	// Expression query fields
+	Type              string `json:"type,omitempty"`       // "math" for math expressions
+	Expression        string `json:"expression,omitempty"` // Math expression like "$A*100/$B"
+	// Deprecated: Use LegendMode and LegendTemplate instead
+	Label             string `json:"label,omitempty"`
 }
 
 // NewDatasource creates a new Datasource factory function
@@ -147,7 +152,13 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		to = req.Queries[0].TimeRange.To.UnixMilli()
 	}
 
-	// Process each query
+	// Parse all queries and separate regular queries from formulas
+	var queries []datadogV2.TimeseriesQuery
+	var formulas []datadogV2.QueryFormula
+	var queryModels = make(map[string]QueryModel)
+	var hasFormulas bool
+
+	// First pass: parse all queries and collect them
 	for _, q := range req.Queries {
 		var qm QueryModel
 		if err := json.Unmarshal(q.JSON, &qm); err != nil {
@@ -162,29 +173,103 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 
-		if qm.QueryText == "" {
+		queryModels[q.RefID] = qm
+
+		if qm.Type == "math" && qm.Expression != "" {
+			// This is a formula query
+			hasFormulas = true
+			formulas = append(formulas, datadogV2.QueryFormula{
+				Formula: qm.Expression,
+			})
+		} else if qm.QueryText != "" {
+			// This is a regular query - add it to the queries list
+			queryText := qm.QueryText
+			lowerQuery := strings.ToLower(queryText)
+			
+			hasGroupByClause := strings.Contains(lowerQuery, " by ")
+			hasBooleanOperators := strings.Contains(lowerQuery, " in ") || 
+								  strings.Contains(lowerQuery, " or ") || 
+								  strings.Contains(lowerQuery, " and ") ||
+								  strings.Contains(lowerQuery, " not in ")
+			
+			if !hasGroupByClause && !hasBooleanOperators {
+				queryText = queryText + " by {*}"
+				logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
+			}
+
+			// Create query with name set to refID for formula referencing
+			queryName := q.RefID
+			queries = append(queries, datadogV2.TimeseriesQuery{
+				MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
+					DataSource: datadogV2.METRICSDATASOURCE_METRICS,
+					Query:      queryText,
+					Name:       &queryName,
+				},
+			})
+		} else {
 			response.Responses[q.RefID] = backend.DataResponse{}
-			continue
-		}
-
-		// Create context with timeout
-		queryCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
-
-		// Execute query
-		frames, err := d.queryDatadog(queryCtx, metricsApi, from, to, &qm, q.RefID)
-		cancel()
-
-		if err != nil {
-			logger.Error("query execution failed", "error", err, "refID", q.RefID)
-			// Use ErrDataResponse to create a proper error response that Grafana can display
-			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
-			continue
-		}
-
-		response.Responses[q.RefID] = backend.DataResponse{
-			Frames: frames,
 		}
 	}
+
+	if len(queries) == 0 && len(formulas) == 0 {
+		return response, nil
+	}
+
+	// Create the request body
+	body := datadogV2.TimeseriesFormulaQueryRequest{
+		Data: datadogV2.TimeseriesFormulaRequest{
+			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
+			Attributes: datadogV2.TimeseriesFormulaRequestAttributes{
+				From:    from,
+				To:      to,
+				Queries: queries,
+			},
+		},
+	}
+
+	// Add formulas if we have any
+	if hasFormulas {
+		body.Data.Attributes.Formulas = formulas
+	}
+
+	// Create context with timeout
+	queryCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
+	defer cancel()
+
+	// Call Datadog API
+	resp, r, err := metricsApi.QueryTimeseriesData(queryCtx, body)
+	if err != nil {
+		// Log request body for debugging
+		requestBody, _ := json.MarshalIndent(body, "", "  ")
+		logger.Error("QueryTimeseriesData request body", "request", string(requestBody))
+
+		// Log HTTP response details
+		httpStatus := 0
+		var responseBody string
+		if r != nil {
+			httpStatus = r.StatusCode
+			if r.Body != nil {
+				bodyBytes, _ := io.ReadAll(r.Body)
+				responseBody = string(bodyBytes)
+				r.Body = io.NopCloser(strings.NewReader(responseBody))
+			}
+		}
+
+		logger.Error("QueryTimeseriesData API call failed",
+			"error", err,
+			"httpStatus", httpStatus,
+			"responseBody", responseBody)
+
+		// Return error for all queries
+		errorMsg := d.parseDatadogError(err, httpStatus, responseBody)
+		for refID := range queryModels {
+			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, errorMsg)
+		}
+		return response, nil
+	}
+
+	// Process the response and create frames for each query/formula
+	d.processTimeseriesResponse(&resp, queryModels, response)
 
 	return response, nil
 }
@@ -512,20 +597,26 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 			continue
 		}
 
-		// Build series name - use interpolated label if available, otherwise fall back to raw label
-		seriesName := metric // Default to the query text if no labels and no custom label
+		// Build series name using new legend configuration
+		seriesName := metric // Default to the query text if no custom legend
 		
-		// Prefer interpolated label (with variables already resolved) over raw label
-		labelToUse := qm.InterpolatedLabel
-		if labelToUse == "" {
-			labelToUse = qm.Label
+		// Determine legend template based on legend mode
+		var legendTemplate string
+		if qm.LegendMode == "custom" && qm.LegendTemplate != "" {
+			legendTemplate = qm.LegendTemplate
+		} else if qm.InterpolatedLabel != "" {
+			// Backward compatibility: use interpolated label if available
+			legendTemplate = qm.InterpolatedLabel
+		} else if qm.Label != "" {
+			// Backward compatibility: fall back to old label field
+			legendTemplate = qm.Label
 		}
 		
-		if labelToUse != "" {
-			// Use the label as template, replacing any remaining template variables with label values
-			seriesName = replaceTemplateVariables(labelToUse, labels)
+		if legendTemplate != "" {
+			// Use the legend template, replacing template variables with label values
+			seriesName = replaceTemplateVariables(legendTemplate, labels)
 		} else if len(labels) > 0 {
-			// Use default format: metric + labels
+			// Auto mode: use default format with metric + labels
 			var labelStrings []string
 			for k, v := range labels {
 				labelStrings = append(labelStrings, k+":"+v)
@@ -563,6 +654,150 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 
 	logger.Info("Completed processing series", "totalFrames", len(frames))
 	return frames, nil
+}
+
+// parseDatadogError parses Datadog API errors and returns user-friendly messages
+func (d *Datasource) parseDatadogError(err error, httpStatus int, responseBody string) string {
+	if httpStatus == 401 || strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Unauthorized") {
+		return "Invalid Datadog API credentials"
+	} else if httpStatus == 403 || strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+		return "API key missing required permissions (need 'metrics_read' scope)"
+	} else if httpStatus == 400 || strings.Contains(err.Error(), "400") {
+		return parseDatadogErrorResponse(responseBody, "")
+	} else if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
+		return "Query timeout - Datadog API took too long to respond"
+	} else if httpStatus >= 500 {
+		return fmt.Sprintf("Datadog API error (%d) - service may be unavailable", httpStatus)
+	}
+	return fmt.Sprintf("Datadog API error: %s", err.Error())
+}
+
+// processTimeseriesResponse processes the Datadog API response and creates frames for each query
+func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormulaQueryResponse, queryModels map[string]QueryModel, response *backend.QueryDataResponse) {
+	logger := log.New()
+	
+	// Check if response has series data
+	series := resp.GetData()
+	if len(series.Attributes.Series) == 0 {
+		// Return empty responses for all queries
+		for refID := range queryModels {
+			response.Responses[refID] = backend.DataResponse{Frames: data.Frames{}}
+		}
+		return
+	}
+
+	times := resp.GetData().Attributes.GetTimes()
+	values := resp.GetData().Attributes.GetValues()
+
+	logger.Info("Processing Datadog series", 
+		"seriesCount", len(series.Attributes.Series),
+		"timesCount", len(times),
+		"valuesCount", len(values))
+
+	// Group frames by query index (which corresponds to refID)
+	framesByQuery := make(map[int]data.Frames)
+
+	for i := range series.Attributes.GetSeries() {
+		s := &series.Attributes.Series[i]
+		
+		// Get the query index to determine which refID this belongs to
+		queryIndex := int(*s.QueryIndex)
+		
+		// Check if we have data for this series index
+		if i >= len(values) {
+			logger.Warn("Series index out of bounds", "seriesIndex", i, "valuesCount", len(values))
+			continue
+		}
+
+		pointlist := values[i]
+		if len(pointlist) == 0 {
+			logger.Debug("Empty pointlist for series", "seriesIndex", i)
+			continue
+		}
+
+		// Extract timestamps and values
+		timeValues := make([]time.Time, 0)
+		numberValues := make([]float64, 0)
+
+		for j, timeVal := range times {
+			if j >= len(pointlist) {
+				break
+			}
+			point := pointlist[j]
+			if point != nil {
+				timestamp := time.UnixMilli(timeVal)
+				timeValues = append(timeValues, timestamp)
+				numberValues = append(numberValues, *point)
+			}
+		}
+
+		if len(timeValues) == 0 {
+			logger.Debug("No valid time values for series", "seriesIndex", i)
+			continue
+		}
+
+		// Build series name and labels
+		labels := map[string]string{}
+		tagSet := s.GetGroupTags()
+		
+		if len(tagSet) > 0 {
+			for _, tag := range tagSet {
+				parts := strings.SplitN(tag, ":", 2)
+				if len(parts) == 2 {
+					labels[parts[0]] = parts[1]
+				}
+			}
+		}
+
+		// Create series name - we'll determine this based on the query
+		seriesName := fmt.Sprintf("series_%d", i)
+		
+		// Create data frame
+		frame := data.NewFrame(
+			seriesName,
+			data.NewField("Time", nil, timeValues),
+			data.NewField("Value", labels, numberValues),
+		)
+
+		// Set metadata
+		frame.Meta = &data.FrameMeta{
+			Type: data.FrameTypeTimeSeriesMulti,
+		}
+
+		// Add to the appropriate query group
+		framesByQuery[queryIndex] = append(framesByQuery[queryIndex], frame)
+	}
+
+	// Map query indices back to refIDs and set responses
+	queryList := make([]string, 0, len(queryModels))
+	for refID := range queryModels {
+		queryList = append(queryList, refID)
+	}
+	sort.Strings(queryList) // Ensure consistent ordering
+
+	for queryIndex, frames := range framesByQuery {
+		if queryIndex < len(queryList) {
+			refID := queryList[queryIndex]
+			
+			// Set refID on all frames
+			for _, frame := range frames {
+				frame.RefID = refID
+			}
+			
+			response.Responses[refID] = backend.DataResponse{
+				Frames: frames,
+			}
+			
+			logger.Info("Created frames for query", "refID", refID, "frameCount", len(frames))
+		}
+	}
+
+	// Ensure all queries have a response (even if empty)
+	for refID := range queryModels {
+		if _, exists := response.Responses[refID]; !exists {
+			response.Responses[refID] = backend.DataResponse{Frames: data.Frames{}}
+		}
+	}
 }
 
 // CallResource handles resource calls (autocomplete endpoints)
