@@ -577,6 +577,22 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           tooltip="Enter your Datadog query"
         >
           <div style={{ position: 'relative', width: '100%' }}>
+            {/* Variable Examples button positioned next to query field */}
+            <div style={{ 
+              position: 'absolute', 
+              top: '-2px', 
+              right: '0px', 
+              zIndex: 10 
+            }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowHelp(!showHelp)}
+                icon={showHelp ? "angle-up" : "question-circle"}
+              >
+                {showHelp ? 'Hide Help' : 'Variable Examples'}
+              </Button>
+            </div>
             <CodeEditor
               value={queryText || ''}
               language="datadog"
@@ -777,23 +793,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
               </div>
             )}
           </div>
-        </InlineField>
-      </InlineFieldRow>
-
-      {/* Variable Examples button row */}
-      <InlineFieldRow>
-        <InlineField 
-          label="" 
-          labelWidth={14}
-        >
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowHelp(!showHelp)}
-            icon={showHelp ? "angle-up" : "question-circle"}
-          >
-            {showHelp ? 'Hide Help' : 'Variable Examples'}
-          </Button>
         </InlineField>
       </InlineFieldRow>
 
