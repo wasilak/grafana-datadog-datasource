@@ -792,13 +792,17 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 		var legendTemplate string
 		if qm.LegendMode == "custom" && qm.LegendTemplate != "" {
 			legendTemplate = qm.LegendTemplate
-		} else if qm.InterpolatedLabel != "" {
-			// Backward compatibility: use interpolated label if available
-			legendTemplate = qm.InterpolatedLabel
-		} else if qm.Label != "" {
-			// Backward compatibility: fall back to old label field
-			legendTemplate = qm.Label
+		} else if qm.LegendMode != "auto" {
+			// Only use legacy fields when NOT in auto mode
+			if qm.InterpolatedLabel != "" {
+				// Backward compatibility: use interpolated label if available
+				legendTemplate = qm.InterpolatedLabel
+			} else if qm.Label != "" {
+				// Backward compatibility: fall back to old label field
+				legendTemplate = qm.Label
+			}
 		}
+		// If LegendMode is "auto" or empty, legendTemplate remains empty and we use auto format
 		
 		if legendTemplate != "" {
 			// Use the legend template, replacing template variables with label values
