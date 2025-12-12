@@ -63,6 +63,8 @@ type QueryModel struct {
 	// Expression query fields
 	Type              string `json:"type,omitempty"`       // "math" for math expressions
 	Expression        string `json:"expression,omitempty"` // Math expression like "$A*100/$B"
+	// Query options
+	Interval          *int64 `json:"interval,omitempty"`   // Override interval in milliseconds
 	// Deprecated: Use LegendMode and LegendTemplate instead
 	Label             string `json:"label,omitempty"`
 }
@@ -240,6 +242,14 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	// Add formulas if we have any
 	if hasFormulas {
 		body.Data.Attributes.Formulas = formulas
+	}
+
+	// Set interval - use override from any query that has it, otherwise let Datadog auto-calculate
+	for _, qm := range queryModels {
+		if qm.Interval != nil && *qm.Interval > 0 {
+			body.Data.Attributes.Interval = qm.Interval
+			break // Use the first interval override found
+		}
 	}
 
 	// Create context with timeout

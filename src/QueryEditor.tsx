@@ -845,6 +845,34 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
             </InlineField>
           </InlineFieldRow>
         )}
+
+        {/* Interval override field */}
+        <InlineFieldRow>
+          <InlineField 
+            label="Interval" 
+            labelWidth={14}
+            tooltip="Override the query interval in milliseconds. Leave empty for auto-calculated interval."
+          >
+            <Input
+              type="number"
+              value={query.interval || ''}
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                const interval = value ? parseInt(value, 10) : undefined;
+                onChange({ ...query, interval });
+              }}
+              onKeyDown={(e) => {
+                // Handle Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) for query execution
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  onRunQuery();
+                }
+              }}
+              placeholder="Auto"
+              width={20}
+            />
+          </InlineField>
+        </InlineFieldRow>
       </Collapse>
     </Stack>
   );

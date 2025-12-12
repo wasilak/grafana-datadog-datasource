@@ -11,6 +11,8 @@ export interface MyQuery extends DataQuery {
   // Expression query fields for formulas
   type?: string;       // "math" for math expressions
   expression?: string; // Math expression like "$A*100/$B"
+  // Query options
+  interval?: number;   // Override interval in milliseconds
   // Explore mode metadata for visualization hints
   meta?: {
     preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';
