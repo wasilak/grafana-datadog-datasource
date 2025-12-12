@@ -20,12 +20,11 @@ export class VariableInterpolationService {
       // Determine the effective legend template based on mode
       const effectiveLegendTemplate = query.legendMode === 'custom' && query.legendTemplate 
         ? query.legendTemplate 
-        : query.label || '';
+        : '';
 
       return {
         ...query,
         queryText: this.interpolateString(query.queryText || '', scopedVars),
-        label: this.interpolateString(effectiveLegendTemplate, scopedVars),
         legendTemplate: query.legendMode === 'custom' 
           ? this.interpolateString(query.legendTemplate || '', scopedVars)
           : '',
@@ -40,7 +39,7 @@ export class VariableInterpolationService {
         interpolatedQueryText: query.queryText,
         interpolatedLabel: query.legendMode === 'custom' && query.legendTemplate 
           ? query.legendTemplate 
-          : query.label,
+          : '',
       };
     }
   }

@@ -2,7 +2,6 @@ import { DataQuery, DataSourceJsonData } from '@grafana/data';
 
 export interface MyQuery extends DataQuery {
   queryText?: string;
-  label?: string;
   // Legend configuration
   legendMode?: 'auto' | 'custom';
   legendTemplate?: string;
@@ -19,7 +18,6 @@ export interface MyQuery extends DataQuery {
 
 export const DEFAULT_QUERY: Partial<MyQuery> = {
   queryText: '',
-  label: '',
   legendMode: 'auto',
   legendTemplate: '',
 };

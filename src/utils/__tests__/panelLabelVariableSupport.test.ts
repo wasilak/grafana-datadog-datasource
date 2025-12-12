@@ -210,26 +210,6 @@ describe('Panel Legend Variable Support', () => {
       expect(result.legendTemplate).toBe('');
     });
 
-    it('should maintain backward compatibility with deprecated label field', () => {
-      const query: MyQuery = {
-        refId: 'A',
-        queryText: 'avg:memory.usage{service:$service}',
-        label: 'Memory Usage - $service', // Deprecated field
-      };
 
-      const scopedVars: ScopedVars = {
-        service: { text: 'database', value: 'database' },
-      };
-
-      mockTemplateSrv.replace.mockImplementation((text: string) => {
-        return text.replace('$service', 'database');
-      });
-
-      const result = service.interpolateQuery(query, scopedVars);
-
-      // Verify backward compatibility - should use deprecated label field
-      expect(result).toHaveProperty('interpolatedLabel');
-      expect(result.interpolatedLabel).toBe('Memory Usage - database');
-    });
   });
 });

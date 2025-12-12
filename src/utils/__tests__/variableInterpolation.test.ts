@@ -107,27 +107,7 @@ describe('VariableInterpolationService', () => {
       expect(result.interpolatedLabel).toBe('');
     });
 
-    it('should maintain backward compatibility with deprecated label field', () => {
-      const query: MyQuery = {
-        refId: 'A',
-        queryText: 'metric{service:$service}',
-        label: 'Service: $service', // Deprecated field
-      };
 
-      const scopedVars: ScopedVars = {
-        service: { text: 'web', value: 'web' },
-      };
-
-      mockTemplateSrv.replace.mockImplementation((text: string) => {
-        return text.replace('$service', 'web');
-      });
-
-      const result = service.interpolateQuery(query, scopedVars);
-
-      expect(result.queryText).toBe('metric{service:web}');
-      expect(result.interpolatedQueryText).toBe('metric{service:web}');
-      expect(result.interpolatedLabel).toBe('Service: web'); // Should use deprecated label field
-    });
   });
 
   describe('interpolateLabel', () => {
