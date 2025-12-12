@@ -22,8 +22,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   }
 
   filterQuery(query: MyQuery): boolean {
-    // Prevent execution if no query text provided
-    return !!query.queryText;
+    // Allow execution if query text is provided OR if it's an expression query
+    return !!query.queryText || (query.type === 'math' && !!query.expression);
   }
 
 

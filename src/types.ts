@@ -8,6 +8,9 @@ export interface MyQuery extends DataQuery {
   // Variable interpolation support - these fields will be populated by applyTemplateVariables
   interpolatedQueryText?: string;
   interpolatedLabel?: string;
+  // Expression query fields for formulas
+  type?: string;       // "math" for math expressions
+  expression?: string; // Math expression like "$A*100/$B"
   // Explore mode metadata for visualization hints
   meta?: {
     preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';

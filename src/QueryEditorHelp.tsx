@@ -86,7 +86,8 @@ export function QueryEditorHelp({ onClickExample }: QueryEditorHelpProps) {
     const query: MyQuery = {
       refId: 'A',
       queryText: example.expression,
-      label: example.label
+      legendMode: 'custom',
+      legendTemplate: example.label
     };
     onClickExample(query);
   };
