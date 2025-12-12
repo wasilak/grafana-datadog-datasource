@@ -23,11 +23,12 @@ describe('VariableInterpolationService', () => {
   });
 
   describe('interpolateQuery', () => {
-    it('should interpolate variables in query text and label', () => {
+    it('should interpolate variables in query text and legend template', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'metric{service:$service}',
-        label: 'Service: $service',
+        legendMode: 'custom',
+        legendTemplate: 'Service: $service',
       };
 
       const scopedVars: ScopedVars = {
@@ -41,22 +42,23 @@ describe('VariableInterpolationService', () => {
       const result = service.interpolateQuery(query, scopedVars);
 
       expect(result.queryText).toBe('metric{service:web}');
-      expect(result.label).toBe('Service: web');
+      expect(result.legendTemplate).toBe('Service: web');
       expect(result.interpolatedQueryText).toBe('metric{service:web}');
       expect(result.interpolatedLabel).toBe('Service: web');
     });
 
-    it('should handle empty query text and label gracefully', () => {
+    it('should handle empty query text and legend template gracefully', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: '',
-        label: '',
+        legendMode: 'auto',
+        legendTemplate: '',
       };
 
       const result = service.interpolateQuery(query, {});
 
       expect(result.queryText).toBe('');
-      expect(result.label).toBe('');
+      expect(result.legendTemplate).toBe('');
       expect(result.interpolatedQueryText).toBe('');
       expect(result.interpolatedLabel).toBe('');
     });
@@ -65,7 +67,8 @@ describe('VariableInterpolationService', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'metric{service:$service}',
-        label: 'Service: $service',
+        legendMode: 'custom',
+        legendTemplate: 'Service: $service',
       };
 
       mockTemplateSrv.replace.mockImplementation(() => {
@@ -75,15 +78,61 @@ describe('VariableInterpolationService', () => {
       const result = service.interpolateQuery(query, {});
 
       expect(result.queryText).toBe('metric{service:$service}');
-      expect(result.label).toBe('Service: $service');
+      expect(result.legendTemplate).toBe('Service: $service');
       expect(result.interpolatedQueryText).toBe('metric{service:$service}');
       expect(result.interpolatedLabel).toBe('Service: $service');
+    });
+
+    it('should handle auto legend mode correctly', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        queryText: 'metric{service:$service}',
+        legendMode: 'auto',
+        legendTemplate: '',
+      };
+
+      const scopedVars: ScopedVars = {
+        service: { text: 'web', value: 'web' },
+      };
+
+      mockTemplateSrv.replace.mockImplementation((text: string) => {
+        return text.replace('$service', 'web');
+      });
+
+      const result = service.interpolateQuery(query, scopedVars);
+
+      expect(result.queryText).toBe('metric{service:web}');
+      expect(result.legendTemplate).toBe('');
+      expect(result.interpolatedQueryText).toBe('metric{service:web}');
+      expect(result.interpolatedLabel).toBe('');
+    });
+
+    it('should maintain backward compatibility with deprecated label field', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        queryText: 'metric{service:$service}',
+        label: 'Service: $service', // Deprecated field
+      };
+
+      const scopedVars: ScopedVars = {
+        service: { text: 'web', value: 'web' },
+      };
+
+      mockTemplateSrv.replace.mockImplementation((text: string) => {
+        return text.replace('$service', 'web');
+      });
+
+      const result = service.interpolateQuery(query, scopedVars);
+
+      expect(result.queryText).toBe('metric{service:web}');
+      expect(result.interpolatedQueryText).toBe('metric{service:web}');
+      expect(result.interpolatedLabel).toBe('Service: web'); // Should use deprecated label field
     });
   });
 
   describe('interpolateLabel', () => {
-    it('should interpolate variables in label string', () => {
-      const label = 'Service: $service, Environment: $env';
+    it('should interpolate variables in legend template string', () => {
+      const legendTemplate = 'Service: $service, Environment: $env';
       const scopedVars: ScopedVars = {
         service: { text: 'web', value: 'web' },
         env: { text: 'prod', value: 'prod' },
@@ -93,19 +142,19 @@ describe('VariableInterpolationService', () => {
         return text.replace('$service', 'web').replace('$env', 'prod');
       });
 
-      const result = service.interpolateLabel(label, scopedVars);
+      const result = service.interpolateLabel(legendTemplate, scopedVars);
 
       expect(result).toBe('Service: web, Environment: prod');
     });
 
-    it('should return original label on error', () => {
-      const label = 'Service: $service';
+    it('should return original legend template on error', () => {
+      const legendTemplate = 'Service: $service';
 
       mockTemplateSrv.replace.mockImplementation(() => {
         throw new Error('Template service error');
       });
 
-      const result = service.interpolateLabel(label, {});
+      const result = service.interpolateLabel(legendTemplate, {});
 
       expect(result).toBe('Service: $service');
     });
@@ -251,33 +300,42 @@ describe('VariableInterpolationService', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'metric{service:${service:pipe}}',
+        legendMode: 'custom',
+        legendTemplate: 'Services: ${service:pipe}',
       };
 
       const result = service.interpolateQuery(query, {});
 
       expect(result.queryText).toBe('metric{service:web|api|worker}');
+      expect(result.legendTemplate).toBe('Services: web|api|worker');
     });
 
     it('should handle multiple custom format specifiers', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'metric{service:${service:csv},env:${env:raw}}',
+        legendMode: 'custom',
+        legendTemplate: 'Services: ${service:csv}, Env: ${env:raw}',
       };
 
       const result = service.interpolateQuery(query, {});
 
       expect(result.queryText).toBe('metric{service:web,api,worker,env:prod}');
+      expect(result.legendTemplate).toBe('Services: web,api,worker, Env: prod');
     });
 
     it('should fallback to original text if variable not found', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'metric{service:${unknown:csv}}',
+        legendMode: 'custom',
+        legendTemplate: 'Unknown: ${unknown:csv}',
       };
 
       const result = service.interpolateQuery(query, {});
 
       expect(result.queryText).toBe('metric{service:${unknown:csv}}');
+      expect(result.legendTemplate).toBe('Unknown: ${unknown:csv}');
     });
   });
 });

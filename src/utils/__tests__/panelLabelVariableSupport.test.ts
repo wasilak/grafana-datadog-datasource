@@ -13,7 +13,7 @@ const mockTemplateSrv = {
   getVariables: jest.fn(),
 };
 
-describe('Panel Label Variable Support', () => {
+describe('Panel Legend Variable Support', () => {
   let service: VariableInterpolationService;
 
   beforeEach(() => {
@@ -22,12 +22,13 @@ describe('Panel Label Variable Support', () => {
     jest.clearAllMocks();
   });
 
-  describe('Real-time label updates', () => {
-    it('should interpolate variables in panel labels', () => {
+  describe('Real-time legend updates', () => {
+    it('should interpolate variables in panel legends', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{service:$service}',
-        label: 'CPU Usage for $service',
+        legendMode: 'custom',
+        legendTemplate: 'CPU Usage for $service',
       };
 
       const scopedVars: ScopedVars = {
@@ -40,16 +41,17 @@ describe('Panel Label Variable Support', () => {
 
       const result = service.interpolateQuery(query, scopedVars);
 
-      // Verify that both label and interpolatedLabel are populated
-      expect(result.label).toBe('CPU Usage for web-server');
+      // Verify that both legendTemplate and interpolatedLabel are populated
+      expect(result.legendTemplate).toBe('CPU Usage for web-server');
       expect(result.interpolatedLabel).toBe('CPU Usage for web-server');
     });
 
-    it('should handle multi-value variables in labels', () => {
+    it('should handle multi-value variables in legends', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{service:${service:csv}}',
-        label: 'CPU Usage for ${service:csv}',
+        legendMode: 'custom',
+        legendTemplate: 'CPU Usage for ${service:csv}',
       };
 
       // Mock multi-value variable
@@ -62,15 +64,16 @@ describe('Panel Label Variable Support', () => {
 
       const result = service.interpolateQuery(query, {});
 
-      // Verify that multi-value variables are formatted correctly in labels
+      // Verify that multi-value variables are formatted correctly in legends
       expect(result.interpolatedLabel).toBe('CPU Usage for web-server,api-server,worker');
     });
 
-    it('should gracefully handle interpolation failures in labels', () => {
+    it('should gracefully handle interpolation failures in legends', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{service:$service}',
-        label: 'CPU Usage for $service',
+        legendMode: 'custom',
+        legendTemplate: 'CPU Usage for $service',
       };
 
       // Mock template service to throw an error
@@ -80,29 +83,31 @@ describe('Panel Label Variable Support', () => {
 
       const result = service.interpolateQuery(query, {});
 
-      // Verify graceful fallback - original label should be preserved
-      expect(result.label).toBe('CPU Usage for $service');
+      // Verify graceful fallback - original legend template should be preserved
+      expect(result.legendTemplate).toBe('CPU Usage for $service');
       expect(result.interpolatedLabel).toBe('CPU Usage for $service');
     });
 
-    it('should handle empty labels gracefully', () => {
+    it('should handle empty legend templates gracefully', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{service:$service}',
-        label: '',
+        legendMode: 'auto',
+        legendTemplate: '',
       };
 
       const result = service.interpolateQuery(query, {});
 
-      expect(result.label).toBe('');
+      expect(result.legendTemplate).toBe('');
       expect(result.interpolatedLabel).toBe('');
     });
 
-    it('should handle labels with built-in variables', () => {
+    it('should handle legend templates with built-in variables', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{*}',
-        label: 'CPU Usage from $__from to $__to',
+        legendMode: 'custom',
+        legendTemplate: 'CPU Usage from $__from to $__to',
       };
 
       const scopedVars: ScopedVars = {
@@ -119,11 +124,12 @@ describe('Panel Label Variable Support', () => {
       expect(result.interpolatedLabel).toBe('CPU Usage from 2023-01-01 to 2023-01-02');
     });
 
-    it('should handle complex label templates with multiple variables', () => {
+    it('should handle complex legend templates with multiple variables', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:cpu.usage{service:$service,env:$environment}',
-        label: '$metric for $service in $environment (${format:pipe})',
+        legendMode: 'custom',
+        legendTemplate: '$metric for $service in $environment (${format:pipe})',
       };
 
       const scopedVars: ScopedVars = {
@@ -154,11 +160,12 @@ describe('Panel Label Variable Support', () => {
   });
 
   describe('Backend integration', () => {
-    it('should populate interpolatedLabel field for backend consumption', () => {
+    it('should populate interpolatedLabel field for backend consumption with custom legend', () => {
       const query: MyQuery = {
         refId: 'A',
         queryText: 'avg:memory.usage{service:$service}',
-        label: 'Memory Usage - $service',
+        legendMode: 'custom',
+        legendTemplate: 'Memory Usage - $service',
       };
 
       const scopedVars: ScopedVars = {
@@ -175,8 +182,54 @@ describe('Panel Label Variable Support', () => {
       expect(result).toHaveProperty('interpolatedLabel');
       expect(result.interpolatedLabel).toBe('Memory Usage - database');
       
-      // Verify that the original label is also preserved
-      expect(result.label).toBe('Memory Usage - database');
+      // Verify that the legend template is also interpolated
+      expect(result.legendTemplate).toBe('Memory Usage - database');
+    });
+
+    it('should handle auto legend mode for backend consumption', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        queryText: 'avg:memory.usage{service:$service}',
+        legendMode: 'auto',
+        legendTemplate: '',
+      };
+
+      const scopedVars: ScopedVars = {
+        service: { text: 'database', value: 'database' },
+      };
+
+      mockTemplateSrv.replace.mockImplementation((text: string) => {
+        return text.replace('$service', 'database');
+      });
+
+      const result = service.interpolateQuery(query, scopedVars);
+
+      // Verify that auto mode results in empty interpolated label
+      expect(result).toHaveProperty('interpolatedLabel');
+      expect(result.interpolatedLabel).toBe('');
+      expect(result.legendTemplate).toBe('');
+    });
+
+    it('should maintain backward compatibility with deprecated label field', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        queryText: 'avg:memory.usage{service:$service}',
+        label: 'Memory Usage - $service', // Deprecated field
+      };
+
+      const scopedVars: ScopedVars = {
+        service: { text: 'database', value: 'database' },
+      };
+
+      mockTemplateSrv.replace.mockImplementation((text: string) => {
+        return text.replace('$service', 'database');
+      });
+
+      const result = service.interpolateQuery(query, scopedVars);
+
+      // Verify backward compatibility - should use deprecated label field
+      expect(result).toHaveProperty('interpolatedLabel');
+      expect(result.interpolatedLabel).toBe('Memory Usage - database');
     });
   });
 });
