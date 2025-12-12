@@ -56,6 +56,8 @@ type CacheEntry struct {
 type QueryModel struct {
 	QueryText         string `json:"queryText"`
 	Label             string `json:"label"`
+	LegendMode        string `json:"legendMode"`
+	LegendTemplate    string `json:"legendTemplate"`
 	InterpolatedLabel string `json:"interpolatedLabel"`
 	Hide              bool   `json:"hide"`
 }
