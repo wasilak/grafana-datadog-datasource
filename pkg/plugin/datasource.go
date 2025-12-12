@@ -714,6 +714,13 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 		"timesCount", len(times),
 		"valuesCount", len(values))
 
+	// Map query indices to refIDs for legend formatting
+	queryList := make([]string, 0, len(queryModels))
+	for refID := range queryModels {
+		queryList = append(queryList, refID)
+	}
+	sort.Strings(queryList) // Ensure consistent ordering
+
 	// Group frames by query index (which corresponds to refID)
 	framesByQuery := make(map[int]data.Frames)
 
@@ -769,8 +776,41 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 			}
 		}
 
-		// Create series name - we'll determine this based on the query
-		seriesName := fmt.Sprintf("series_%d", i)
+		// Get the query model for this query to determine legend formatting
+		refID := queryList[queryIndex]
+		qm, exists := queryModels[refID]
+		if !exists {
+			logger.Warn("Query model not found for refID", "refID", refID)
+			continue
+		}
+
+		// Build series name using legend configuration (same logic as queryDatadog)
+		metric := qm.QueryText // Default to the query text if no custom legend
+		seriesName := metric
+		
+		// Determine legend template based on legend mode
+		var legendTemplate string
+		if qm.LegendMode == "custom" && qm.LegendTemplate != "" {
+			legendTemplate = qm.LegendTemplate
+		} else if qm.InterpolatedLabel != "" {
+			// Backward compatibility: use interpolated label if available
+			legendTemplate = qm.InterpolatedLabel
+		} else if qm.Label != "" {
+			// Backward compatibility: fall back to old label field
+			legendTemplate = qm.Label
+		}
+		
+		if legendTemplate != "" {
+			// Use the legend template, replacing template variables with label values
+			seriesName = replaceTemplateVariables(legendTemplate, labels)
+		} else if len(labels) > 0 {
+			// Auto mode: use default format with metric + labels
+			var labelStrings []string
+			for k, v := range labels {
+				labelStrings = append(labelStrings, k+":"+v)
+			}
+			seriesName = metric + " {" + strings.Join(labelStrings, ", ") + "}"
+		}
 		
 		// Create data frame
 		frame := data.NewFrame(
@@ -778,6 +818,11 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 			data.NewField("Time", nil, timeValues),
 			data.NewField("Value", labels, numberValues),
 		)
+
+		// Configure the display name to ensure it shows the formatted name
+		frame.Fields[1].Config = &data.FieldConfig{
+			DisplayName: seriesName, // Explicitly set display name to our formatted series name
+		}
 
 		// Set metadata
 		frame.Meta = &data.FrameMeta{
@@ -789,12 +834,6 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 	}
 
 	// Map query indices back to refIDs and set responses
-	queryList := make([]string, 0, len(queryModels))
-	for refID := range queryModels {
-		queryList = append(queryList, refID)
-	}
-	sort.Strings(queryList) // Ensure consistent ordering
-
 	for queryIndex, frames := range framesByQuery {
 		if queryIndex < len(queryList) {
 			refID := queryList[queryIndex]
