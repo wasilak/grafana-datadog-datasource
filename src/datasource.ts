@@ -1,4 +1,4 @@
-import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue, DataQueryRequest, DataQueryResponse } from '@grafana/data';
+import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue } from '@grafana/data';
 import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
@@ -26,33 +26,7 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     return !!query.queryText;
   }
 
-  /**
-   * Main query method that handles data queries from Grafana.
-   * This method applies template variables and forwards queries to the backend.
-   */
-  async query(options: DataQueryRequest<MyQuery>): Promise<DataQueryResponse> {
-    const { range } = options;
-    
-    // Apply template variables to all queries
-    const queries = options.targets.map(target => {
-      if (target.hide) {
-        return target;
-      }
-      
-      // Apply template variable interpolation
-      return this.applyTemplateVariables(target, options.scopedVars);
-    });
 
-    // Forward to backend with interpolated queries
-    return getBackendSrv().fetch<DataQueryResponse>({
-      url: `/api/datasources/uid/${this.uid}/query`,
-      method: 'POST',
-      data: {
-        ...options,
-        targets: queries,
-      },
-    }).toPromise();
-  }
 
   /**
    * This method is called when a template variable query is executed.
