@@ -3,6 +3,9 @@ import { DataQuery, DataSourceJsonData } from '@grafana/data';
 export interface MyQuery extends DataQuery {
   queryText?: string;
   label?: string;
+  // Legend configuration
+  legendMode?: 'auto' | 'custom';
+  legendTemplate?: string;
   // Variable interpolation support - these fields will be populated by applyTemplateVariables
   interpolatedQueryText?: string;
   interpolatedLabel?: string;
@@ -17,6 +20,8 @@ export interface MyQuery extends DataQuery {
 export const DEFAULT_QUERY: Partial<MyQuery> = {
   queryText: '',
   label: '',
+  legendMode: 'auto',
+  legendTemplate: '',
 };
 
 /**

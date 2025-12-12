@@ -17,12 +17,20 @@ export class VariableInterpolationService {
    */
   interpolateQuery(query: MyQuery, scopedVars: ScopedVars): MyQuery {
     try {
+      // Determine the effective legend template based on mode
+      const effectiveLegendTemplate = query.legendMode === 'custom' && query.legendTemplate 
+        ? query.legendTemplate 
+        : query.label || '';
+
       return {
         ...query,
         queryText: this.interpolateString(query.queryText || '', scopedVars),
-        label: this.interpolateString(query.label || '', scopedVars),
+        label: this.interpolateString(effectiveLegendTemplate, scopedVars),
+        legendTemplate: query.legendMode === 'custom' 
+          ? this.interpolateString(query.legendTemplate || '', scopedVars)
+          : '',
         interpolatedQueryText: this.interpolateString(query.queryText || '', scopedVars),
-        interpolatedLabel: this.interpolateString(query.label || '', scopedVars),
+        interpolatedLabel: this.interpolateString(effectiveLegendTemplate, scopedVars),
       };
     } catch (error) {
       console.error('Variable interpolation failed:', error);
@@ -30,7 +38,9 @@ export class VariableInterpolationService {
       return {
         ...query,
         interpolatedQueryText: query.queryText,
-        interpolatedLabel: query.label,
+        interpolatedLabel: query.legendMode === 'custom' && query.legendTemplate 
+          ? query.legendTemplate 
+          : query.label,
       };
     }
   }

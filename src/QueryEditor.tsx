@@ -1,6 +1,6 @@
 import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
-import { Input, CodeEditor, Stack, Alert, useTheme2, Button, Icon } from '@grafana/ui';
-import { QueryEditorProps } from '@grafana/data';
+import { Input, CodeEditor, Stack, Alert, useTheme2, Button, Icon, Select, InlineField, InlineFieldRow, Collapse } from '@grafana/ui';
+import { QueryEditorProps, SelectableValue } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -74,6 +74,13 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+
+  // Legend mode options
+  const legendModeOptions: Array<SelectableValue<'auto' | 'custom'>> = [
+    { label: 'Auto', value: 'auto', description: 'Only includes unique labels' },
+    { label: 'Custom', value: 'custom', description: 'Provide a naming template' },
+  ];
   
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -419,6 +426,28 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     }
   };
 
+  const onLegendModeChange = (option: SelectableValue<'auto' | 'custom'>) => {
+    const newMode = option.value || 'auto';
+    onChange({ 
+      ...enhancedQuery, 
+      legendMode: newMode,
+      // Clear template when switching to auto
+      legendTemplate: newMode === 'auto' ? '' : enhancedQuery.legendTemplate || ''
+    });
+  };
+
+  const onLegendTemplateChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...enhancedQuery, legendTemplate: event.target.value });
+  };
+
+  const onLegendTemplateKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) for query execution
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      onRunQuery();
+    }
+  };
+
   // Helper function to calculate and update the position for suggestions dropdown
   const updateSuggestionsPositionFromEditor = (
     editor: monacoType.editor.IStandaloneCodeEditor,
@@ -535,7 +564,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     });
   };
 
-  const { queryText, label } = query;
+  const { queryText, label, legendMode = 'auto', legendTemplate = '' } = query;
 
   // Add visualization type hints for Explore mode
   const enhancedQuery = isExploreMode ? {
@@ -550,232 +579,234 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
   return (
     <Stack gap={2} direction="column">
-      {/* Explore mode is detected but no UI changes needed - functionality is identical */}
-      
-      {/* Query field - full width */}
-      <div style={{ position: 'relative' }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: theme.spacing(1)
-        }}>
-          <label style={{ 
-            fontWeight: theme.typography.fontWeightMedium,
-            color: theme.colors.text.primary,
-            margin: 0
-          }}>Query</label>
-          
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowHelp(!showHelp)}
-            icon={showHelp ? "angle-up" : "question-circle"}
-          >
-            {showHelp ? 'Hide Help' : 'Variable Examples'}
-          </Button>
-        </div>
+      {/* Query field with native Grafana styling */}
+      <InlineFieldRow>
+        <InlineField 
+          label="Query" 
+          labelWidth={14}
+          grow
+          tooltip="Enter your Datadog query"
+        >
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: theme.spacing(0.5)
+            }}>
+              <div style={{ flex: 1 }} />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowHelp(!showHelp)}
+                icon={showHelp ? "angle-up" : "question-circle"}
+              >
+                {showHelp ? 'Hide Help' : 'Variable Examples'}
+              </Button>
+            </div>
 
-        <CodeEditor
-          value={queryText || ''}
-          language="datadog"
-          height="100px"
-          onBlur={(value) => {
-            // Close autocomplete when editor loses focus
-            autocomplete.onClose();
-          }}
-          onSave={(value) => {
-            // Update query when user saves (Cmd+S), preserving Explore mode metadata
-            onChange({ ...enhancedQuery, queryText: value });
-          }}
-          onChange={onQueryTextChange}
-          onEditorDidMount={handleEditorDidMount}
-          monacoOptions={{
-            minimap: { enabled: false },
-            lineNumbers: 'off',
-            folding: false,
-            lineDecorationsWidth: 0,
-            lineNumbersMinChars: 0,
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            wrappingIndent: 'none',
-            overviewRulerLanes: 0,
-            hideCursorInOverviewRuler: true,
-            overviewRulerBorder: false,
-            renderLineHighlight: 'none',
-            scrollbar: {
-              vertical: 'auto',
-              horizontal: 'auto',
-              verticalScrollbarSize: 10,
-              horizontalScrollbarSize: 10,
-            },
-          }}
-        />
+            <CodeEditor
+              value={queryText || ''}
+              language="datadog"
+              height="100px"
+              onBlur={(value) => {
+                // Close autocomplete when editor loses focus
+                autocomplete.onClose();
+              }}
+              onSave={(value) => {
+                // Update query when user saves (Cmd+S), preserving Explore mode metadata
+                onChange({ ...enhancedQuery, queryText: value });
+              }}
+              onChange={onQueryTextChange}
+              onEditorDidMount={handleEditorDidMount}
+              monacoOptions={{
+                minimap: { enabled: false },
+                lineNumbers: 'off',
+                folding: false,
+                lineDecorationsWidth: 0,
+                lineNumbersMinChars: 0,
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                wrappingIndent: 'none',
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                overviewRulerBorder: false,
+                renderLineHighlight: 'none',
+                scrollbar: {
+                  vertical: 'auto',
+                  horizontal: 'auto',
+                  verticalScrollbarSize: 10,
+                  horizontalScrollbarSize: 10,
+                },
+              }}
+            />
 
-        {/* Display validation error */}
-        {autocomplete.state.validationError && (
-          <Alert title="Query Validation" severity="warning" style={{ marginTop: '8px' }}>
-            {autocomplete.state.validationError}
-          </Alert>
-        )}
+            {/* Display validation error */}
+            {autocomplete.state.validationError && (
+              <Alert title="Query Validation" severity="warning" style={{ marginTop: '8px' }}>
+                {autocomplete.state.validationError}
+              </Alert>
+            )}
 
-        {/* Display variable information */}
-        {hasVariablePlaceholders(queryText || '') && (
-          <div style={{ 
-            marginTop: '8px', 
-            padding: '8px', 
-            backgroundColor: theme.colors.background.secondary,
-            border: `1px solid ${theme.colors.border.weak}`,
-            borderRadius: theme.shape.radius.default,
-            fontSize: theme.typography.size.sm,
-            color: theme.colors.text.secondary
-          }}>
-            <Icon name="info-circle" size="sm" style={{ marginRight: '4px' }} />
-            Variables detected: {extractVariableNames(queryText || '').join(', ')}
-            <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
-              (Variables will be interpolated when query executes)
-            </span>
-          </div>
-        )}
-
-        {/* Display backend error */}
-        {autocomplete.state.error && (
-          <Alert title="Autocomplete Error" severity="error" style={{ marginTop: '8px' }}>
-            {autocomplete.state.error}
-          </Alert>
-        )}
-
-        {/* Autocomplete popup */}
-        {autocomplete.state.isOpen && autocomplete.state.suggestions.length > 0 && (
-          <div
-            style={{
-              position: 'fixed',
-              zIndex: 1000,
-              minWidth: '200px',
-              backgroundColor: theme.colors.background.primary,
-              border: `1px solid ${theme.colors.border.weak}`,
-              borderRadius: theme.shape.radius.default,
-              boxShadow: theme.shadows.z3,
-              maxHeight: '200px',
-              overflowY: 'auto',
-              color: theme.colors.text.primary,
-              fontSize: theme.typography.size.sm,
-              top: `${suggestionsPosition.top}px`,
-              left: `${suggestionsPosition.left}px`,
-            }}
-            className="query-field-query-editor-suggestions"
-          >
-            {autocomplete.state.groupedSuggestions.length > 0 ? (
-              // Render grouped suggestions with headers
-              <div>
-                {autocomplete.state.groupedSuggestions.map((group, groupIndex) => (
-                  <div key={groupIndex}>
-                    {/* Group header */}
-                    <div
-                      style={{
-                        padding: '4px 12px',
-                        fontSize: theme.typography.size.xs,
-                        fontWeight: theme.typography.fontWeightMedium,
-                        color: theme.colors.text.secondary,
-                        backgroundColor: theme.colors.background.secondary,
-                        borderBottom: `1px solid ${theme.colors.border.weak}`,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      {group.label}
-                    </div>
-                    {/* Group suggestions */}
-                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                      {group.suggestions.map((suggestion) => {
-                        // Find the index in the flat suggestions array for selection state
-                        const flatIndex = autocomplete.state.suggestions.findIndex(
-                          (s) => s.label === suggestion.label
-                        );
-                        return (
-                          <li
-                            key={suggestion.label}
-                            onMouseDown={(e) => {
-                              // Prevent default to avoid losing focus from editor
-                              e.preventDefault();
-                              autocomplete.onMouseClick(suggestion);
-                              // Ensure focus returns to editor after click
-                              setTimeout(() => {
-                                if (editorRef.current) {
-                                  editorRef.current.focus();
-                                }
-                              }, 0);
-                            }}
-                            onMouseEnter={() => autocomplete.onMouseEnter(flatIndex)}
-                            style={{
-                              padding: '6px 12px',
-                              cursor: 'pointer',
-                              backgroundColor:
-                                flatIndex === autocomplete.state.selectedIndex
-                                  ? theme.colors.action.selected
-                                  : theme.colors.background.primary,
-                              borderBottom: `1px solid ${theme.colors.border.weak}`,
-                              color: theme.colors.text.primary,
-                            }}
-                          >
-                            {suggestion.label}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
+            {/* Display variable information */}
+            {hasVariablePlaceholders(queryText || '') && (
+              <div style={{ 
+                marginTop: '8px', 
+                padding: '8px', 
+                backgroundColor: theme.colors.background.secondary,
+                border: `1px solid ${theme.colors.border.weak}`,
+                borderRadius: theme.shape.radius.default,
+                fontSize: theme.typography.size.sm,
+                color: theme.colors.text.secondary
+              }}>
+                <Icon name="info-circle" size="sm" style={{ marginRight: '4px' }} />
+                Variables detected: {extractVariableNames(queryText || '').join(', ')}
+                <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
+                  (Variables will be interpolated when query executes)
+                </span>
               </div>
-            ) : (
-              // Fallback to flat list if no groups
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                {autocomplete.state.suggestions.map((suggestion, index) => (
-                  <li
-                    key={index}
-                    onMouseDown={(e) => {
-                      // Prevent default to avoid losing focus from editor
-                      e.preventDefault();
-                      autocomplete.onMouseClick(suggestion);
-                      // Ensure focus returns to editor after click
-                      setTimeout(() => {
-                        if (editorRef.current) {
-                          editorRef.current.focus();
-                        }
-                      }, 0);
-                    }}
-                    onMouseEnter={() => autocomplete.onMouseEnter(index)}
-                    style={{
-                      padding: '6px 12px',
-                      cursor: 'pointer',
-                      backgroundColor:
-                        index === autocomplete.state.selectedIndex
-                          ? theme.colors.action.selected
-                          : theme.colors.background.primary,
-                      borderBottom: `1px solid ${theme.colors.border.weak}`,
-                      color: theme.colors.text.primary,
-                    }}
-                  >
-                    {suggestion.label}
-                  </li>
-                ))}
-              </ul>
+            )}
+
+            {/* Display backend error */}
+            {autocomplete.state.error && (
+              <Alert title="Autocomplete Error" severity="error" style={{ marginTop: '8px' }}>
+                {autocomplete.state.error}
+              </Alert>
+            )}
+
+            {/* Autocomplete popup */}
+            {autocomplete.state.isOpen && autocomplete.state.suggestions.length > 0 && (
+              <div
+                style={{
+                  position: 'fixed',
+                  zIndex: 1000,
+                  minWidth: '200px',
+                  backgroundColor: theme.colors.background.primary,
+                  border: `1px solid ${theme.colors.border.weak}`,
+                  borderRadius: theme.shape.radius.default,
+                  boxShadow: theme.shadows.z3,
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  color: theme.colors.text.primary,
+                  fontSize: theme.typography.size.sm,
+                  top: `${suggestionsPosition.top}px`,
+                  left: `${suggestionsPosition.left}px`,
+                }}
+                className="query-field-query-editor-suggestions"
+              >
+                {autocomplete.state.groupedSuggestions.length > 0 ? (
+                  // Render grouped suggestions with headers
+                  <div>
+                    {autocomplete.state.groupedSuggestions.map((group, groupIndex) => (
+                      <div key={groupIndex}>
+                        {/* Group header */}
+                        <div
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: theme.typography.size.xs,
+                            fontWeight: theme.typography.fontWeightMedium,
+                            color: theme.colors.text.secondary,
+                            backgroundColor: theme.colors.background.secondary,
+                            borderBottom: `1px solid ${theme.colors.border.weak}`,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                          }}
+                        >
+                          {group.label}
+                        </div>
+                        {/* Group suggestions */}
+                        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                          {group.suggestions.map((suggestion) => {
+                            // Find the index in the flat suggestions array for selection state
+                            const flatIndex = autocomplete.state.suggestions.findIndex(
+                              (s) => s.label === suggestion.label
+                            );
+                            return (
+                              <li
+                                key={suggestion.label}
+                                onMouseDown={(e) => {
+                                  // Prevent default to avoid losing focus from editor
+                                  e.preventDefault();
+                                  autocomplete.onMouseClick(suggestion);
+                                  // Ensure focus returns to editor after click
+                                  setTimeout(() => {
+                                    if (editorRef.current) {
+                                      editorRef.current.focus();
+                                    }
+                                  }, 0);
+                                }}
+                                onMouseEnter={() => autocomplete.onMouseEnter(flatIndex)}
+                                style={{
+                                  padding: '6px 12px',
+                                  cursor: 'pointer',
+                                  backgroundColor:
+                                    flatIndex === autocomplete.state.selectedIndex
+                                      ? theme.colors.action.selected
+                                      : theme.colors.background.primary,
+                                  borderBottom: `1px solid ${theme.colors.border.weak}`,
+                                  color: theme.colors.text.primary,
+                                }}
+                              >
+                                {suggestion.label}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  // Fallback to flat list if no groups
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                    {autocomplete.state.suggestions.map((suggestion, index) => (
+                      <li
+                        key={index}
+                        onMouseDown={(e) => {
+                          // Prevent default to avoid losing focus from editor
+                          e.preventDefault();
+                          autocomplete.onMouseClick(suggestion);
+                          // Ensure focus returns to editor after click
+                          setTimeout(() => {
+                            if (editorRef.current) {
+                              editorRef.current.focus();
+                            }
+                          }, 0);
+                        }}
+                        onMouseEnter={() => autocomplete.onMouseEnter(index)}
+                        style={{
+                          padding: '6px 12px',
+                          cursor: 'pointer',
+                          backgroundColor:
+                            index === autocomplete.state.selectedIndex
+                              ? theme.colors.action.selected
+                              : theme.colors.background.primary,
+                          borderBottom: `1px solid ${theme.colors.border.weak}`,
+                          color: theme.colors.text.primary,
+                        }}
+                      >
+                        {suggestion.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {/* Loading indicator */}
+            {autocomplete.state.isLoading && (
+              <div style={{
+                position: 'absolute',
+                right: '10px',
+                top: '10px',
+                fontSize: theme.typography.size.sm,
+                color: theme.colors.text.secondary
+              }}>
+                Loading...
+              </div>
             )}
           </div>
-        )}
-
-        {/* Loading indicator */}
-        {autocomplete.state.isLoading && (
-          <div style={{
-            position: 'absolute',
-            right: '10px',
-            top: '10px',
-            fontSize: theme.typography.size.sm,
-            color: theme.colors.text.secondary
-          }}>
-            Loading...
-          </div>
-        )}
-      </div>
+        </InlineField>
+      </InlineFieldRow>
 
       {/* Variable Help Component */}
       {showHelp && (
@@ -787,22 +818,46 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         />
       )}
 
-      {/* Label field - full width */}
-      <div>
-        <label style={{ 
-          display: 'block', 
-          marginBottom: theme.spacing(1), 
-          fontWeight: theme.typography.fontWeightMedium,
-          color: theme.colors.text.primary
-        }}>Label</label>
-        <Input
-          value={label || ''}
-          onChange={onLabelChange}
-          onKeyDown={onLabelKeyDown}
-          placeholder="e.g., {{host}}"
-          style={{ width: '100%' }}
-        />
-      </div>
+      {/* Options Section - Collapsible */}
+      <Collapse 
+        label="Options" 
+        isOpen={optionsOpen} 
+        onToggle={() => setOptionsOpen(!optionsOpen)}
+      >
+        <InlineFieldRow>
+          <InlineField 
+            label="Legend" 
+            labelWidth={14}
+            tooltip="Configure how series names are displayed in the legend"
+          >
+            <Select
+              options={legendModeOptions}
+              value={legendModeOptions.find(opt => opt.value === legendMode)}
+              onChange={onLegendModeChange}
+              width={20}
+              placeholder="Select legend mode"
+            />
+          </InlineField>
+        </InlineFieldRow>
+
+        {/* Custom legend template field - only show when Custom is selected */}
+        {legendMode === 'custom' && (
+          <InlineFieldRow>
+            <InlineField 
+              label="" 
+              labelWidth={14}
+              grow
+            >
+              <Input
+                value={legendTemplate}
+                onChange={onLegendTemplateChange}
+                onKeyDown={onLegendTemplateKeyDown}
+                placeholder="e.g., {{label_name}}"
+              />
+            </InlineField>
+          </InlineFieldRow>
+        )}
+      </Collapse>
     </Stack>
   );
 }
