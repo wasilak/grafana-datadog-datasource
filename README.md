@@ -11,22 +11,22 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 
 ## 🚀 Quick Start
 
-1. **[Install the plugin](docs/installation.md)** - Multiple installation methods available
-2. **[Configure your datasource](docs/configuration.md)** - Set up Datadog API credentials  
-3. **[Write your first query](docs/getting-started.md)** - Learn the query syntax
-4. **[Explore advanced features](docs/features/)** - Discover all capabilities
+1. **[Install the plugin](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/installation.md)** - Multiple installation methods available
+2. **[Configure your datasource](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/configuration.md)** - Set up Datadog API credentials  
+3. **[Write your first query](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/getting-started.md)** - Learn the query syntax
+4. **[Explore advanced features](https://github.com/wasilak/grafana-datadog-datasource/tree/main/docs/features/)** - Discover all capabilities
 
 ## ✨ Key Features
 
 | Feature | Description | Documentation |
 |---------|-------------|---------------|
-| 🎯 **Smart Autocomplete** | Context-aware suggestions with real-time validation | [Autocomplete Guide](docs/features/autocomplete.md) |
-| 🔧 **Advanced Query Editor** | Boolean operators, formulas, and custom legends | [Query Editor](docs/features/query-editor.md) |
-| 📊 **Formula Support** | Mathematical expressions across multiple queries | [Formulas & Expressions](docs/features/formulas.md) |
-| 🏷️ **Custom Legends** | Template variables and dynamic series naming | [Legend Configuration](docs/features/legends.md) |
-| 🔍 **Explore Integration** | Full support for Grafana Explore mode | [Using Explore](docs/features/explore.md) |
-| 📈 **Dashboard Variables** | Complete variable support with autocomplete | [Variables Guide](docs/features/variables.md) |
-| ⚡ **Performance Optimized** | Caching, debouncing, and concurrent request limiting | [Performance](docs/advanced/performance.md) |
+| 🎯 **Smart Autocomplete** | Context-aware suggestions with real-time validation | [Autocomplete Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/autocomplete.md) |
+| 🔧 **Advanced Query Editor** | Boolean operators, formulas, and custom legends | [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/query-editor.md) |
+| 📊 **Formula Support** | Mathematical expressions across multiple queries | [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/formulas.md) |
+| 🏷️ **Custom Legends** | Template variables and dynamic series naming | [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/legends.md) |
+| 🔍 **Explore Integration** | Full support for Grafana Explore mode | [Using Explore](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/explore.md) |
+| 📈 **Dashboard Variables** | Complete variable support with autocomplete | [Variables Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/variables.md) |
+| ⚡ **Performance Optimized** | Caching, debouncing, and concurrent request limiting | [Performance](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/performance.md) |
 
 ## 📋 Requirements
 
@@ -55,30 +55,30 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 ## 📚 Documentation
 
 ### Getting Started
-- [Installation Guide](docs/installation.md) - Install the plugin
-- [Configuration](docs/configuration.md) - Set up your datasource
-- [Getting Started](docs/getting-started.md) - Your first queries
-- [Migration Guide](docs/migration.md) - Upgrade from older versions
+- [Installation Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/installation.md) - Install the plugin
+- [Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/configuration.md) - Set up your datasource
+- [Getting Started](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/getting-started.md) - Your first queries
+- [Migration Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/migration.md) - Upgrade from older versions
 
 ### Features
-- [Query Editor](docs/features/query-editor.md) - Advanced query capabilities
-- [Autocomplete](docs/features/autocomplete.md) - Smart suggestions system
-- [Formulas & Expressions](docs/features/formulas.md) - Mathematical operations
-- [Legend Configuration](docs/features/legends.md) - Custom series naming
-- [Variables](docs/features/variables.md) - Dashboard templating
-- [Explore Integration](docs/features/explore.md) - Ad-hoc exploration
+- [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/query-editor.md) - Advanced query capabilities
+- [Autocomplete](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/autocomplete.md) - Smart suggestions system
+- [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/formulas.md) - Mathematical operations
+- [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/legends.md) - Custom series naming
+- [Variables](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/variables.md) - Dashboard templating
+- [Explore Integration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/explore.md) - Ad-hoc exploration
 
 ### Advanced Usage
-- [Query Examples](docs/examples/queries.md) - Real-world query patterns
-- [Dashboard Examples](docs/examples/dashboards.md) - Complete dashboard setups
-- [Performance Tuning](docs/advanced/performance.md) - Optimization tips
-- [Troubleshooting](docs/advanced/troubleshooting.md) - Common issues and solutions
+- [Query Examples](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/queries.md) - Real-world query patterns
+- [Dashboard Examples](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/dashboards.md) - Complete dashboard setups
+- [Performance Tuning](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/performance.md) - Optimization tips
+- [Troubleshooting](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/troubleshooting.md) - Common issues and solutions
 
 ### Development
-- [Development Guide](docs/development/setup.md) - Local development setup
-- [Architecture](docs/development/architecture.md) - Plugin architecture overview
-- [API Reference](docs/development/api.md) - Backend API documentation
-- [Contributing](docs/development/contributing.md) - How to contribute
+- [Development Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/development/setup.md) - Local development setup
+- [Architecture](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/development/architecture.md) - Plugin architecture overview
+- [API Reference](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/development/api.md) - Backend API documentation
+- [Contributing](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/development/contributing.md) - How to contribute
 
 ## 🔧 Quick Configuration
 
@@ -122,14 +122,14 @@ CPU: {{host}} ({{availability_zone}})
 ## 🤝 Community & Support
 
 - **Issues**: [GitHub Issues](https://github.com/wasilak/grafana-datadog-datasource/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/wasilak/grafana-datadog-datasource/discussions)
-- **Contributing**: [Contributing Guide](docs/development/contributing.md)
-- **Changelog**: [Release Notes](CHANGELOG.md)
+- **Community**: [GitHub Issues](https://github.com/wasilak/grafana-datadog-datasource/issues)
+- **Contributing**: [Contributing Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/development/contributing.md)
+- **Changelog**: [Release Notes](https://github.com/wasilak/grafana-datadog-datasource/blob/main/CHANGELOG.md)
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE) file for details.
 
 ---
 
-**Ready to get started?** → [Installation Guide](docs/installation.md)
+**Ready to get started?** → [Installation Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/installation.md)
