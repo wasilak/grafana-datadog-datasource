@@ -2,229 +2,134 @@
 
 [![Release](https://img.shields.io/github/v/release/wasilak/grafana-datadog-datasource)](https://github.com/wasilak/grafana-datadog-datasource/releases)
 [![License](https://img.shields.io/github/license/wasilak/grafana-datadog-datasource)](https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/wasilak/grafana-datadog-datasource/ci.yml)](https://github.com/wasilak/grafana-datadog-datasource/actions)
 
-An **unofficial** Grafana datasource plugin for Datadog metrics with advanced query autocomplete functionality.
+An **unofficial** Grafana datasource plugin for Datadog metrics with advanced query capabilities and intelligent autocomplete.
 
 > [!NOTE]  
 > This is an unofficial plugin that uses the Datadog API for metrics queries. There is also an [official Datadog plugin](https://grafana.com/grafana/plugins/grafana-datadog-datasource/) available for Grafana Enterprise subscriptions.
 
-## ✨ Features
+## 🚀 Quick Start
 
-### 🎯 Core Functionality
-- **Metrics support only** - Does not support logs or traces
-- **Explore integration** - Full support for Grafana Explore
-- **Dashboard variables** - Complete variable support
-- **All visualizations** - Works with standard Grafana visualizations
-- **Custom series labels** - Support for variables like `$host` or `{{host}}`
-- **Inline comments** - Lines starting with `#`, toggle with `Cmd+/` or `Ctrl+/`
+1. **[Install the plugin](docs/installation.md)** - Multiple installation methods available
+2. **[Configure your datasource](docs/configuration.md)** - Set up Datadog API credentials  
+3. **[Write your first query](docs/getting-started.md)** - Learn the query syntax
+4. **[Explore advanced features](docs/features/)** - Discover all capabilities
 
-### 🚀 Advanced Query Editor (v0.4.0+)
-- **Smart autocomplete** - Real-time suggestions from Datadog API
-  - Metric name autocomplete
-  - Tag key autocomplete based on selected metrics  
-  - Tag value autocomplete with filter context awareness
-- **Boolean operators** - Full support for `OR`, `AND`, `IN`, `NOT IN` operators
-- **Keyboard shortcuts** - `Cmd+Enter` (Mac) / `Ctrl+Enter` (Windows/Linux) for query execution
-- **Context-aware parsing** - Intelligent cursor position detection for accurate suggestions
+## ✨ Key Features
+
+| Feature | Description | Documentation |
+|---------|-------------|---------------|
+| 🎯 **Smart Autocomplete** | Context-aware suggestions with real-time validation | [Autocomplete Guide](docs/features/autocomplete.md) |
+| 🔧 **Advanced Query Editor** | Boolean operators, formulas, and custom legends | [Query Editor](docs/features/query-editor.md) |
+| 📊 **Formula Support** | Mathematical expressions across multiple queries | [Formulas & Expressions](docs/features/formulas.md) |
+| 🏷️ **Custom Legends** | Template variables and dynamic series naming | [Legend Configuration](docs/features/legends.md) |
+| 🔍 **Explore Integration** | Full support for Grafana Explore mode | [Using Explore](docs/features/explore.md) |
+| 📈 **Dashboard Variables** | Complete variable support with autocomplete | [Variables Guide](docs/features/variables.md) |
+| ⚡ **Performance Optimized** | Caching, debouncing, and concurrent request limiting | [Performance](docs/advanced/performance.md) |
 
 ## 📋 Requirements
 
-- **Datadog site** - e.g., `datadoghq.eu` or `datadoghq.com`
-- **Datadog subscription** - API access requires a paid Datadog subscription
-- **API credentials**:
-  - **API Key** - Your Datadog API key
-  - **Application Key** - Datadog application key (unscoped key works)
+- **Grafana**: Version 9.0+ (recommended: 10.0+)
+- **Datadog Account**: Paid subscription with API access
+- **API Credentials**: API Key and Application Key
+- **Supported Platforms**: Linux, macOS, Windows (x86-64, ARM64)
 
-## 🚀 Installation
+## 🎯 What's Supported
 
-### Option 1: Direct Download
-1. Download the latest release from [GitHub Releases](https://github.com/wasilak/grafana-datadog-datasource/releases)
-2. Extract to your Grafana plugins directory
-3. Allow unsigned plugins:
-   ```bash
-   GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
-   ```
-   
-   > **Note**: This is required because the plugin is signed for `localhost:3000` only. For production deployments on other domains, you'll need to either allow unsigned plugins or re-sign the plugin for your domain.
-4. Restart Grafana
+### ✅ Supported
+- **Metrics queries** with full Datadog query language
+- **Formulas and expressions** (`$A * 100 / $B`)
+- **Boolean operators** (`OR`, `AND`, `IN`, `NOT IN`)
+- **Custom legends** with template variables
+- **Dashboard variables** and templating
+- **Grafana Explore** integration
+- **All visualization types** (graphs, tables, stat panels, etc.)
 
-### Option 2: Environment Variable Installation
+### ❌ Not Supported
+- **Logs** - Use official Datadog plugin or Loki
+- **Traces** - Use official Datadog plugin or Jaeger/Tempo
+- **Events** - Metrics only
+- **Synthetic monitoring** - Use official Datadog plugin
+
+## 📚 Documentation
+
+### Getting Started
+- [Installation Guide](docs/installation.md) - Install the plugin
+- [Configuration](docs/configuration.md) - Set up your datasource
+- [Getting Started](docs/getting-started.md) - Your first queries
+- [Migration Guide](docs/migration.md) - Upgrade from older versions
+
+### Features
+- [Query Editor](docs/features/query-editor.md) - Advanced query capabilities
+- [Autocomplete](docs/features/autocomplete.md) - Smart suggestions system
+- [Formulas & Expressions](docs/features/formulas.md) - Mathematical operations
+- [Legend Configuration](docs/features/legends.md) - Custom series naming
+- [Variables](docs/features/variables.md) - Dashboard templating
+- [Explore Integration](docs/features/explore.md) - Ad-hoc exploration
+
+### Advanced Usage
+- [Query Examples](docs/examples/queries.md) - Real-world query patterns
+- [Dashboard Examples](docs/examples/dashboards.md) - Complete dashboard setups
+- [Performance Tuning](docs/advanced/performance.md) - Optimization tips
+- [Troubleshooting](docs/advanced/troubleshooting.md) - Common issues and solutions
+
+### Development
+- [Development Guide](docs/development/setup.md) - Local development setup
+- [Architecture](docs/development/architecture.md) - Plugin architecture overview
+- [API Reference](docs/development/api.md) - Backend API documentation
+- [Contributing](docs/development/contributing.md) - How to contribute
+
+## 🔧 Quick Configuration
+
 ```bash
+# Environment variable installation
 GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
+
+# Allow unsigned plugins (required for localhost)
+GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
 ```
 
-### Option 3: Self-Signed Plugin
-1. Clone this repository
-2. Sign the plugin with a [private signature](https://grafana.com/docs/grafana/latest/developers/plugins/sign-a-plugin/)
-3. Install the signed plugin
+## 📊 Example Queries
 
-## ⚙️ Configuration
-
-### Adding the Datasource
-
-1. **Navigate to Datasources**
-   - Go to **Configuration** → **Data Sources** (or **Connections** → **Data sources** in newer Grafana versions)
-   - Click **"Add data source"**
-
-2. **Select Datadog**
-   - Search for "Datadog" or scroll to find it
-   - Click on the **Datadog** datasource
-
-3. **Configure Connection Settings**
-   - **Name**: Give your datasource a name (e.g., "Datadog Production")
-   - **Site**: Your Datadog site URL
-     - `datadoghq.com` (US)
-     - `datadoghq.eu` (EU)
-     - `us3.datadoghq.com` (US3)
-     - `us5.datadoghq.com` (US5)
-     - `ap1.datadoghq.com` (AP1)
-     - `ddog-gov.com` (Government)
-
-4. **Add API Credentials**
-   - **API Key**: Your Datadog API key
-   - **Application Key**: Your Datadog application key
-   
-   > **Note**: The application key can be "unscoped" - it doesn't need specific permissions
-
-5. **Test & Save**
-   - Click **"Save & Test"** to verify the connection
-   - You should see a green "Data source is working" message
-
-### Getting Datadog API Keys
-
-1. **API Key**:
-   - Go to [Datadog API Keys](https://app.datadoghq.com/organization-settings/api-keys)
-   - Create a new API key or use an existing one
-
-2. **Application Key**:
-   - Go to [Datadog Application Keys](https://app.datadoghq.com/organization-settings/application-keys)
-   - Create a new application key
-   - No specific scopes are required (unscoped works fine)
-
-### Troubleshooting
-
-#### Plugin Installation Issues
-- **"Plugin ID mismatch"**: Use `wasilak-datadog-datasource` as the plugin ID, not `Datadog`
-  ```bash
-  # Correct
-  GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
-  ```
-- **"Invalid signature"**: For v0.4.2+, the plugin uses modern Grafana signing. If you still get signature errors:
-  ```bash
-  GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
-  ```
-- **Plugin not appearing**: Check Grafana logs for installation errors and ensure both environment variables above are set
-
-#### Datasource Configuration Issues
-- **"Unauthorized" error**: Check your API key and application key
-- **"Forbidden" error**: Verify your Datadog site URL is correct
-- **No metrics showing**: Ensure your Datadog account has metrics data
-- **Autocomplete not working**: Check browser console for API errors
-
-## 🧪 Using the Plugin
-
-### Creating Your First Query
-
-1. **Create a Dashboard**
-   - Go to **Dashboards** → **New** → **New Dashboard**
-   - Click **"Add visualization"**
-
-2. **Select Datadog Datasource**
-   - In the query editor, select your Datadog datasource from the dropdown
-
-3. **Write a Query**
-   - Use the query editor with autocomplete support
-   - Start typing a metric name and see suggestions appear
-   - Use `{` to trigger tag key autocomplete
-   - Use `:` after a tag key to get tag value suggestions
-
-### Query Examples
-
-#### Basic Queries
-```
-# Simple metric query
-avg:system.cpu.user{*}
-
-# Query with specific host
-avg:system.cpu.user{host:web-server-01}
-
-# Query with aggregation
-sum:docker.containers.running{*}
-```
-
-#### Advanced Queries with Autocomplete
-```
-# Grouping by tags (autocomplete will suggest available tags)
+```bash
+# Basic CPU usage
 avg:system.cpu.user{*} by {host}
 
-# Multiple filters with boolean operators
-avg:container.cpu.usage{service:web OR service:api} by {host}
+# Complex filtering with formulas
+$A * 100 / $B
+# Where A: sum:container.memory.usage{service:web}
+# Where B: sum:container.memory.limit{service:web}
 
-# Using IN operator for multiple values
-avg:system.load.1{host IN (web-01,web-02,web-03)}
+# Boolean operators
+avg:system.load.1{env IN (prod,staging) AND service:web} by {host}
 
-# Complex filtering
-max:kubernetes.cpu.usage{cluster_name:production AND namespace:frontend} by {pod_name}
+# Custom legends
+CPU: {{host}} ({{availability_zone}})
 ```
 
-#### Custom Series Labels
-```
-# Using template variables
-CPU Usage: {{host}}
+## 🏆 Why Choose This Plugin?
 
-# Multiple variables
-{{service}} on {{host}}: {{cluster_name}}
+| Advantage | This Plugin | Official Plugin |
+|-----------|-------------|-----------------|
+| **Cost** | Free & Open Source | Grafana Enterprise Required |
+| **Autocomplete** | Advanced context-aware | Basic |
+| **Formulas** | Full mathematical expressions | Limited |
+| **Query Editor** | Modern with validation | Basic |
+| **Variables** | Complete support | Limited |
+| **Community** | Active development | Enterprise support |
 
-# With static text
-Production CPU: {{host}} ({{availability_zone}})
-```
+## 🤝 Community & Support
 
-### Autocomplete Features
-
-- **Metric Names**: Start typing to see available metrics
-- **Tag Keys**: Type `{` after a metric to see available tags
-- **Tag Values**: Type `:` after a tag key to see possible values
-- **Boolean Operators**: Use `OR`, `AND`, `IN`, `NOT IN` with full autocomplete support
-- **Keyboard Shortcuts**: 
-  - `Cmd+Enter` (Mac) or `Ctrl+Enter` (Windows/Linux) to execute query
-  - Works in both query field and label field
-
-### Using in Explore
-
-1. Go to **Explore** in Grafana
-2. Select your Datadog datasource
-3. Use the same query syntax with full autocomplete support
-4. Perfect for ad-hoc metric exploration and debugging
-
-## 🧪 Development
-
-For local development and contributing to this plugin, see [DEVELOPMENT.md](https://github.com/wasilak/grafana-datadog-datasource/blob/main/DEVELOPMENT.md).
-
-## 📦 Multi-Platform Support
-
-The plugin includes pre-built binaries for:
-- **Linux**: x86-64, ARM64
-- **macOS**: Intel, Apple Silicon  
-- **Windows**: x86-64
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+- **Issues**: [GitHub Issues](https://github.com/wasilak/grafana-datadog-datasource/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/wasilak/grafana-datadog-datasource/discussions)
+- **Contributing**: [Contributing Guide](docs/development/contributing.md)
+- **Changelog**: [Release Notes](CHANGELOG.md)
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/wasilak/grafana-datadog-datasource/blob/main/LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## Screenshots
+---
 
-### Datasource
-
-![Datasource](https://github.com/wasilak/grafana-datadog-datasource/raw/main/src/img/datasource.jpg)
-
-### Query
-
-![Query](https://github.com/wasilak/grafana-datadog-datasource/raw/main/src/img/query_full.jpg)
+**Ready to get started?** → [Installation Guide](docs/installation.md)
