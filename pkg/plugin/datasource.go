@@ -100,6 +100,15 @@ func (d *Datasource) Dispose() {
 	// Cleanup if needed
 }
 
+// convertGrafanaFormulaToDatadog converts Grafana formula format ($A, $B) to Datadog format (A, B)
+func convertGrafanaFormulaToDatadog(grafanaFormula string) string {
+	// Use regex to replace $RefID with RefID
+	// This handles cases like: $A, $B, $C1, $AB, etc.
+	re := regexp.MustCompile(`\$([A-Za-z][A-Za-z0-9]*)`)
+	datadogFormula := re.ReplaceAllString(grafanaFormula, "$1")
+	return datadogFormula
+}
+
 // QueryData handles data source queries from Grafana
 func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	logger := log.New()
@@ -176,10 +185,11 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		queryModels[q.RefID] = qm
 
 		if qm.Type == "math" && qm.Expression != "" {
-			// This is a formula query
+			// This is a formula query - convert Grafana format ($A) to Datadog format (A)
 			hasFormulas = true
+			datadogFormula := convertGrafanaFormulaToDatadog(qm.Expression)
 			formulas = append(formulas, datadogV2.QueryFormula{
-				Formula: qm.Expression,
+				Formula: datadogFormula,
 			})
 		} else if qm.QueryText != "" {
 			// This is a regular query - add it to the queries list
