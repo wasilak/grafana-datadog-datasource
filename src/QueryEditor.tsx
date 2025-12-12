@@ -413,18 +413,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     }, 0);
   };
 
-  const onLabelChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...enhancedQuery, label: event.target.value });
-    // Don't run query automatically when label changes
-  };
 
-  const onLabelKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    // Handle Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) for query execution
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      event.preventDefault();
-      onRunQuery();
-    }
-  };
 
   const onLegendModeChange = (option: SelectableValue<'auto' | 'custom'>) => {
     const newMode = option.value || 'auto';
@@ -564,7 +553,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     });
   };
 
-  const { queryText, label, legendMode = 'auto', legendTemplate = '' } = query;
+  const { queryText, legendMode = 'auto', legendTemplate = '' } = query;
 
   // Add visualization type hints for Explore mode
   const enhancedQuery = isExploreMode ? {
@@ -588,23 +577,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           tooltip="Enter your Datadog query"
         >
           <div style={{ position: 'relative', width: '100%' }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              marginBottom: theme.spacing(0.5)
-            }}>
-              <div style={{ flex: 1 }} />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowHelp(!showHelp)}
-                icon={showHelp ? "angle-up" : "question-circle"}
-              >
-                {showHelp ? 'Hide Help' : 'Variable Examples'}
-              </Button>
-            </div>
-
             <CodeEditor
               value={queryText || ''}
               language="datadog"
@@ -805,6 +777,23 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
               </div>
             )}
           </div>
+        </InlineField>
+      </InlineFieldRow>
+
+      {/* Variable Examples button row */}
+      <InlineFieldRow>
+        <InlineField 
+          label="" 
+          labelWidth={14}
+        >
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowHelp(!showHelp)}
+            icon={showHelp ? "angle-up" : "question-circle"}
+          >
+            {showHelp ? 'Hide Help' : 'Variable Examples'}
+          </Button>
         </InlineField>
       </InlineFieldRow>
 
