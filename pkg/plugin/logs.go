@@ -50,6 +50,7 @@ type LogsPageData struct {
 }
 
 // LogEntry represents a single log entry from Datadog
+// This structure matches the expected format from Datadog Logs API v2 response
 type LogEntry struct {
 	ID         string                 `json:"id"`
 	Timestamp  time.Time             `json:"timestamp"`
@@ -57,8 +58,11 @@ type LogEntry struct {
 	Level      string                `json:"level"`
 	Service    string                `json:"service,omitempty"`
 	Source     string                `json:"source,omitempty"`
-	Tags       map[string]string     `json:"tags,omitempty"`
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
+	Host       string                `json:"host,omitempty"`       // Common log attribute
+	Env        string                `json:"env,omitempty"`        // Environment (prod, staging, etc.)
+	Version    string                `json:"version,omitempty"`    // Application version
+	Tags       map[string]string     `json:"tags,omitempty"`       // Key-value tags
+	Attributes map[string]interface{} `json:"attributes,omitempty"` // Additional structured data
 }
 
 // queryLogs executes logs queries against Datadog's Logs API v2
@@ -189,7 +193,12 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	// resp, httpResp, err := logsApi.SearchLogs(queryCtx, body)
 
 	// For now, create a placeholder response structure
-	frames := d.createLogsDataFrames([]LogEntry{}, q.RefID)
+	// TODO: Replace this with actual Datadog Logs API call when the client supports it
+	// The actual implementation would parse the API response and convert to LogEntry structs
+	
+	// Create sample log entries for testing the data frame structure
+	sampleEntries := d.createSampleLogEntries()
+	frames := d.createLogsDataFrames(sampleEntries, q.RefID)
 
 	return frames, nil
 }
@@ -266,8 +275,159 @@ func (d *Datasource) validateWildcardPatterns(query string) string {
 	return query
 }
 
+// createSampleLogEntries creates sample log entries for testing the data frame structure
+// TODO: Remove this when actual Datadog Logs API integration is complete
+func (d *Datasource) createSampleLogEntries() []LogEntry {
+	now := time.Now()
+	
+	return []LogEntry{
+		{
+			ID:        "sample-1",
+			Timestamp: now.Add(-5 * time.Minute),
+			Message:   "User authentication successful",
+			Level:     "INFO",
+			Service:   "auth-service",
+			Source:    "nginx",
+			Host:      "web-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"user_id": "12345",
+				"method":  "POST",
+			},
+			Attributes: map[string]interface{}{
+				"request_id": "req-abc123",
+				"duration":   "150ms",
+			},
+		},
+		{
+			ID:        "sample-2",
+			Timestamp: now.Add(-3 * time.Minute),
+			Message:   "Database connection timeout",
+			Level:     "ERROR",
+			Service:   "api-gateway",
+			Source:    "application",
+			Host:      "api-02",
+			Env:       "production",
+			Tags: map[string]string{
+				"database": "users",
+				"retry":    "3",
+			},
+			Attributes: map[string]interface{}{
+				"error_code": "TIMEOUT",
+				"query":      "SELECT * FROM users WHERE id = ?",
+			},
+		},
+		{
+			ID:        "sample-3",
+			Timestamp: now.Add(-1 * time.Minute),
+			Message:   "Cache miss for key: user_profile_12345",
+			Level:     "DEBUG",
+			Service:   "cache-service",
+			Source:    "redis",
+			Host:      "cache-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"cache_key": "user_profile_12345",
+				"ttl":       "3600",
+			},
+			Attributes: map[string]interface{}{
+				"cache_size": "1024MB",
+				"hit_rate":   "85%",
+			},
+		},
+	}
+}
+
+// parseDatadogLogsResponse parses Datadog Logs API v2 response and converts to LogEntry structs
+// This function will be used when the actual Datadog Logs API integration is implemented
+func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEntry, error) {
+	logger := log.New()
+	
+	// TODO: Implement actual parsing of Datadog Logs API v2 response
+	// The response structure from Datadog Logs API v2 is:
+	// {
+	//   "data": [
+	//     {
+	//       "type": "log",
+	//       "id": "log-id",
+	//       "attributes": {
+	//         "timestamp": "2023-01-01T00:00:00Z",
+	//         "message": "log message",
+	//         "status": "info",
+	//         "service": "my-service",
+	//         "source": "my-source",
+	//         "host": "my-host",
+	//         "tags": ["key:value", "env:prod"],
+	//         "attributes": {...}
+	//       }
+	//     }
+	//   ],
+	//   "meta": {
+	//     "page": {
+	//       "after": "cursor-for-next-page"
+	//     }
+	//   }
+	// }
+	
+	logger.Debug("Parsing Datadog logs response", "responseType", fmt.Sprintf("%T", apiResponse))
+	
+	// For now, return empty slice until actual API integration
+	return []LogEntry{}, nil
+}
+
+// extractLogAttributes extracts common log attributes from Datadog log entry
+func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (string, string, string, string, string, map[string]string, map[string]interface{}) {
+	var message, level, service, source, host string
+	tags := make(map[string]string)
+	remainingAttrs := make(map[string]interface{})
+	
+	// Extract standard fields
+	if msg, ok := attributes["message"].(string); ok {
+		message = msg
+	}
+	
+	if lvl, ok := attributes["status"].(string); ok {
+		level = strings.ToUpper(lvl) // Normalize to uppercase
+	}
+	
+	if svc, ok := attributes["service"].(string); ok {
+		service = svc
+	}
+	
+	if src, ok := attributes["source"].(string); ok {
+		source = src
+	}
+	
+	if h, ok := attributes["host"].(string); ok {
+		host = h
+	}
+	
+	// Extract tags (Datadog returns tags as array of "key:value" strings)
+	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
+		for _, tag := range tagsArray {
+			if tagStr, ok := tag.(string); ok {
+				parts := strings.SplitN(tagStr, ":", 2)
+				if len(parts) == 2 {
+					tags[parts[0]] = parts[1]
+				}
+			}
+		}
+	}
+	
+	// Collect remaining attributes
+	for key, value := range attributes {
+		if key != "message" && key != "status" && key != "service" && 
+		   key != "source" && key != "host" && key != "tags" && key != "timestamp" {
+			remainingAttrs[key] = value
+		}
+	}
+	
+	return message, level, service, source, host, tags, remainingAttrs
+}
+
 // createLogsDataFrames creates Grafana DataFrames from log entries
 // This sets appropriate metadata for Grafana's logs panel recognition
+// Requirements: 1.2, 5.1, 5.2, 5.3, 5.4
 func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) data.Frames {
 	logger := log.New()
 
@@ -275,38 +435,226 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	frame := data.NewFrame("logs")
 	frame.RefID = refID
 
-	// Prepare slices for each field
-	timestamps := make([]time.Time, len(logEntries))
-	messages := make([]string, len(logEntries))
-	levels := make([]string, len(logEntries))
-	services := make([]string, len(logEntries))
-	sources := make([]string, len(logEntries))
+	// Prepare slices for each field with proper capacity
+	entryCount := len(logEntries)
+	timestamps := make([]time.Time, entryCount)
+	messages := make([]string, entryCount)
+	levels := make([]string, entryCount)
+	services := make([]string, entryCount)
+	sources := make([]string, entryCount)
+	hosts := make([]string, entryCount)
+	envs := make([]string, entryCount)
 
-	// Populate data from log entries
+	// Track additional attributes that appear across log entries
+	additionalFields := make(map[string][]interface{})
+
+	// Populate data from log entries with proper handling of empty values
 	for i, entry := range logEntries {
 		timestamps[i] = entry.Timestamp
-		messages[i] = entry.Message
-		levels[i] = entry.Level
-		services[i] = entry.Service
-		sources[i] = entry.Source
+		
+		// Handle message field - preserve multi-line formatting
+		if entry.Message != "" {
+			messages[i] = entry.Message
+		} else {
+			messages[i] = "" // Keep empty messages as empty
+		}
+		
+		// Handle optional fields with defaults for better display
+		if entry.Level != "" {
+			levels[i] = entry.Level
+		} else {
+			levels[i] = "INFO" // Default level if not specified
+		}
+		
+		if entry.Service != "" {
+			services[i] = entry.Service
+		} else {
+			services[i] = "" // Keep empty for better filtering
+		}
+		
+		if entry.Source != "" {
+			sources[i] = entry.Source
+		} else {
+			sources[i] = "" // Keep empty for better filtering
+		}
+
+		if entry.Host != "" {
+			hosts[i] = entry.Host
+		} else {
+			hosts[i] = ""
+		}
+
+		if entry.Env != "" {
+			envs[i] = entry.Env
+		} else {
+			envs[i] = ""
+		}
+
+		// Process additional attributes from the log entry
+		if entry.Attributes != nil {
+			for attrKey, value := range entry.Attributes {
+				// Skip standard fields that we already handle
+				if attrKey == "timestamp" || attrKey == "message" || attrKey == "level" || 
+				   attrKey == "service" || attrKey == "source" || attrKey == "host" || attrKey == "env" {
+					continue
+				}
+
+				// Initialize slice if this is the first time we see this attribute
+				if _, exists := additionalFields[attrKey]; !exists {
+					additionalFields[attrKey] = make([]interface{}, entryCount)
+				}
+
+				// Convert value to string for display
+				var strValue string
+				switch v := value.(type) {
+				case string:
+					strValue = v
+				case nil:
+					strValue = ""
+				default:
+					strValue = fmt.Sprintf("%v", v)
+				}
+				additionalFields[attrKey][i] = strValue
+			}
+
+			// Process tags as additional fields
+			if entry.Tags != nil {
+				for tagKey, value := range entry.Tags {
+					tagFieldKey := "tag_" + tagKey // Prefix to distinguish from attributes
+					if _, exists := additionalFields[tagFieldKey]; !exists {
+						additionalFields[tagFieldKey] = make([]interface{}, entryCount)
+					}
+					additionalFields[tagFieldKey][i] = value
+				}
+			}
+		}
 	}
 
-	// Add fields to frame with proper types and metadata
+	// Fill in missing values for additional fields
+	for fieldKey, values := range additionalFields {
+		for i := range values {
+			if values[i] == nil {
+				values[i] = ""
+			}
+		}
+		// Avoid unused variable warning
+		_ = fieldKey
+	}
+
+	// Create timestamp field with proper configuration for logs
+	timestampField := data.NewField("timestamp", nil, timestamps)
+	timestampField.Config = &data.FieldConfig{
+		DisplayName: "Time",
+		Custom: map[string]interface{}{
+			"displayMode": "list", // Display as list for logs panel
+		},
+	}
+
+	// Create message field with proper configuration
+	messageField := data.NewField("message", nil, messages)
+	messageField.Config = &data.FieldConfig{
+		DisplayName: "Message",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Create level field with proper configuration
+	levelField := data.NewField("level", nil, levels)
+	levelField.Config = &data.FieldConfig{
+		DisplayName: "Level",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+		// TODO: Add color mapping for different log levels when SDK supports it
+	}
+
+	// Create service field with proper configuration
+	serviceField := data.NewField("service", nil, services)
+	serviceField.Config = &data.FieldConfig{
+		DisplayName: "Service",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Create source field with proper configuration
+	sourceField := data.NewField("source", nil, sources)
+	sourceField.Config = &data.FieldConfig{
+		DisplayName: "Source",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Create host field with proper configuration
+	hostField := data.NewField("host", nil, hosts)
+	hostField.Config = &data.FieldConfig{
+		DisplayName: "Host",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Create environment field with proper configuration
+	envField := data.NewField("env", nil, envs)
+	envField.Config = &data.FieldConfig{
+		DisplayName: "Environment",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Add core fields to frame in the correct order for logs display
+	// Order is important: timestamp first, then message, then metadata fields
 	frame.Fields = append(frame.Fields,
-		data.NewField("timestamp", nil, timestamps),
-		data.NewField("message", nil, messages),
-		data.NewField("level", nil, levels),
-		data.NewField("service", nil, services),
-		data.NewField("source", nil, sources),
+		timestampField,
+		messageField,
+		levelField,
+		serviceField,
+		sourceField,
+		hostField,
+		envField,
 	)
 
-	// Set appropriate metadata to indicate this is log data
-	frame.Meta = &data.FrameMeta{
-		Type: data.FrameTypeLogLines,
-		// PreferredVisualization will be set when the constant is available in the SDK
+	// Add additional fields from attributes and tags
+	for fieldName, values := range additionalFields {
+		// Convert []interface{} to []string for consistent display
+		stringValues := make([]string, len(values))
+		for i, v := range values {
+			if str, ok := v.(string); ok {
+				stringValues[i] = str
+			} else {
+				stringValues[i] = fmt.Sprintf("%v", v)
+			}
+		}
+
+		additionalField := data.NewField(fieldName, nil, stringValues)
+		additionalField.Config = &data.FieldConfig{
+			DisplayName: fieldName,
+			Custom: map[string]interface{}{
+				"displayMode": "list",
+			},
+		}
+		frame.Fields = append(frame.Fields, additionalField)
 	}
 
-	logger.Debug("Created logs data frame", "refID", refID, "entryCount", len(logEntries))
+	// Set appropriate metadata to indicate this is log data for Grafana's logs panel recognition
+	frame.Meta = &data.FrameMeta{
+		Type: data.FrameTypeLogLines, // Critical: This tells Grafana this is log data
+		Custom: map[string]interface{}{
+			"preferredVisualisationType": "logs", // Preferred visualization type
+		},
+		// Add execution information for debugging
+		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
+	}
+
+	logger.Debug("Created logs data frame with enhanced structure", 
+		"refID", refID, 
+		"entryCount", entryCount,
+		"frameType", frame.Meta.Type,
+		"fieldCount", len(frame.Fields),
+		"additionalFieldCount", len(additionalFields))
 
 	return data.Frames{frame}
 }
