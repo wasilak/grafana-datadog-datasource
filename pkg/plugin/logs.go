@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -302,9 +303,19 @@ func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 // normalizeBooleanOperators ensures boolean operators are in the correct format for Datadog
 func (d *Datasource) normalizeBooleanOperators(query string) string {
 	// Datadog expects uppercase boolean operators
-	query = strings.ReplaceAll(query, " and ", " AND ")
-	query = strings.ReplaceAll(query, " or ", " OR ")
-	query = strings.ReplaceAll(query, " not ", " NOT ")
+	// Use case-insensitive replacement for all variations
+	
+	// Replace AND variations (case-insensitive) - word boundaries to avoid partial matches
+	re := regexp.MustCompile(`(?i)\band\b`)
+	query = re.ReplaceAllString(query, "AND")
+	
+	// Replace OR variations (case-insensitive) - word boundaries to avoid partial matches
+	re = regexp.MustCompile(`(?i)\bor\b`)
+	query = re.ReplaceAllString(query, "OR")
+	
+	// Replace NOT variations (case-insensitive) - word boundaries to avoid partial matches
+	re = regexp.MustCompile(`(?i)\bnot\b`)
+	query = re.ReplaceAllString(query, "NOT")
 	
 	return query
 }
@@ -643,6 +654,67 @@ func (d *Datasource) sanitizeFieldValue(value interface{}) string {
 	}
 	
 	return strValue
+}
+
+// createSampleLogEntries creates sample log entries for testing
+func (d *Datasource) createSampleLogEntries() []LogEntry {
+	now := time.Now()
+	return []LogEntry{
+		{
+			ID:        "log-1",
+			Timestamp: now.Add(-5 * time.Minute),
+			Message:   "Application started successfully",
+			Level:     "INFO",
+			Service:   "web-app",
+			Source:    "application",
+			Host:      "web-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"version": "1.2.3",
+				"region":  "us-east-1",
+			},
+			Attributes: map[string]interface{}{
+				"request_id": "req-123",
+				"user_id":    "user-456",
+			},
+		},
+		{
+			ID:        "log-2",
+			Timestamp: now.Add(-3 * time.Minute),
+			Message:   "Database connection failed",
+			Level:     "ERROR",
+			Service:   "api-gateway",
+			Source:    "database",
+			Host:      "api-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"version": "2.1.0",
+				"region":  "us-east-1",
+			},
+			Attributes: map[string]interface{}{
+				"error_code": 500,
+				"retry_count": 3,
+			},
+		},
+		{
+			ID:        "log-3",
+			Timestamp: now.Add(-1 * time.Minute),
+			Message:   "User authentication successful",
+			Level:     "DEBUG",
+			Service:   "auth-service",
+			Source:    "authentication",
+			Host:      "auth-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"version": "1.0.5",
+				"region":  "us-west-2",
+			},
+			Attributes: map[string]interface{}{
+				"session_id": "sess-789",
+				"login_method": "oauth",
+			},
+		},
+	}
 }
 
 // createLogsDataFrames creates Grafana DataFrames from log entries
