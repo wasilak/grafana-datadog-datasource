@@ -158,22 +158,6 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	from := q.TimeRange.From.UnixMilli()
 	to := q.TimeRange.To.UnixMilli()
 
-	// Create the request body matching Datadog's exact format
-	requestBody := LogsSearchRequest{
-		Data: LogsSearchData{
-			Type: "search_request",
-			Attributes: LogsSearchAttributes{
-				Query: logsQuery,
-				Time: LogsTime{
-					From: fmt.Sprintf("%d", from),
-					To:   fmt.Sprintf("%d", to),
-				},
-				Sort:  "timestamp",
-				Limit: 1000, // Max results per page
-			},
-		},
-	}
-
 	// Create context with timeout (reusing existing timeout patterns - 30 seconds)
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -192,15 +176,17 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		site = "datadoghq.com"
 	}
 
-	// Convert request body to JSON for HTTP call
-	requestBodyBytes, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal logs request: %w", err)
-	}
-
-	// Make HTTP request to Datadog Logs API v2
-	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
-	req, err := http.NewRequestWithContext(queryCtx, "POST", url, strings.NewReader(string(requestBodyBytes)))
+	// Try using GET method with query parameters instead of POST with JSON body
+	// This might be more compatible with the Datadog API
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events", site)
+	
+	// Build query parameters
+	params := fmt.Sprintf("?filter[query]=%s&filter[from]=%d&filter[to]=%d&page[limit]=1000&sort=timestamp",
+		strings.ReplaceAll(logsQuery, " ", "+"), from, to)
+	
+	fullURL := url + params
+	
+	req, err := http.NewRequestWithContext(queryCtx, "GET", fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create logs API request: %w", err)
 	}
@@ -208,7 +194,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	// Add authentication headers
 	req.Header.Set("DD-API-KEY", apiKey)
 	req.Header.Set("DD-APPLICATION-KEY", appKey)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	// Execute the request
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -328,6 +314,7 @@ func (d *Datasource) validateWildcardPatterns(query string) string {
 	
 	return query
 }
+
 
 
 
