@@ -53,10 +53,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     let start = currentCursorPosition;
     let end = currentCursorPosition;
 
-    // Handle logs-specific suggestion types
-    if (item.kind === 'service' || item.kind === 'source' || item.kind === 'level') {
+    // Handle logs-specific suggestion types (corrected to match actual suggestion kinds)
+    if (item.kind === 'logs_service' || item.kind === 'logs_source' || item.kind === 'logs_level') {
       // For facet filters like service:web-app, source:nginx, level:ERROR
-      const facetType = item.kind;
+      const facetType = item.kind.replace('logs_', ''); // Remove logs_ prefix
       insertValue = `${facetType}:${insertValue}`;
       
       // Find token boundaries for replacement
@@ -66,8 +66,19 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       while (end < currentValue.length && /[a-zA-Z0-9_.-]/.test(currentValue[end])) {
         end++;
       }
+    } else if (item.kind === 'logs_facet') {
+      // For facet names like service:, source:, level:
+      insertValue = item.insertText || item.label; // Should already include the colon
+      
+      // Find token boundaries for replacement
+      while (start > 0 && /[a-zA-Z0-9_.-]/.test(currentValue[start - 1])) {
+        start--;
+      }
+      while (end < currentValue.length && /[a-zA-Z0-9_.-]/.test(currentValue[end])) {
+        end++;
+      }
     } else {
-      // Default behavior for other suggestion types
+      // Default behavior for other suggestion types (operators, etc.)
       while (start > 0 && /[a-zA-Z0-9_.-]/.test(currentValue[start - 1])) {
         start--;
       }
@@ -113,9 +124,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     autocomplete.onClose();
   };
 
-  // Initialize autocomplete hook for logs context
+  // Initialize autocomplete hook for logs context - FIXED: Added queryType parameter
   const autocomplete = useQueryAutocomplete({
     datasourceUid: datasource.uid || '',
+    queryType: 'logs', // CRITICAL FIX: Specify logs query type
     onSelect: handleItemSelect
   });
 
