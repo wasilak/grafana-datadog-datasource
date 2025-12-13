@@ -275,13 +275,180 @@ func (d *Datasource) translateLogsQuery(qm *QueryModel, q *backend.DataQuery) (s
 }
 
 // validateAndNormalizeFacetFilters validates and normalizes facet filter syntax
+// Implements Requirements 7.1, 7.2, 7.3, 8.1, 8.2 for log level and service filtering
 func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
-	// Common facet filters that should be supported:
-	// service:, source:, level:, host:, env:, version:, etc.
+	logger := log.New()
 	
-	// For now, pass through the query as-is since Datadog's logs search syntax
-	// is already well-defined and users are expected to use it directly
-	// Future enhancements could add validation for known facet names
+	// Enhanced facet filter processing for log level and service filtering
+	// Support for:
+	// - level:ERROR, level:WARN, level:INFO, level:DEBUG, level:FATAL
+	// - level:(ERROR OR WARN) - multiple levels with OR logic
+	// - service:api-gateway, service:web-app, service:auth-service
+	// - source:nginx, source:application, source:database
+	// - host:web-01, env:production, version:1.2.3
+	
+	// Normalize log level values to uppercase for consistency
+	query = d.normalizeLogLevels(query)
+	
+	// Validate service filter syntax
+	query = d.validateServiceFilters(query)
+	
+	// Validate source filter syntax  
+	query = d.validateSourceFilters(query)
+	
+	// Validate other common facet filters
+	query = d.validateCommonFacets(query)
+	
+	logger.Debug("Normalized facet filters", "query", query)
+	
+	return query
+}
+
+// normalizeLogLevels normalizes log level facet filters to uppercase
+// Supports: level:ERROR, level:(ERROR OR WARN), level:info -> level:INFO
+func (d *Datasource) normalizeLogLevels(query string) string {
+	// Valid log levels that should be normalized to uppercase
+	validLevels := []string{"debug", "info", "warn", "warning", "error", "fatal", "trace"}
+	
+	// Pattern to match level: filters with optional grouping
+	// Matches: level:error, level:(error OR warn), level:INFO, etc.
+	levelPattern := regexp.MustCompile(`(?i)level:\s*(\([^)]+\)|[^\s\)]+)`)
+	
+	return levelPattern.ReplaceAllStringFunc(query, func(match string) string {
+		// Extract the level value(s) part after "level:"
+		parts := strings.SplitN(match, ":", 2)
+		if len(parts) != 2 {
+			return match // Return unchanged if malformed
+		}
+		
+		levelPart := strings.TrimSpace(parts[1])
+		
+		// Handle grouped levels: level:(ERROR OR WARN)
+		if strings.HasPrefix(levelPart, "(") && strings.HasSuffix(levelPart, ")") {
+			// Extract content inside parentheses
+			innerContent := levelPart[1 : len(levelPart)-1]
+			
+			// Normalize each level within the group
+			for _, level := range validLevels {
+				// Use word boundaries to avoid partial matches
+				levelRegex := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(level) + `\b`)
+				innerContent = levelRegex.ReplaceAllString(innerContent, strings.ToUpper(level))
+			}
+			
+			return "level:(" + innerContent + ")"
+		}
+		
+		// Handle single level: level:error -> level:ERROR
+		for _, level := range validLevels {
+			if strings.EqualFold(levelPart, level) {
+				return "level:" + strings.ToUpper(level)
+			}
+		}
+		
+		// Return unchanged if not a recognized level
+		return match
+	})
+}
+
+// validateServiceFilters validates service filter syntax and provides helpful error context
+// Supports: service:api-gateway, service:web-app, service:"my service"
+func (d *Datasource) validateServiceFilters(query string) string {
+	// Pattern to match service: filters
+	servicePattern := regexp.MustCompile(`service:\s*("[^"]*"|[^\s\)]+)`)
+	
+	return servicePattern.ReplaceAllStringFunc(query, func(match string) string {
+		// Extract the service value part after "service:"
+		parts := strings.SplitN(match, ":", 2)
+		if len(parts) != 2 {
+			return match
+		}
+		
+		servicePart := strings.TrimSpace(parts[1])
+		
+		// Validate service name format
+		if servicePart == "" {
+			// Empty service filter - could be invalid, but let Datadog handle it
+			return match
+		}
+		
+		// Handle quoted service names: service:"my service"
+		if strings.HasPrefix(servicePart, "\"") && strings.HasSuffix(servicePart, "\"") {
+			// Quoted service names are valid as-is
+			return match
+		}
+		
+		// Validate unquoted service names (should not contain spaces or special chars)
+		if strings.ContainsAny(servicePart, " \t\n\r()[]{}") {
+			// Service name contains spaces/special chars but isn't quoted
+			// Auto-quote it for better UX
+			return "service:\"" + servicePart + "\""
+		}
+		
+		// Valid unquoted service name
+		return match
+	})
+}
+
+// validateSourceFilters validates source filter syntax
+// Supports: source:nginx, source:application, source:"log file"
+func (d *Datasource) validateSourceFilters(query string) string {
+	// Pattern to match source: filters
+	sourcePattern := regexp.MustCompile(`source:\s*("[^"]*"|[^\s\)]+)`)
+	
+	return sourcePattern.ReplaceAllStringFunc(query, func(match string) string {
+		// Extract the source value part after "source:"
+		parts := strings.SplitN(match, ":", 2)
+		if len(parts) != 2 {
+			return match
+		}
+		
+		sourcePart := strings.TrimSpace(parts[1])
+		
+		// Handle quoted source names: source:"log file"
+		if strings.HasPrefix(sourcePart, "\"") && strings.HasSuffix(sourcePart, "\"") {
+			return match
+		}
+		
+		// Auto-quote source names with spaces or special characters
+		if strings.ContainsAny(sourcePart, " \t\n\r()[]{}") {
+			return "source:\"" + sourcePart + "\""
+		}
+		
+		return match
+	})
+}
+
+// validateCommonFacets validates other common facet filters (host, env, version, etc.)
+func (d *Datasource) validateCommonFacets(query string) string {
+	// Common facets that should be validated: host, env, version, container_name, etc.
+	commonFacets := []string{"host", "env", "version", "container_name", "container_id", "image_name"}
+	
+	for _, facet := range commonFacets {
+		// Pattern to match facet: filters
+		facetPattern := regexp.MustCompile(facet + `:\s*("[^"]*"|[^\s\)]+)`)
+		
+		query = facetPattern.ReplaceAllStringFunc(query, func(match string) string {
+			// Extract the facet value part
+			parts := strings.SplitN(match, ":", 2)
+			if len(parts) != 2 {
+				return match
+			}
+			
+			facetPart := strings.TrimSpace(parts[1])
+			
+			// Handle quoted values
+			if strings.HasPrefix(facetPart, "\"") && strings.HasSuffix(facetPart, "\"") {
+				return match
+			}
+			
+			// Auto-quote values with spaces or special characters
+			if strings.ContainsAny(facetPart, " \t\n\r()[]{}") {
+				return facet + ":\"" + facetPart + "\""
+			}
+			
+			return match
+		})
+	}
 	
 	return query
 }

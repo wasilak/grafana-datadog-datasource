@@ -6,23 +6,23 @@ This implementation plan converts the datadog-logs-support design into actionabl
 
 ## Tasks
 
-- [-] 1. Set up logs query type detection and routing
+- [x] 1. Set up logs query type detection and routing
   - Extend the QueryModel struct in Go backend to include logs query fields
   - Add query type detection logic in datasource.ts QueryData method
   - Create basic routing between logs and metrics queries
   - _Requirements: 2.1, 2.2, 2.5_
 
-- [ ] 2. Implement Datadog Logs API integration
+- [x] 2. Implement Datadog Logs API integration
   - Create pkg/plugin/logs.go with Datadog Logs Search API v2 integration
   - Implement LogsSearchRequest struct matching Datadog's exact API format
   - Add queryLogs method that reuses existing authentication patterns
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ]* 2.1 Write property test for API integration consistency
+- [x] 2.1 Write property test for API integration consistency
   - **Property 1: Logs API Integration Consistency**
   - **Validates: Requirements 6.1, 6.2, 6.3, 6.5, 10.2, 10.3, 10.5, 12.1, 12.4, 12.5**
 
-- [ ] 2.2 Add logs query parameter translation
+- [x] 2.2 Add logs query parameter translation
   - Implement translation from Grafana query format to Datadog's logs search syntax
   - Handle time range conversion using existing patterns
   - Support basic search terms and facet filters
@@ -32,7 +32,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 4: Logs Query Parameter Handling**
   - **Validates: Requirements 1.1, 1.3, 1.4, 4.1, 4.2, 4.3, 4.4, 4.5**
 
-- [ ] 3. Create logs data frame structure
+- [x] 3. Create logs data frame structure
   - Implement log entry to Grafana data frame conversion
   - Create proper field structure (timestamp, message, level, service, source)
   - Set appropriate metadata for Grafana's logs panel recognition
@@ -42,13 +42,13 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 3: Logs Data Frame Structure**
   - **Validates: Requirements 1.2, 5.1, 5.2, 5.3, 5.4, 5.5, 13.1**
 
-- [ ] 4. Implement logs query editor frontend component
+- [x] 4. Implement logs query editor frontend component
   - Create src/LogsQueryEditor.tsx using existing CodeEditor component
   - Add logs query interface with text input for search queries
   - Integrate with existing theme system using useTheme2()
   - _Requirements: 3.1, 3.2_
 
-- [ ] 4.1 Add query type detection to main QueryEditor
+- [x] 4.1 Add query type detection to main QueryEditor
   - Extend src/QueryEditor.tsx to detect panel context
   - Add conditional rendering for logs vs metrics editors
   - Maintain backward compatibility with existing metrics queries
@@ -62,13 +62,13 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 10: UI Component Reuse**
   - **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
 
-- [ ] 5. Extend autocomplete system for logs
+- [x] 5. Extend autocomplete system for logs
   - Extend src/hooks/useQueryAutocomplete.ts for logs-specific suggestions
   - Add logs facet suggestions (service, source, level)
   - Reuse existing debouncing and caching patterns
   - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [ ] 5.1 Add backend autocomplete resource handlers
+- [x] 5.1 Add backend autocomplete resource handlers
   - Extend CallResource method in datasource.go for logs autocomplete endpoints
   - Implement /autocomplete/logs/services and /autocomplete/logs/sources handlers
   - Reuse existing concurrency limiting and timeout patterns
@@ -78,7 +78,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 6: Autocomplete System Extension**
   - **Validates: Requirements 11.1, 11.2, 11.3, 11.4, 11.5**
 
-- [ ] 6. Implement log level and service filtering
+- [x] 6. Implement log level and service filtering
   - Add support for level filters (level:ERROR, level:(ERROR OR WARN))
   - Add support for service filters (service:api-gateway)
   - Include filtered fields in data frame output
