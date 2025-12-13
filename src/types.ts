@@ -13,6 +13,10 @@ export interface MyQuery extends DataQuery {
   expression?: string; // Math expression like "$A*100/$B"
   // Query options
   interval?: number;   // Override interval in milliseconds
+  // Logs query fields
+  queryType?: 'logs' | 'metrics'; // Query type - defaults to 'metrics'
+  logQuery?: string;   // Logs search query
+  indexes?: string[];  // Target log indexes
   // Explore mode metadata for visualization hints
   meta?: {
     preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';
@@ -25,6 +29,9 @@ export const DEFAULT_QUERY: Partial<MyQuery> = {
   queryText: '',
   legendMode: 'auto',
   legendTemplate: '',
+  queryType: 'metrics',
+  logQuery: '',
+  indexes: [],
 };
 
 /**

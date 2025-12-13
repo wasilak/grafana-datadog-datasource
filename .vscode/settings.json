@@ -42,5 +42,5 @@
       "args": ["mcp-server-kubernetes"]
     }
   },
-  "kiroAgent.configureMCP": "Enabled"
+  "kiroAgent.configureMCP": "Disabled"
 }

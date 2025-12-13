@@ -65,6 +65,10 @@ type QueryModel struct {
 	Expression        string `json:"expression,omitempty"` // Math expression like "$A*100/$B"
 	// Query options
 	Interval          *int64 `json:"interval,omitempty"`   // Override interval in milliseconds
+	// Logs query fields
+	QueryType         string `json:"queryType,omitempty"`  // "logs" or "metrics" (defaults to "metrics")
+	LogQuery          string `json:"logQuery,omitempty"`   // Logs search query
+	Indexes           []string `json:"indexes,omitempty"`  // Target log indexes
 	// Deprecated: Use LegendMode and LegendTemplate instead
 	Label             string `json:"label,omitempty"`
 }
@@ -163,13 +167,15 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 		to = req.Queries[0].TimeRange.To.UnixMilli()
 	}
 
-	// Parse all queries and separate regular queries from formulas
-	var queries []datadogV2.TimeseriesQuery
+	// Parse all queries and separate logs queries from metrics queries
+	var metricsQueries []datadogV2.TimeseriesQuery
 	var formulas []datadogV2.QueryFormula
 	var queryModels = make(map[string]QueryModel)
+	var logsQueryModels = make(map[string]QueryModel)
 	var hasFormulas bool
+	var hasLogsQueries bool
 
-	// First pass: parse all queries and collect them
+	// First pass: parse all queries and separate logs from metrics
 	for _, q := range req.Queries {
 		var qm QueryModel
 		if err := json.Unmarshal(q.JSON, &qm); err != nil {
@@ -184,57 +190,91 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 
-		queryModels[q.RefID] = qm
-
-		if qm.Type == "math" && qm.Expression != "" {
-			// This is a formula query - convert Grafana format ($A) to Datadog format (A)
-			hasFormulas = true
-			datadogFormula := convertGrafanaFormulaToDatadog(qm.Expression)
-			formulas = append(formulas, datadogV2.QueryFormula{
-				Formula: datadogFormula,
-			})
-		} else if qm.QueryText != "" {
-			// This is a regular query - add it to the queries list
-			queryText := qm.QueryText
-			lowerQuery := strings.ToLower(queryText)
-			
-			hasGroupByClause := strings.Contains(lowerQuery, " by ")
-			hasBooleanOperators := strings.Contains(lowerQuery, " in ") || 
-								  strings.Contains(lowerQuery, " or ") || 
-								  strings.Contains(lowerQuery, " and ") ||
-								  strings.Contains(lowerQuery, " not in ")
-			
-			if !hasGroupByClause && !hasBooleanOperators {
-				queryText = queryText + " by {*}"
-				logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
-			}
-
-			// Create query with name set to refID for formula referencing
-			queryName := q.RefID
-			queries = append(queries, datadogV2.TimeseriesQuery{
-				MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
-					DataSource: datadogV2.METRICSDATASOURCE_METRICS,
-					Query:      queryText,
-					Name:       &queryName,
-				},
-			})
+		// Detect query type - check explicit queryType field or infer from context
+		isLogsQuery := qm.QueryType == "logs" || (qm.QueryType == "" && qm.LogQuery != "")
+		
+		if isLogsQuery {
+			// This is a logs query
+			hasLogsQueries = true
+			logsQueryModels[q.RefID] = qm
+			logger.Debug("Detected logs query", "refID", q.RefID, "logQuery", qm.LogQuery)
 		} else {
-			response.Responses[q.RefID] = backend.DataResponse{}
+			// This is a metrics query
+			queryModels[q.RefID] = qm
+		}
+
+		// Only process metrics queries in this loop
+		if !isLogsQuery {
+			if qm.Type == "math" && qm.Expression != "" {
+				// This is a formula query - convert Grafana format ($A) to Datadog format (A)
+				hasFormulas = true
+				datadogFormula := convertGrafanaFormulaToDatadog(qm.Expression)
+				formulas = append(formulas, datadogV2.QueryFormula{
+					Formula: datadogFormula,
+				})
+			} else if qm.QueryText != "" {
+				// This is a regular metrics query - add it to the queries list
+				queryText := qm.QueryText
+				lowerQuery := strings.ToLower(queryText)
+				
+				hasGroupByClause := strings.Contains(lowerQuery, " by ")
+				hasBooleanOperators := strings.Contains(lowerQuery, " in ") || 
+									  strings.Contains(lowerQuery, " or ") || 
+									  strings.Contains(lowerQuery, " and ") ||
+									  strings.Contains(lowerQuery, " not in ")
+				
+				if !hasGroupByClause && !hasBooleanOperators {
+					queryText = queryText + " by {*}"
+					logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
+				}
+
+				// Create query with name set to refID for formula referencing
+				queryName := q.RefID
+				metricsQueries = append(metricsQueries, datadogV2.TimeseriesQuery{
+					MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
+						DataSource: datadogV2.METRICSDATASOURCE_METRICS,
+						Query:      queryText,
+						Name:       &queryName,
+					},
+				})
+			} else {
+				response.Responses[q.RefID] = backend.DataResponse{}
+			}
 		}
 	}
 
-	if len(queries) == 0 && len(formulas) == 0 {
+	// Handle logs queries separately
+	if hasLogsQueries {
+		logger.Info("Processing logs queries", "logsQueryCount", len(logsQueryModels))
+		for refID, qm := range logsQueryModels {
+			// For now, return a placeholder response for logs queries
+			// This will be implemented in subsequent tasks
+			logger.Debug("Processing logs query", "refID", refID, "logQuery", qm.LogQuery)
+			
+			// Create a simple placeholder frame for logs
+			frame := data.NewFrame("logs_placeholder")
+			frame.RefID = refID
+			
+			response.Responses[refID] = backend.DataResponse{
+				Frames: data.Frames{frame},
+			}
+		}
+	}
+
+	// Only proceed with metrics API call if we have metrics queries or formulas
+	if len(metricsQueries) == 0 && len(formulas) == 0 {
+		// If we only have logs queries, we've already handled them above
 		return response, nil
 	}
 
-	// Create the request body
+	// Create the request body for metrics queries
 	body := datadogV2.TimeseriesFormulaQueryRequest{
 		Data: datadogV2.TimeseriesFormulaRequest{
 			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
 			Attributes: datadogV2.TimeseriesFormulaRequestAttributes{
 				From:    from,
 				To:      to,
-				Queries: queries,
+				Queries: metricsQueries,
 			},
 		},
 	}

@@ -1,5 +1,5 @@
 import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue } from '@grafana/data';
-import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
+import { DataSourceWithBackend, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
@@ -7,6 +7,7 @@ import { variableInterpolationService } from './utils/variableInterpolation';
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
   // Enable annotation support
   annotations = {};
+  private templateSrv = getTemplateSrv();
 
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
@@ -17,13 +18,48 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   }
 
   applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars) {
-    // Use the enhanced variable interpolation service for better formatting support
-    return variableInterpolationService.interpolateQuery(query, scopedVars);
+    // Detect query type and set it on the query
+    const queryType = this.detectQueryType(query);
+    const interpolatedQuery = variableInterpolationService.interpolateQuery(query, scopedVars);
+    
+    // Set the detected query type
+    interpolatedQuery.queryType = queryType;
+    
+    // For logs queries, also interpolate the logQuery field if present
+    if (queryType === 'logs' && query.logQuery) {
+      // Use getTemplateSrv for interpolating the logQuery field
+      interpolatedQuery.logQuery = this.templateSrv.replace(query.logQuery, scopedVars);
+    }
+    
+    return interpolatedQuery;
   }
 
   filterQuery(query: MyQuery): boolean {
-    // Allow execution if query text is provided OR if it's an expression query
-    return !!query.queryText || (query.type === 'math' && !!query.expression);
+    // Allow execution if query text is provided OR if it's an expression query OR if it's a logs query
+    return !!query.queryText || (query.type === 'math' && !!query.expression) || !!query.logQuery;
+  }
+
+  /**
+   * Detects whether a query should be treated as a logs query based on panel context and query properties
+   */
+  private detectQueryType(query: MyQuery): 'logs' | 'metrics' {
+    // If queryType is explicitly set, use it
+    if (query.queryType) {
+      return query.queryType;
+    }
+
+    // If logQuery is provided, treat as logs query
+    if (query.logQuery) {
+      return 'logs';
+    }
+
+    // Check if the panel prefers logs visualization
+    if (query.meta?.preferredVisualisationType === 'logs') {
+      return 'logs';
+    }
+
+    // Default to metrics
+    return 'metrics';
   }
 
 
