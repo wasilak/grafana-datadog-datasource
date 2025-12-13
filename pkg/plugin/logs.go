@@ -284,37 +284,48 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 		{
 			ID:        "sample-1",
 			Timestamp: now.Add(-5 * time.Minute),
-			Message:   "User authentication successful",
-			Level:     "INFO",
+			Message:   "User authentication successful for user john.doe@example.com",
+			Level:     "info", // Test case sensitivity normalization
 			Service:   "auth-service",
 			Source:    "nginx",
-			Host:      "web-01",
+			Host:      "web-01.prod.example.com",
 			Env:       "production",
 			Tags: map[string]string{
-				"user_id": "12345",
-				"method":  "POST",
+				"user_id":    "12345",
+				"method":     "POST",
+				"ip_address": "192.168.1.100",
+				"user-agent": "Mozilla/5.0 (compatible)",
 			},
 			Attributes: map[string]interface{}{
-				"request_id": "req-abc123",
-				"duration":   "150ms",
+				"request_id":     "req-abc123",
+				"duration_ms":    150,
+				"response_code":  200,
+				"bytes_sent":     1024,
+				"session_id":     "sess_xyz789",
+				"correlation-id": "corr-456def", // Test hyphenated field names
 			},
 		},
 		{
 			ID:        "sample-2",
 			Timestamp: now.Add(-3 * time.Minute),
-			Message:   "Database connection timeout",
+			Message:   "Database connection timeout after 30 seconds\nRetrying connection...\nConnection failed permanently",
 			Level:     "ERROR",
 			Service:   "api-gateway",
 			Source:    "application",
-			Host:      "api-02",
+			Host:      "api-02.prod.example.com",
 			Env:       "production",
 			Tags: map[string]string{
-				"database": "users",
-				"retry":    "3",
+				"database":    "users_db",
+				"retry_count": "3",
+				"pool_size":   "10",
 			},
 			Attributes: map[string]interface{}{
-				"error_code": "TIMEOUT",
-				"query":      "SELECT * FROM users WHERE id = ?",
+				"error_code":    "DB_TIMEOUT",
+				"query":         "SELECT u.id, u.email FROM users u WHERE u.active = true AND u.created_at > ?",
+				"timeout_ms":    30000,
+				"connection_id": "conn_789",
+				"is_critical":   true,
+				"stack_trace":   "java.sql.SQLException: Connection timeout\n\tat com.example.db.ConnectionPool.getConnection(ConnectionPool.java:45)",
 			},
 		},
 		{
@@ -324,15 +335,61 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 			Level:     "DEBUG",
 			Service:   "cache-service",
 			Source:    "redis",
-			Host:      "cache-01",
+			Host:      "cache-01.prod.example.com",
 			Env:       "production",
 			Tags: map[string]string{
-				"cache_key": "user_profile_12345",
-				"ttl":       "3600",
+				"cache_key":  "user_profile_12345",
+				"ttl_sec":    "3600",
+				"cache_type": "user_data",
 			},
 			Attributes: map[string]interface{}{
-				"cache_size": "1024MB",
-				"hit_rate":   "85%",
+				"cache_size_mb":    1024.5,
+				"hit_rate_percent": 85.7,
+				"eviction_count":   42,
+				"memory_usage":     "75%",
+			},
+		},
+		{
+			ID:        "sample-4",
+			Timestamp: now.Add(-30 * time.Second),
+			Message:   "", // Test empty message
+			Level:     "WARN",
+			Service:   "", // Test empty service
+			Source:    "system",
+			Host:      "monitor-01",
+			Env:       "production",
+			Tags: map[string]string{
+				"alert_type": "disk_space",
+				"severity":   "medium",
+			},
+			Attributes: map[string]interface{}{
+				"disk_usage_percent": 89.5,
+				"available_gb":       5.2,
+				"threshold_percent":  85,
+				"partition":          "/var/log",
+			},
+		},
+		{
+			ID:        "sample-5",
+			Timestamp: now.Add(-10 * time.Second),
+			Message:   "Request processed successfully",
+			Level:     "trace", // Test another case variation
+			Service:   "web-frontend",
+			Source:    "nginx",
+			Host:      "lb-01.prod.example.com",
+			Env:       "production",
+			Tags: map[string]string{
+				"request_path": "/api/v1/users",
+				"method":       "GET",
+				"status_code":  "200",
+			},
+			Attributes: map[string]interface{}{
+				"response_time_ms": 45.2,
+				"user_agent":       "curl/7.68.0",
+				"referer":          "https://example.com/dashboard",
+				"x-forwarded-for":  "203.0.113.1, 198.51.100.1",
+				"content_length":   2048,
+				"gzip_enabled":     true,
 			},
 		},
 	}
@@ -425,11 +482,207 @@ func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (st
 	return message, level, service, source, host, tags, remainingAttrs
 }
 
+// createEmptyLogsDataFrame creates an empty logs data frame with proper structure
+func (d *Datasource) createEmptyLogsDataFrame(refID string) data.Frames {
+	logger := log.New()
+	
+	// Create data frame with proper structure for logs
+	frame := data.NewFrame("logs")
+	frame.RefID = refID
+
+	// Create empty fields with proper types
+	timestampField := data.NewField("timestamp", nil, []time.Time{})
+	timestampField.Config = &data.FieldConfig{
+		DisplayName: "Time",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	messageField := data.NewField("message", nil, []string{})
+	messageField.Config = &data.FieldConfig{
+		DisplayName: "Message",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	levelField := data.NewField("level", nil, []string{})
+	levelField.Config = &data.FieldConfig{
+		DisplayName: "Level",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	serviceField := data.NewField("service", nil, []string{})
+	serviceField.Config = &data.FieldConfig{
+		DisplayName: "Service",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	sourceField := data.NewField("source", nil, []string{})
+	sourceField.Config = &data.FieldConfig{
+		DisplayName: "Source",
+		Custom: map[string]interface{}{
+			"displayMode": "list",
+		},
+	}
+
+	// Add fields to frame
+	frame.Fields = append(frame.Fields,
+		timestampField,
+		messageField,
+		levelField,
+		serviceField,
+		sourceField,
+	)
+
+	// Set appropriate metadata for empty logs data frame
+	frame.Meta = &data.FrameMeta{
+		Type: data.FrameTypeLogLines,
+		Custom: map[string]interface{}{
+			"preferredVisualisationType": "logs",
+		},
+		ExecutedQueryString: "No log entries found",
+	}
+
+	logger.Debug("Created empty logs data frame", "refID", refID)
+	return data.Frames{frame}
+}
+
+// validateLogEntry validates a log entry and returns any validation errors
+func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
+	var errors []string
+	
+	// Check for required fields
+	if entry.Timestamp.IsZero() {
+		errors = append(errors, fmt.Sprintf("Entry %d: missing or invalid timestamp", index))
+	}
+	
+	// Message can be empty, but we should log it for debugging
+	if entry.Message == "" {
+		// This is not an error, just a debug note
+	}
+	
+	// Validate log level if present
+	if entry.Level != "" {
+		validLevels := map[string]bool{
+			"DEBUG": true, "INFO": true, "WARN": true, 
+			"ERROR": true, "FATAL": true, "TRACE": true,
+		}
+		if !validLevels[strings.ToUpper(entry.Level)] {
+			errors = append(errors, fmt.Sprintf("Entry %d: invalid log level '%s'", index, entry.Level))
+		}
+	}
+	
+	return errors
+}
+
+// sanitizeLogEntry cleans and normalizes a log entry
+func (d *Datasource) sanitizeLogEntry(entry LogEntry) LogEntry {
+	// Normalize log level to uppercase
+	if entry.Level != "" {
+		entry.Level = strings.ToUpper(entry.Level)
+	}
+	
+	// Trim whitespace from string fields
+	entry.Message = strings.TrimSpace(entry.Message)
+	entry.Service = strings.TrimSpace(entry.Service)
+	entry.Source = strings.TrimSpace(entry.Source)
+	entry.Host = strings.TrimSpace(entry.Host)
+	entry.Env = strings.TrimSpace(entry.Env)
+	
+	// Ensure timestamp is not zero - use current time as fallback
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now()
+	}
+	
+	return entry
+}
+
+// sanitizeFieldName sanitizes field names for use in Grafana data frames
+func (d *Datasource) sanitizeFieldName(name string) string {
+	// Remove leading/trailing whitespace
+	name = strings.TrimSpace(name)
+	
+	// Return empty if name is empty or too long
+	if name == "" || len(name) > 100 {
+		return ""
+	}
+	
+	// Replace invalid characters with underscores
+	// Keep alphanumeric, underscore, hyphen, and dot
+	var result strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
+		   (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune('_')
+		}
+	}
+	
+	sanitized := result.String()
+	
+	// Ensure it doesn't start with a number
+	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
+		sanitized = "field_" + sanitized
+	}
+	
+	return sanitized
+}
+
+// sanitizeFieldValue sanitizes field values for display in Grafana
+func (d *Datasource) sanitizeFieldValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	
+	var strValue string
+	switch v := value.(type) {
+	case string:
+		strValue = v
+	case bool:
+		strValue = fmt.Sprintf("%t", v)
+	case int, int8, int16, int32, int64:
+		strValue = fmt.Sprintf("%d", v)
+	case uint, uint8, uint16, uint32, uint64:
+		strValue = fmt.Sprintf("%d", v)
+	case float32, float64:
+		strValue = fmt.Sprintf("%.6g", v)
+	default:
+		strValue = fmt.Sprintf("%v", v)
+	}
+	
+	// Trim whitespace and limit length
+	strValue = strings.TrimSpace(strValue)
+	if len(strValue) > 1000 {
+		strValue = strValue[:997] + "..."
+	}
+	
+	return strValue
+}
+
 // createLogsDataFrames creates Grafana DataFrames from log entries
 // This sets appropriate metadata for Grafana's logs panel recognition
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4
 func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) data.Frames {
 	logger := log.New()
+
+	// Validate input parameters
+	if refID == "" {
+		logger.Warn("Empty refID provided for logs data frame")
+		refID = "logs" // Default refID
+	}
+
+	// Handle empty log entries case
+	if len(logEntries) == 0 {
+		logger.Debug("No log entries provided, creating empty logs data frame", "refID", refID)
+		return d.createEmptyLogsDataFrame(refID)
+	}
 
 	// Create data frame with proper structure for logs
 	frame := data.NewFrame("logs")
@@ -448,16 +701,33 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	// Track additional attributes that appear across log entries
 	additionalFields := make(map[string][]interface{})
 
-	// Populate data from log entries with proper handling of empty values
+	// Validate and sanitize log entries
+	var validationErrors []string
+	sanitizedEntries := make([]LogEntry, entryCount)
+	
 	for i, entry := range logEntries {
+		// Validate entry
+		if errors := d.validateLogEntry(entry, i); len(errors) > 0 {
+			validationErrors = append(validationErrors, errors...)
+		}
+		
+		// Sanitize entry
+		sanitizedEntries[i] = d.sanitizeLogEntry(entry)
+	}
+	
+	// Log validation errors but continue processing
+	if len(validationErrors) > 0 {
+		logger.Warn("Log entry validation errors found", 
+			"errorCount", len(validationErrors), 
+			"errors", validationErrors)
+	}
+
+	// Populate data from sanitized log entries with proper handling of empty values
+	for i, entry := range sanitizedEntries {
 		timestamps[i] = entry.Timestamp
 		
 		// Handle message field - preserve multi-line formatting
-		if entry.Message != "" {
-			messages[i] = entry.Message
-		} else {
-			messages[i] = "" // Keep empty messages as empty
-		}
+		messages[i] = entry.Message // Can be empty after sanitization
 		
 		// Handle optional fields with defaults for better display
 		if entry.Level != "" {
@@ -490,7 +760,7 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 			envs[i] = ""
 		}
 
-		// Process additional attributes from the log entry
+		// Process additional attributes from the sanitized log entry
 		if entry.Attributes != nil {
 			for attrKey, value := range entry.Attributes {
 				// Skip standard fields that we already handle
@@ -499,32 +769,39 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 					continue
 				}
 
-				// Initialize slice if this is the first time we see this attribute
-				if _, exists := additionalFields[attrKey]; !exists {
-					additionalFields[attrKey] = make([]interface{}, entryCount)
+				// Sanitize attribute key (remove special characters, make lowercase)
+				sanitizedKey := d.sanitizeFieldName(attrKey)
+				if sanitizedKey == "" {
+					continue // Skip invalid field names
 				}
 
-				// Convert value to string for display
-				var strValue string
-				switch v := value.(type) {
-				case string:
-					strValue = v
-				case nil:
-					strValue = ""
-				default:
-					strValue = fmt.Sprintf("%v", v)
+				// Initialize slice if this is the first time we see this attribute
+				if _, exists := additionalFields[sanitizedKey]; !exists {
+					additionalFields[sanitizedKey] = make([]interface{}, entryCount)
 				}
-				additionalFields[attrKey][i] = strValue
+
+				// Convert value to string for display with proper sanitization
+				strValue := d.sanitizeFieldValue(value)
+				additionalFields[sanitizedKey][i] = strValue
 			}
 
 			// Process tags as additional fields
 			if entry.Tags != nil {
 				for tagKey, value := range entry.Tags {
-					tagFieldKey := "tag_" + tagKey // Prefix to distinguish from attributes
+					// Sanitize tag key and add prefix
+					sanitizedTagKey := d.sanitizeFieldName(tagKey)
+					if sanitizedTagKey == "" {
+						continue // Skip invalid tag names
+					}
+					
+					tagFieldKey := "tag_" + sanitizedTagKey // Prefix to distinguish from attributes
 					if _, exists := additionalFields[tagFieldKey]; !exists {
 						additionalFields[tagFieldKey] = make([]interface{}, entryCount)
 					}
-					additionalFields[tagFieldKey][i] = value
+					
+					// Sanitize tag value
+					sanitizedValue := d.sanitizeFieldValue(value)
+					additionalFields[tagFieldKey][i] = sanitizedValue
 				}
 			}
 		}
