@@ -3299,25 +3299,9 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Get API credentials from secure JSON data (reusing existing pattern)
-	apiKey, ok := d.SecureJSONData["apiKey"]
-	if !ok {
-		logger.Error("missing apiKey in secure data", "traceID", traceID)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "missing apiKey in secure data"}`),
-		})
-	}
-
-	appKey, ok := d.SecureJSONData["appKey"]
-	if !ok {
-		logger.Error("missing appKey in secure data", "traceID", traceID)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "missing appKey in secure data"}`),
-		})
-	}
-
+	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
+	// For now, we're using placeholder data so credentials are not needed
+	
 	// Get Datadog site configuration (reusing existing pattern)
 	site := d.JSONData.Site
 	if site == "" {
@@ -3385,24 +3369,8 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Get API credentials from secure JSON data (reusing existing pattern)
-	apiKey, ok := d.SecureJSONData["apiKey"]
-	if !ok {
-		logger.Error("missing apiKey in secure data", "traceID", traceID)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "missing apiKey in secure data"}`),
-		})
-	}
-
-	appKey, ok := d.SecureJSONData["appKey"]
-	if !ok {
-		logger.Error("missing appKey in secure data", "traceID", traceID)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 401,
-			Body:   []byte(`{"error": "missing appKey in secure data"}`),
-		})
-	}
+	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
+	// For now, we're using placeholder data so credentials are not needed
 
 	// Get Datadog site configuration (reusing existing pattern)
 	site := d.JSONData.Site

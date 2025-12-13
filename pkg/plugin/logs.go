@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -156,8 +158,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	to := q.TimeRange.To.UnixMilli()
 
 	// Create the request body matching Datadog's exact format
-	// TODO: This will be used when the actual Datadog Logs API call is implemented
-	_ = LogsSearchRequest{
+	requestBody := LogsSearchRequest{
 		Data: LogsSearchData{
 			Type: "search_request",
 			Attributes: LogsSearchAttributes{
@@ -173,32 +174,74 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	}
 
 	// Create context with timeout (reusing existing timeout patterns - 30 seconds)
-	// TODO: This will be used when the actual Datadog Logs API call is implemented
-	_ = ctx
+	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
-	// Call Datadog Logs API v2
-	// Note: This would use the Datadog Logs API client when available
-	// For now, we'll create a placeholder implementation that demonstrates the structure
 	logger.Info("Executing logs query", "query", logsQuery, "from", from, "to", to)
 
-	// TODO: Replace this with actual Datadog Logs API call when the client supports it
-	// The actual implementation would be:
-	// configuration := datadog.NewConfiguration()
-	// client := datadog.NewAPIClient(configuration)
-	// logsApi := datadogV2.NewLogsApi(client)
-	// resp, httpResp, err := logsApi.SearchLogs(queryCtx, body)
+	// Get API credentials and site configuration
+	apiKey, _ := d.SecureJSONData["apiKey"]
+	appKey, _ := d.SecureJSONData["appKey"]
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
 
-	// For now, create a placeholder response structure
-	// TODO: Replace this with actual Datadog Logs API call when the client supports it
-	// The actual implementation would parse the API response and convert to LogEntry structs
-	
-	// Create sample log entries for testing the data frame structure
-	sampleEntries := d.createSampleLogEntries()
-	frames := d.createLogsDataFrames(sampleEntries, q.RefID)
+	// Convert request body to JSON for HTTP call
+	requestBodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs request: %w", err)
+	}
+
+	// Make HTTP request to Datadog Logs API v2
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
+	req, err := http.NewRequestWithContext(queryCtx, "POST", url, strings.NewReader(string(requestBodyBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logs API request: %w", err)
+	}
+
+	// Add authentication headers
+	req.Header.Set("DD-API-KEY", apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", appKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Execute the request
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var apiResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode logs API response: %w", err)
+	}
+
+	// Parse the response and convert to LogEntry structs
+	logEntries, err := d.parseDatadogLogsResponse(apiResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse logs response: %w", err)
+	}
+
+	// Create Grafana data frames from log entries
+	frames := d.createLogsDataFrames(logEntries, q.RefID)
+
+	logger.Info("Successfully executed logs query", 
+		"query", logsQuery, 
+		"entriesReturned", len(logEntries),
+		"framesCreated", len(frames))
 
 	return frames, nil
 }
@@ -275,161 +318,97 @@ func (d *Datasource) validateWildcardPatterns(query string) string {
 	return query
 }
 
-// createSampleLogEntries creates sample log entries for testing the data frame structure
-// TODO: Remove this when actual Datadog Logs API integration is complete
-func (d *Datasource) createSampleLogEntries() []LogEntry {
-	now := time.Now()
-	
-	return []LogEntry{
-		{
-			ID:        "sample-1",
-			Timestamp: now.Add(-5 * time.Minute),
-			Message:   "User authentication successful for user john.doe@example.com",
-			Level:     "info", // Test case sensitivity normalization
-			Service:   "auth-service",
-			Source:    "nginx",
-			Host:      "web-01.prod.example.com",
-			Env:       "production",
-			Tags: map[string]string{
-				"user_id":    "12345",
-				"method":     "POST",
-				"ip_address": "192.168.1.100",
-				"user-agent": "Mozilla/5.0 (compatible)",
-			},
-			Attributes: map[string]interface{}{
-				"request_id":     "req-abc123",
-				"duration_ms":    150,
-				"response_code":  200,
-				"bytes_sent":     1024,
-				"session_id":     "sess_xyz789",
-				"correlation-id": "corr-456def", // Test hyphenated field names
-			},
-		},
-		{
-			ID:        "sample-2",
-			Timestamp: now.Add(-3 * time.Minute),
-			Message:   "Database connection timeout after 30 seconds\nRetrying connection...\nConnection failed permanently",
-			Level:     "ERROR",
-			Service:   "api-gateway",
-			Source:    "application",
-			Host:      "api-02.prod.example.com",
-			Env:       "production",
-			Tags: map[string]string{
-				"database":    "users_db",
-				"retry_count": "3",
-				"pool_size":   "10",
-			},
-			Attributes: map[string]interface{}{
-				"error_code":    "DB_TIMEOUT",
-				"query":         "SELECT u.id, u.email FROM users u WHERE u.active = true AND u.created_at > ?",
-				"timeout_ms":    30000,
-				"connection_id": "conn_789",
-				"is_critical":   true,
-				"stack_trace":   "java.sql.SQLException: Connection timeout\n\tat com.example.db.ConnectionPool.getConnection(ConnectionPool.java:45)",
-			},
-		},
-		{
-			ID:        "sample-3",
-			Timestamp: now.Add(-1 * time.Minute),
-			Message:   "Cache miss for key: user_profile_12345",
-			Level:     "DEBUG",
-			Service:   "cache-service",
-			Source:    "redis",
-			Host:      "cache-01.prod.example.com",
-			Env:       "production",
-			Tags: map[string]string{
-				"cache_key":  "user_profile_12345",
-				"ttl_sec":    "3600",
-				"cache_type": "user_data",
-			},
-			Attributes: map[string]interface{}{
-				"cache_size_mb":    1024.5,
-				"hit_rate_percent": 85.7,
-				"eviction_count":   42,
-				"memory_usage":     "75%",
-			},
-		},
-		{
-			ID:        "sample-4",
-			Timestamp: now.Add(-30 * time.Second),
-			Message:   "", // Test empty message
-			Level:     "WARN",
-			Service:   "", // Test empty service
-			Source:    "system",
-			Host:      "monitor-01",
-			Env:       "production",
-			Tags: map[string]string{
-				"alert_type": "disk_space",
-				"severity":   "medium",
-			},
-			Attributes: map[string]interface{}{
-				"disk_usage_percent": 89.5,
-				"available_gb":       5.2,
-				"threshold_percent":  85,
-				"partition":          "/var/log",
-			},
-		},
-		{
-			ID:        "sample-5",
-			Timestamp: now.Add(-10 * time.Second),
-			Message:   "Request processed successfully",
-			Level:     "trace", // Test another case variation
-			Service:   "web-frontend",
-			Source:    "nginx",
-			Host:      "lb-01.prod.example.com",
-			Env:       "production",
-			Tags: map[string]string{
-				"request_path": "/api/v1/users",
-				"method":       "GET",
-				"status_code":  "200",
-			},
-			Attributes: map[string]interface{}{
-				"response_time_ms": 45.2,
-				"user_agent":       "curl/7.68.0",
-				"referer":          "https://example.com/dashboard",
-				"x-forwarded-for":  "203.0.113.1, 198.51.100.1",
-				"content_length":   2048,
-				"gzip_enabled":     true,
-			},
-		},
-	}
-}
+
 
 // parseDatadogLogsResponse parses Datadog Logs API v2 response and converts to LogEntry structs
-// This function will be used when the actual Datadog Logs API integration is implemented
 func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEntry, error) {
 	logger := log.New()
 	
-	// TODO: Implement actual parsing of Datadog Logs API v2 response
-	// The response structure from Datadog Logs API v2 is:
-	// {
-	//   "data": [
-	//     {
-	//       "type": "log",
-	//       "id": "log-id",
-	//       "attributes": {
-	//         "timestamp": "2023-01-01T00:00:00Z",
-	//         "message": "log message",
-	//         "status": "info",
-	//         "service": "my-service",
-	//         "source": "my-source",
-	//         "host": "my-host",
-	//         "tags": ["key:value", "env:prod"],
-	//         "attributes": {...}
-	//       }
-	//     }
-	//   ],
-	//   "meta": {
-	//     "page": {
-	//       "after": "cursor-for-next-page"
-	//     }
-	//   }
-	// }
+	// Cast to map for parsing
+	responseMap, ok := apiResponse.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: expected map, got %T", apiResponse)
+	}
 	
-	logger.Debug("Parsing Datadog logs response", "responseType", fmt.Sprintf("%T", apiResponse))
+	// Extract data array
+	dataInterface, exists := responseMap["data"]
+	if !exists {
+		logger.Debug("No data field in response, returning empty results")
+		return []LogEntry{}, nil
+	}
 	
-	// For now, return empty slice until actual API integration
-	return []LogEntry{}, nil
+	dataArray, ok := dataInterface.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid data format: expected array, got %T", dataInterface)
+	}
+	
+	logger.Debug("Parsing Datadog logs response", "entryCount", len(dataArray))
+	
+	var logEntries []LogEntry
+	
+	for i, item := range dataArray {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			logger.Warn("Skipping invalid log entry", "index", i, "type", fmt.Sprintf("%T", item))
+			continue
+		}
+		
+		// Extract log ID
+		logID := ""
+		if id, exists := itemMap["id"]; exists {
+			if idStr, ok := id.(string); ok {
+				logID = idStr
+			}
+		}
+		
+		// Extract attributes
+		attributesInterface, exists := itemMap["attributes"]
+		if !exists {
+			logger.Warn("Skipping log entry without attributes", "index", i, "id", logID)
+			continue
+		}
+		
+		attributes, ok := attributesInterface.(map[string]interface{})
+		if !ok {
+			logger.Warn("Skipping log entry with invalid attributes", "index", i, "id", logID)
+			continue
+		}
+		
+		// Parse timestamp
+		var timestamp time.Time
+		if timestampInterface, exists := attributes["timestamp"]; exists {
+			if timestampStr, ok := timestampInterface.(string); ok {
+				if parsedTime, err := time.Parse(time.RFC3339, timestampStr); err == nil {
+					timestamp = parsedTime
+				} else {
+					logger.Warn("Failed to parse timestamp", "timestamp", timestampStr, "error", err)
+					timestamp = time.Now() // Fallback to current time
+				}
+			}
+		}
+		
+		// Extract standard fields using the helper function
+		message, level, service, source, host, tags, remainingAttrs := d.extractLogAttributes(attributes)
+		
+		// Create log entry
+		entry := LogEntry{
+			ID:         logID,
+			Timestamp:  timestamp,
+			Message:    message,
+			Level:      level,
+			Service:    service,
+			Source:     source,
+			Host:       host,
+			Tags:       tags,
+			Attributes: remainingAttrs,
+		}
+		
+		logEntries = append(logEntries, entry)
+	}
+	
+	logger.Debug("Successfully parsed Datadog logs response", "entriesReturned", len(logEntries))
+	
+	return logEntries, nil
 }
 
 // extractLogAttributes extracts common log attributes from Datadog log entry
