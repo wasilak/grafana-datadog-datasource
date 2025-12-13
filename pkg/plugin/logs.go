@@ -255,9 +255,10 @@ func (d *Datasource) translateLogsQuery(qm *QueryModel, q *backend.DataQuery) (s
 	// Handle basic search terms and facet filters
 	// Support for Datadog logs search syntax:
 	// - Text search: "error" or "failed to connect"
-	// - Facet filters: service:web-app, level:ERROR, source:nginx
+	// - Reserved attribute filters: service:web-app, status:ERROR, source:nginx, host:web-01
+	// - Custom attribute filters: @env:production, @version:1.2.3
 	// - Boolean operators: AND, OR, NOT
-	// - Grouping: level:(ERROR OR WARN)
+	// - Grouping: status:(ERROR OR WARN)
 	// - Wildcards: error*
 	
 	// Validate facet filter syntax
@@ -280,12 +281,13 @@ func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 	logger := log.New()
 	
 	// Enhanced facet filter processing for log level and service filtering
-	// Support for:
-	// - level:ERROR, level:WARN, level:INFO, level:DEBUG, level:FATAL
-	// - level:(ERROR OR WARN) - multiple levels with OR logic
-	// - service:api-gateway, service:web-app, service:auth-service
-	// - source:nginx, source:application, source:database
-	// - host:web-01, env:production, version:1.2.3
+	// Support for Datadog reserved attributes and standard syntax:
+	// - status:ERROR, status:WARN, status:INFO, status:DEBUG, status:FATAL (correct Datadog syntax)
+	// - status:(ERROR OR WARN) - multiple levels with OR logic
+	// - service:api-gateway, service:web-app, service:auth-service (reserved attribute)
+	// - source:nginx, source:application, source:database (reserved attribute)
+	// - host:web-01 (reserved attribute)
+	// - @env:production, @version:1.2.3 (custom attributes with @ prefix)
 	
 	// Normalize log level values to uppercase for consistency
 	query = d.normalizeLogLevels(query)
@@ -305,25 +307,31 @@ func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 }
 
 // normalizeLogLevels normalizes log level facet filters to uppercase
-// Supports: level:ERROR, level:(ERROR OR WARN), level:info -> level:INFO
+// Supports: status:ERROR, status:(ERROR OR WARN), status:info -> status:INFO
+// Also supports legacy level: syntax and converts it to status:
 func (d *Datasource) normalizeLogLevels(query string) string {
 	// Valid log levels that should be normalized to uppercase
 	validLevels := []string{"debug", "info", "warn", "warning", "error", "fatal", "trace"}
 	
-	// Pattern to match level: filters with optional grouping
-	// Matches: level:error, level:(error OR warn), level:INFO, etc.
-	levelPattern := regexp.MustCompile(`(?i)level:\s*(\([^)]+\)|[^\s\)]+)`)
+	// Pattern to match both status: and level: filters with optional grouping
+	// Matches: status:error, level:error, status:(error OR warn), etc.
+	levelPattern := regexp.MustCompile(`(?i)(status|level):\s*(\([^)]+\)|[^\s\)]+)`)
 	
 	return levelPattern.ReplaceAllStringFunc(query, func(match string) string {
-		// Extract the level value(s) part after "level:"
+		// Extract the attribute name and level value(s)
 		parts := strings.SplitN(match, ":", 2)
 		if len(parts) != 2 {
 			return match // Return unchanged if malformed
 		}
 		
+		attributeName := strings.ToLower(strings.TrimSpace(parts[0]))
 		levelPart := strings.TrimSpace(parts[1])
 		
-		// Handle grouped levels: level:(ERROR OR WARN)
+		// Always use 'status' as the correct Datadog attribute name
+		// Convert legacy 'level' to 'status'
+		correctAttribute := "status"
+		
+		// Handle grouped levels: status:(ERROR OR WARN)
 		if strings.HasPrefix(levelPart, "(") && strings.HasSuffix(levelPart, ")") {
 			// Extract content inside parentheses
 			innerContent := levelPart[1 : len(levelPart)-1]
@@ -335,17 +343,21 @@ func (d *Datasource) normalizeLogLevels(query string) string {
 				innerContent = levelRegex.ReplaceAllString(innerContent, strings.ToUpper(level))
 			}
 			
-			return "level:(" + innerContent + ")"
+			return correctAttribute + ":(" + innerContent + ")"
 		}
 		
-		// Handle single level: level:error -> level:ERROR
+		// Handle single level: status:error -> status:ERROR or level:error -> status:ERROR
 		for _, level := range validLevels {
 			if strings.EqualFold(levelPart, level) {
-				return "level:" + strings.ToUpper(level)
+				return correctAttribute + ":" + strings.ToUpper(level)
 			}
 		}
 		
-		// Return unchanged if not a recognized level
+		// Return with correct attribute name even if level not recognized
+		if attributeName == "level" {
+			return correctAttribute + ":" + levelPart
+		}
+		
 		return match
 	})
 }
@@ -420,15 +432,16 @@ func (d *Datasource) validateSourceFilters(query string) string {
 
 // validateCommonFacets validates other common facet filters (host, env, version, etc.)
 func (d *Datasource) validateCommonFacets(query string) string {
-	// Common facets that should be validated: host, env, version, container_name, etc.
-	commonFacets := []string{"host", "env", "version", "container_name", "container_id", "image_name"}
+	// Reserved attributes (no @ prefix needed): host
+	reservedFacets := []string{"host"}
 	
-	for _, facet := range commonFacets {
-		// Pattern to match facet: filters
+	// Custom attributes (require @ prefix): env, version, container_name, etc.
+	customFacets := []string{"env", "version", "container_name", "container_id", "image_name"}
+	
+	// Handle reserved attributes (no @ prefix)
+	for _, facet := range reservedFacets {
 		facetPattern := regexp.MustCompile(facet + `:\s*("[^"]*"|[^\s\)]+)`)
-		
 		query = facetPattern.ReplaceAllStringFunc(query, func(match string) string {
-			// Extract the facet value part
 			parts := strings.SplitN(match, ":", 2)
 			if len(parts) != 2 {
 				return match
@@ -447,6 +460,38 @@ func (d *Datasource) validateCommonFacets(query string) string {
 			}
 			
 			return match
+		})
+	}
+	
+	// Handle custom attributes (with @ prefix)
+	for _, facet := range customFacets {
+		// Match both @facet: and facet: patterns, convert to @facet:
+		facetPattern := regexp.MustCompile(`(@?` + facet + `):\s*("[^"]*"|[^\s\)]+)`)
+		query = facetPattern.ReplaceAllStringFunc(query, func(match string) string {
+			parts := strings.SplitN(match, ":", 2)
+			if len(parts) != 2 {
+				return match
+			}
+			
+			attributePart := strings.TrimSpace(parts[0])
+			facetPart := strings.TrimSpace(parts[1])
+			
+			// Ensure @ prefix for custom attributes
+			if !strings.HasPrefix(attributePart, "@") {
+				attributePart = "@" + attributePart
+			}
+			
+			// Handle quoted values
+			if strings.HasPrefix(facetPart, "\"") && strings.HasSuffix(facetPart, "\"") {
+				return attributePart + ":" + facetPart
+			}
+			
+			// Auto-quote values with spaces or special characters
+			if strings.ContainsAny(facetPart, " \t\n\r()[]{}") {
+				return attributePart + ":\"" + facetPart + "\""
+			}
+			
+			return attributePart + ":" + facetPart
 		})
 	}
 	
