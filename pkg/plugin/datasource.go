@@ -246,17 +246,40 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	// Handle logs queries separately
 	if hasLogsQueries {
 		logger.Info("Processing logs queries", "logsQueryCount", len(logsQueryModels))
-		for refID, qm := range logsQueryModels {
-			// For now, return a placeholder response for logs queries
-			// This will be implemented in subsequent tasks
-			logger.Debug("Processing logs query", "refID", refID, "logQuery", qm.LogQuery)
+		
+		// Create a new request containing only logs queries
+		logsReq := &backend.QueryDataRequest{
+			PluginContext: req.PluginContext,
+			Headers:       req.Headers,
+			Queries:       []backend.DataQuery{},
+		}
+		
+		// Add logs queries to the new request
+		for _, q := range req.Queries {
+			var qm QueryModel
+			if err := json.Unmarshal(q.JSON, &qm); err != nil {
+				continue
+			}
 			
-			// Create a simple placeholder frame for logs
-			frame := data.NewFrame("logs_placeholder")
-			frame.RefID = refID
-			
-			response.Responses[refID] = backend.DataResponse{
-				Frames: data.Frames{frame},
+			// Check if this is a logs query
+			isLogsQuery := qm.QueryType == "logs" || (qm.QueryType == "" && qm.LogQuery != "")
+			if isLogsQuery {
+				logsReq.Queries = append(logsReq.Queries, q)
+			}
+		}
+		
+		// Execute logs queries using the dedicated logs handler
+		logsResponse, err := d.queryLogs(ddCtx, logsReq)
+		if err != nil {
+			logger.Error("Failed to execute logs queries", "error", err)
+			// Set error responses for all logs queries
+			for refID := range logsQueryModels {
+				response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("logs query failed: %v", err))
+			}
+		} else {
+			// Merge logs responses into main response
+			for refID, logsResp := range logsResponse.Responses {
+				response.Responses[refID] = logsResp
 			}
 		}
 	}
