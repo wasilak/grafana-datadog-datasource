@@ -948,6 +948,11 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.TagValuesHandler(ctx, req, sender)
 	case req.Method == "POST" && req.Path == "autocomplete/complete":
 		return d.CompleteHandler(ctx, req, sender)
+	// Logs autocomplete handlers - reuse existing concurrency limiting and timeout patterns
+	case req.Method == "GET" && req.Path == "autocomplete/logs/services":
+		return d.LogsServicesHandler(ctx, req, sender)
+	case req.Method == "GET" && req.Path == "autocomplete/logs/sources":
+		return d.LogsSourcesHandler(ctx, req, sender)
 	// Variable resource handlers - Grafana strips "resources/" prefix
 	case req.Method == "POST" && req.Path == "metrics":
 		return d.VariableMetricsHandler(ctx, req, sender)
@@ -3270,6 +3275,176 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 	// Return results as VariableResponse
 	response := VariableResponse{Values: result}
 	respData, _ := json.Marshal(response)
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsServicesHandler handles GET /autocomplete/logs/services requests
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	logger.Info("LogsServicesHandler called", "traceID", traceID, "path", req.Path)
+
+	// Reuse existing timeout configuration (2 seconds for autocomplete)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get API credentials from secure JSON data (reusing existing pattern)
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("missing apiKey in secure data", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "missing apiKey in secure data"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("missing appKey in secure data", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "missing appKey in secure data"}`),
+		})
+	}
+
+	// Get Datadog site configuration (reusing existing pattern)
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// TODO: Implement actual Datadog Logs API call to get services
+	// For now, return a placeholder list of common services
+	// The actual implementation would call Datadog's Logs API to get unique service values
+	// from recent log data, similar to how MetricsHandler gets metric names
+	
+	services := []string{
+		"api-gateway",
+		"auth-service", 
+		"cache-service",
+		"database",
+		"frontend",
+		"load-balancer",
+		"monitoring",
+		"payment-service",
+		"user-service",
+		"web-app",
+	}
+
+	duration := time.Since(startTime)
+	logger.Info("LogsServicesHandler completed",
+		"traceID", traceID,
+		"duration", duration,
+		"serviceCount", len(services),
+		"site", site)
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, "/autocomplete/logs/services", 200, duration, len(services), nil)
+
+	// Return services as JSON array (same format as metrics autocomplete)
+	respData, err := json.Marshal(services)
+	if err != nil {
+		logger.Error("failed to marshal services response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsSourcesHandler handles GET /autocomplete/logs/sources requests  
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	logger.Info("LogsSourcesHandler called", "traceID", traceID, "path", req.Path)
+
+	// Reuse existing timeout configuration (2 seconds for autocomplete)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Get API credentials from secure JSON data (reusing existing pattern)
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("missing apiKey in secure data", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "missing apiKey in secure data"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("missing appKey in secure data", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "missing appKey in secure data"}`),
+		})
+	}
+
+	// Get Datadog site configuration (reusing existing pattern)
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// TODO: Implement actual Datadog Logs API call to get sources
+	// For now, return a placeholder list of common log sources
+	// The actual implementation would call Datadog's Logs API to get unique source values
+	// from recent log data, similar to how MetricsHandler gets metric names
+	
+	sources := []string{
+		"application",
+		"docker",
+		"kubernetes",
+		"nginx",
+		"postgres",
+		"redis",
+		"system",
+		"syslog",
+	}
+
+	duration := time.Since(startTime)
+	logger.Info("LogsSourcesHandler completed",
+		"traceID", traceID,
+		"duration", duration,
+		"sourceCount", len(sources),
+		"site", site)
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, "/autocomplete/logs/sources", 200, duration, len(sources), nil)
+
+	// Return sources as JSON array (same format as metrics autocomplete)
+	respData, err := json.Marshal(sources)
+	if err != nil {
+		logger.Error("failed to marshal sources response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
 
 	return sender.Send(&backend.CallResourceResponse{
 		Status: 200,

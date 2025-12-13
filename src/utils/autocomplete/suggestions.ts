@@ -449,6 +449,157 @@ export function groupSuggestions(suggestions: CompletionItem[]): SuggestionGroup
 }
 
 /**
+ * Generate logs-specific suggestions based on context
+ * Reuses existing debouncing and caching patterns from metrics implementation
+ */
+export function generateLogsSuggestions(
+  context: QueryContext,
+  services: string[],
+  sources: string[]
+): CompletionItem[] {
+  let suggestions: CompletionItem[] = [];
+
+  // Generate suggestions based on logs context type
+  switch (context.contextType) {
+    case 'logs_search':
+      // General logs search context - provide facet suggestions and operators
+      suggestions = [
+        ...generateLogsFacetSuggestions(context),
+        ...generateLogsOperatorSuggestions(context),
+        ...generateLogsServiceSuggestions(context, services),
+        ...generateLogsSourceSuggestions(context, sources),
+        ...generateLogsLevelSuggestions(context),
+      ];
+      break;
+    case 'logs_facet':
+      // User is typing a facet filter - suggest facet names
+      suggestions = generateLogsFacetSuggestions(context);
+      break;
+    case 'logs_service':
+      // User is typing service: - suggest service names
+      suggestions = generateLogsServiceSuggestions(context, services);
+      break;
+    case 'logs_source':
+      // User is typing source: - suggest source names
+      suggestions = generateLogsSourceSuggestions(context, sources);
+      break;
+    case 'logs_level':
+      // User is typing level: - suggest log levels
+      suggestions = generateLogsLevelSuggestions(context);
+      break;
+    default:
+      // Default logs context - provide general suggestions
+      suggestions = [
+        ...generateLogsFacetSuggestions(context),
+        ...generateLogsOperatorSuggestions(context),
+      ];
+      break;
+  }
+
+  // Deduplicate and limit results (reusing existing pattern)
+  return deduplicateAndLimit(suggestions, 100);
+}
+
+/**
+ * Generate logs facet suggestions (service, source, level, etc.)
+ */
+function generateLogsFacetSuggestions(context: QueryContext): CompletionItem[] {
+  const facets = [
+    { name: 'service', description: 'Filter by service name' },
+    { name: 'source', description: 'Filter by log source' },
+    { name: 'level', description: 'Filter by log level' },
+    { name: 'host', description: 'Filter by hostname' },
+    { name: 'env', description: 'Filter by environment' },
+    { name: 'version', description: 'Filter by application version' },
+  ];
+
+  return facets
+    .filter(facet => facet.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+    .map(facet => ({
+      label: `${facet.name}:`,
+      kind: 'logs_facet' as const,
+      detail: facet.description,
+      insertText: `${facet.name}:`,
+      sortText: `1_${facet.name}`, // Sort facets first
+    }));
+}
+
+/**
+ * Generate logs operator suggestions (AND, OR, NOT)
+ */
+function generateLogsOperatorSuggestions(context: QueryContext): CompletionItem[] {
+  const operators = [
+    { name: 'AND', description: 'Logical AND operator' },
+    { name: 'OR', description: 'Logical OR operator' },
+    { name: 'NOT', description: 'Logical NOT operator' },
+  ];
+
+  return operators
+    .filter(op => op.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+    .map(op => ({
+      label: op.name,
+      kind: 'logs_operator' as const,
+      detail: op.description,
+      insertText: ` ${op.name} `,
+      sortText: `3_${op.name}`, // Sort operators after facets and services
+    }));
+}
+
+/**
+ * Generate logs service suggestions
+ */
+function generateLogsServiceSuggestions(context: QueryContext, services: string[]): CompletionItem[] {
+  return services
+    .filter(service => service.toLowerCase().includes(context.currentToken.toLowerCase()))
+    .map(service => ({
+      label: service,
+      kind: 'logs_service' as const,
+      detail: `Service: ${service}`,
+      insertText: service,
+      sortText: `2_${service}`, // Sort services after facets
+    }));
+}
+
+/**
+ * Generate logs source suggestions
+ */
+function generateLogsSourceSuggestions(context: QueryContext, sources: string[]): CompletionItem[] {
+  return sources
+    .filter(source => source.toLowerCase().includes(context.currentToken.toLowerCase()))
+    .map(source => ({
+      label: source,
+      kind: 'logs_source' as const,
+      detail: `Source: ${source}`,
+      insertText: source,
+      sortText: `2_${source}`, // Sort sources after facets
+    }));
+}
+
+/**
+ * Generate logs level suggestions
+ */
+function generateLogsLevelSuggestions(context: QueryContext): CompletionItem[] {
+  const levels = [
+    { name: 'DEBUG', description: 'Debug level logs' },
+    { name: 'INFO', description: 'Info level logs' },
+    { name: 'WARN', description: 'Warning level logs' },
+    { name: 'ERROR', description: 'Error level logs' },
+    { name: 'FATAL', description: 'Fatal level logs' },
+    { name: 'TRACE', description: 'Trace level logs' },
+  ];
+
+  return levels
+    .filter(level => level.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+    .map(level => ({
+      label: level.name,
+      kind: 'logs_level' as const,
+      detail: level.description,
+      insertText: level.name,
+      sortText: `2_${level.name}`, // Sort levels after facets
+    }));
+}
+
+/**
  * Map CompletionItem kind to category key
  */
 function getCategoryFromKind(kind?: string): string {
@@ -463,6 +614,16 @@ function getCategoryFromKind(kind?: string): string {
       return 'tags';
     case 'tag_value':
       return 'tag_values';
+    case 'logs_service':
+      return 'services';
+    case 'logs_source':
+      return 'sources';
+    case 'logs_level':
+      return 'levels';
+    case 'logs_facet':
+      return 'facets';
+    case 'logs_operator':
+      return 'operators';
     default:
       return 'metrics'; // Default to metrics for unknown kinds
   }

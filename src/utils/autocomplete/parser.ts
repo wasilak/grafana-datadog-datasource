@@ -558,3 +558,137 @@ function extractFilterTagValueToken(line: string, position: number): string {
   
   return value;
 }
+
+/**
+ * Parse logs query to determine context for autocomplete suggestions
+ * Handles Datadog logs search syntax: service:web-app level:ERROR "error message" AND/OR/NOT
+ */
+export function parseLogsQuery(queryText: string, cursorPosition: number): QueryContext {
+  if (!queryText) {
+    return {
+      contextType: 'logs_search',
+      currentToken: '',
+      existingTags: new Set(),
+      lineContent: '',
+      cursorPosition,
+    };
+  }
+
+  // Get the line containing the cursor (logs queries are typically single-line)
+  const lines = queryText.split('\n');
+  let charCount = 0;
+  let cursorLine = 0;
+  let positionInLine = cursorPosition;
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineLength = lines[i].length + 1; // +1 for newline
+    if (charCount + lineLength > cursorPosition) {
+      cursorLine = i;
+      positionInLine = cursorPosition - charCount;
+      break;
+    }
+    charCount += lineLength;
+  }
+
+  const lineContent = lines[cursorLine] || '';
+
+  // Detect logs-specific context
+  const contextType = detectLogsContextType(lineContent, positionInLine);
+  
+  // Extract current token based on context
+  const currentToken = extractLogsCurrentToken(lineContent, positionInLine, contextType);
+
+  return {
+    contextType,
+    currentToken,
+    existingTags: new Set(), // Not used for logs queries
+    lineContent,
+    cursorPosition,
+  };
+}
+
+/**
+ * Detect context type for logs queries
+ */
+function detectLogsContextType(line: string, position: number): QueryContext['contextType'] {
+  // Handle empty line
+  if (!line.trim()) {
+    return 'logs_search';
+  }
+
+  // Check if cursor is after a facet name followed by colon
+  // Look backwards from cursor position to find facet patterns
+  const beforeCursor = line.substring(0, position);
+  
+  // Check for service: pattern
+  const serviceMatch = beforeCursor.match(/\bservice:\s*([^:\s]*)$/);
+  if (serviceMatch) {
+    return 'logs_service';
+  }
+
+  // Check for source: pattern
+  const sourceMatch = beforeCursor.match(/\bsource:\s*([^:\s]*)$/);
+  if (sourceMatch) {
+    return 'logs_source';
+  }
+
+  // Check for level: pattern
+  const levelMatch = beforeCursor.match(/\blevel:\s*([^:\s]*)$/);
+  if (levelMatch) {
+    return 'logs_level';
+  }
+
+  // Check if we're typing a facet name (word followed by colon)
+  const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):?\s*$/);
+  if (facetMatch && beforeCursor.endsWith(':')) {
+    const facetName = facetMatch[1];
+    if (['service', 'source', 'level', 'host', 'env', 'version'].includes(facetName)) {
+      return 'logs_facet';
+    }
+  }
+
+  // Default to general logs search context
+  return 'logs_search';
+}
+
+/**
+ * Extract current token for logs queries
+ */
+function extractLogsCurrentToken(line: string, position: number, contextType: QueryContext['contextType']): string {
+  if (position === 0) {
+    return '';
+  }
+
+  // For logs queries, tokens are typically separated by spaces, colons, or operators
+  const beforeCursor = line.substring(0, position);
+  
+  // Different extraction logic based on context
+  switch (contextType) {
+    case 'logs_service':
+    case 'logs_source':
+    case 'logs_level':
+      // Extract token after the colon
+      const colonMatch = beforeCursor.match(/:\s*([^:\s]*)$/);
+      return colonMatch ? colonMatch[1] : '';
+      
+    case 'logs_facet':
+      // Extract the facet name being typed
+      const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      return facetMatch ? facetMatch[1] : '';
+      
+    default:
+      // General token extraction - get the word at cursor position
+      let start = position - 1;
+      while (start >= 0 && /[a-zA-Z0-9_.-]/.test(line[start])) {
+        start--;
+      }
+      start++; // Move to first character of token
+      
+      let end = position;
+      while (end < line.length && /[a-zA-Z0-9_.-]/.test(line[end])) {
+        end++;
+      }
+      
+      return line.substring(start, end);
+  }
+}

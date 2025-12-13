@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AutocompleteState, QueryContext, CompletionItem } from '../types';
-import { parseQuery } from '../utils/autocomplete/parser';
-import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
+import { parseQuery, parseLogsQuery } from '../utils/autocomplete/parser';
+import { generateSuggestions, generateLogsSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
 import { getBackendSrv } from '@grafana/runtime';
 import { variableInterpolationService } from '../utils/variableInterpolation';
@@ -12,6 +12,7 @@ interface UseQueryAutocompleteOptions {
   datasourceUid: string;
   debounceMs?: number;
   onSelect?: (item: CompletionItem) => void;
+  queryType?: 'metrics' | 'logs'; // Add query type to determine which autocomplete to use
 }
 
 interface UseQueryAutocompleteReturn {
@@ -35,7 +36,7 @@ interface UseQueryAutocompleteReturn {
  * @returns Object with state and handlers for autocomplete UI
  */
 export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQueryAutocompleteReturn {
-  const { datasourceUid, debounceMs = DEFAULT_DEBOUNCE_MS, onSelect } = options;
+  const { datasourceUid, debounceMs = DEFAULT_DEBOUNCE_MS, onSelect, queryType = 'metrics' } = options;
 
   // Validate datasource UID is provided
   if (!datasourceUid) {
@@ -84,26 +85,75 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         // Validate query
         const validationResult = validateQuery(queryText);
 
-        // Fetch metric names from backend
+        // Fetch data based on query type - metrics for metrics queries, logs data for logs queries
         let metrics: string[] = [];
-        try {
-          const metricsResponse = await getBackendSrv()
-            .fetch({
-              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/metrics`,
-              method: 'GET',
-            })
-            .toPromise();
-          metrics = (metricsResponse as any).data as string[];
-        } catch (metricsError) {
-          const err = metricsError as any;
-          if (err.status === 401) {
-            throw new Error('Datadog credentials invalid');
-          } else if (err.status === 404) {
-            throw new Error('Endpoint not found (backend not available)');
-          } else {
-            console.warn('Failed to fetch metrics:', metricsError);
-            // Continue with empty metrics if backend call fails
-            metrics = [];
+        let logsServices: string[] = [];
+        let logsSources: string[] = [];
+        
+        if (queryType === 'metrics') {
+          // Fetch metric names from backend (existing pattern)
+          try {
+            const metricsResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/metrics`,
+                method: 'GET',
+              })
+              .toPromise();
+            metrics = (metricsResponse as any).data as string[];
+          } catch (metricsError) {
+            const err = metricsError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              throw new Error('Endpoint not found (backend not available)');
+            } else {
+              console.warn('Failed to fetch metrics:', metricsError);
+              // Continue with empty metrics if backend call fails
+              metrics = [];
+            }
+          }
+        } else if (queryType === 'logs') {
+          // Fetch logs services and sources from backend (reusing existing patterns)
+          try {
+            const servicesResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`,
+                method: 'GET',
+              })
+              .toPromise();
+            logsServices = (servicesResponse as any).data as string[];
+          } catch (servicesError) {
+            const err = servicesError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              throw new Error('Logs services endpoint not found (backend not available)');
+            } else {
+              console.warn('Failed to fetch logs services:', servicesError);
+              // Continue with empty services if backend call fails
+              logsServices = [];
+            }
+          }
+
+          try {
+            const sourcesResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`,
+                method: 'GET',
+              })
+              .toPromise();
+            logsSources = (sourcesResponse as any).data as string[];
+          } catch (sourcesError) {
+            const err = sourcesError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              throw new Error('Logs sources endpoint not found (backend not available)');
+            } else {
+              console.warn('Failed to fetch logs sources:', sourcesError);
+              // Continue with empty sources if backend call fails
+              logsSources = [];
+            }
           }
         }
 
@@ -159,15 +209,23 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         clearTimeout(timeoutHandle);
 
-        // Generate suggestions based on context
-        const suggestions = generateSuggestions(context, metrics, tags, tagValues);
+        // Generate suggestions based on context and query type
+        let suggestions: CompletionItem[] = [];
+        if (queryType === 'metrics') {
+          suggestions = generateSuggestions(context, metrics, tags, tagValues);
+        } else if (queryType === 'logs') {
+          suggestions = generateLogsSuggestions(context, logsServices, logsSources);
+        }
         
         console.log('Suggestions generated:', {
+          queryType,
           contextType: context.contextType,
           currentToken: context.currentToken,
           metricsCount: metrics.length,
           tagsCount: tags.length,
           tagValuesCount: tagValues.length,
+          logsServicesCount: logsServices.length,
+          logsSourcesCount: logsSources.length,
           suggestionsCount: suggestions.length,
           suggestions: suggestions.slice(0, 5), // First 5 for debugging
         });
@@ -226,8 +284,10 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         });
       }
 
-      // Parse query to get context (parser now handles variable preprocessing internally)
-      const context = parseQuery(contextQuery, cursorPosition);
+      // Parse query to get context based on query type
+      const context = queryType === 'logs' 
+        ? parseLogsQuery(contextQuery, cursorPosition)
+        : parseQuery(contextQuery, cursorPosition);
       contextRef.current = context;
 
       console.log('onInput - context detected:', {
