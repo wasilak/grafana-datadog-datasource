@@ -58,91 +58,69 @@ function extractVariableNames(queryText: string): string[] {
   return variables;
 }
 
-/**
- * Detects if the current panel context should use logs query mode
- * Requirements: 2.1, 2.2
- * @param props - QueryEditor props containing panel context information
- * @returns True if this should be treated as a logs panel
- */
-function detectLogsPanel(props: Props): boolean {
-  const { query, ...restProps } = props;
-  
-  // Check if query explicitly specifies logs type
-  if (query.queryType === 'logs') {
-    return true;
-  }
-  
-  // Check if logQuery field is populated (indicates logs intent)
-  if (query.logQuery) {
-    return true;
-  }
-  
-  // Check query metadata for logs preference
-  if (query.meta?.preferredVisualisationType === 'logs') {
-    return true;
-  }
-  
-  // Check if we're in a logs panel context by examining the panel plugin type
-  // Grafana passes panel information through various props
-  const anyProps = restProps as any;
-  
-  // Check for panel plugin type in various possible locations
-  if (anyProps.panel?.type === 'logs' || 
-      anyProps.panel?.pluginId === 'logs' ||
-      anyProps.panelData?.request?.panelPluginId === 'logs') {
-    return true;
-  }
-  
-  // Check for visualization type hints in panel options
-  if (anyProps.panel?.options?.visualization === 'logs' ||
-      anyProps.panel?.fieldConfig?.defaults?.custom?.displayMode === 'logs') {
-    return true;
-  }
-  
-  // Check URL path for logs panel indicators (fallback method)
-  if (typeof window !== 'undefined') {
-    const url = window.location.href;
-    if (url.includes('panelId') && url.includes('logs')) {
-      return true;
-    }
-  }
-  
-  // Default to metrics mode
-  return false;
-}
+
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
-  // Detect panel context for query type routing
-  // Requirements: 2.1, 2.2
-  const isLogsPanel = detectLogsPanel({ query, onChange, onRunQuery, datasource, ...restProps });
+  const theme = useTheme2();
   
-  console.log('QueryEditor panel detection:', {
-    isLogsPanel,
-    queryType: query.queryType,
-    hasLogQuery: !!query.logQuery,
-    preferredVisualization: query.meta?.preferredVisualisationType,
-    restPropsKeys: Object.keys(restProps as any),
-  });
+  // Query type options
+  const queryTypeOptions: Array<SelectableValue<'metrics' | 'logs'>> = [
+    { label: 'Metrics', value: 'metrics', description: 'Query Datadog metrics and time series data' },
+    { label: 'Logs', value: 'logs', description: 'Search and analyze Datadog logs' },
+  ];
 
-  // If this is a logs panel, render the LogsQueryEditor
-  if (isLogsPanel) {
-    return <LogsQueryEditor 
-      query={query} 
-      onChange={onChange} 
-      onRunQuery={onRunQuery} 
-      datasource={datasource} 
-      {...restProps} 
-    />;
-  }
+  // Get current query type, defaulting to 'metrics'
+  const currentQueryType = query.queryType || 'metrics';
 
-  // Otherwise, render the existing metrics query editor
-  return <MetricsQueryEditor 
-    query={query} 
-    onChange={onChange} 
-    onRunQuery={onRunQuery} 
-    datasource={datasource} 
-    {...restProps} 
-  />;
+  const onQueryTypeChange = (option: SelectableValue<'metrics' | 'logs'>) => {
+    const newQueryType = option.value || 'metrics';
+    onChange({ 
+      ...query, 
+      queryType: newQueryType,
+      // Clear the other query field when switching types to avoid confusion
+      ...(newQueryType === 'logs' ? { queryText: '' } : { logQuery: '' })
+    });
+  };
+
+  return (
+    <Stack gap={2} direction="column">
+      {/* Query Type Selector */}
+      <InlineFieldRow>
+        <InlineField 
+          label="Query Type" 
+          labelWidth={14}
+          tooltip="Select whether to query metrics or logs"
+        >
+          <Select
+            options={queryTypeOptions}
+            value={queryTypeOptions.find(opt => opt.value === currentQueryType)}
+            onChange={onQueryTypeChange}
+            width={20}
+            placeholder="Select query type"
+          />
+        </InlineField>
+      </InlineFieldRow>
+
+      {/* Render appropriate editor based on query type */}
+      {currentQueryType === 'logs' ? (
+        <LogsQueryEditor 
+          query={query} 
+          onChange={onChange} 
+          onRunQuery={onRunQuery} 
+          datasource={datasource} 
+          {...restProps} 
+        />
+      ) : (
+        <MetricsQueryEditor 
+          query={query} 
+          onChange={onChange} 
+          onRunQuery={onRunQuery} 
+          datasource={datasource} 
+          {...restProps} 
+        />
+      )}
+    </Stack>
+  );
 }
 
 /**
