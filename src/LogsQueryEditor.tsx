@@ -55,7 +55,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
     // Handle logs-specific suggestion types (corrected to match actual suggestion kinds)
     if (item.kind === 'logs_service' || item.kind === 'logs_source' || item.kind === 'logs_level') {
-      // For facet filters like service:web-app, source:nginx, level:ERROR
+      // For facet filters like service:web-app, source:nginx, status:ERROR
       const facetType = item.kind.replace('logs_', ''); // Remove logs_ prefix
       insertValue = `${facetType}:${insertValue}`;
       
@@ -67,7 +67,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
         end++;
       }
     } else if (item.kind === 'logs_facet') {
-      // For facet names like service:, source:, level:
+      // For facet names like service:, source:, status:
       insertValue = item.insertText || item.label; // Should already include the colon
       
       // Find token boundaries for replacement
@@ -515,7 +515,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 fontFamily: theme.typography.fontFamilyMonospace,
                 color: theme.colors.primary.text 
               }}>
-                level:ERROR
+                status:ERROR
               </code>
               <span style={{ 
                 marginLeft: theme.spacing(1),

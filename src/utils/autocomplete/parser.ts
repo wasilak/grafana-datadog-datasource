@@ -561,7 +561,7 @@ function extractFilterTagValueToken(line: string, position: number): string {
 
 /**
  * Parse logs query to determine context for autocomplete suggestions
- * Handles Datadog logs search syntax: service:web-app level:ERROR "error message" AND/OR/NOT
+ * Handles Datadog logs search syntax: service:web-app status:ERROR "error message" AND/OR/NOT
  */
 export function parseLogsQuery(queryText: string, cursorPosition: number): QueryContext {
   if (!queryText) {
@@ -632,8 +632,8 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
     return 'logs_source';
   }
 
-  // Check for level: pattern
-  const levelMatch = beforeCursor.match(/\blevel:\s*([^:\s]*)$/);
+  // Check for status: or level: pattern (level: for backward compatibility)
+  const levelMatch = beforeCursor.match(/\b(status|level):\s*([^:\s]*)$/);
   if (levelMatch) {
     return 'logs_level';
   }
@@ -642,7 +642,7 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
   const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):?\s*$/);
   if (facetMatch && beforeCursor.endsWith(':')) {
     const facetName = facetMatch[1];
-    if (['service', 'source', 'level', 'host', 'env', 'version'].includes(facetName)) {
+    if (['service', 'source', 'status', 'level', 'host', 'env', 'version'].includes(facetName)) {
       return 'logs_facet';
     }
   }

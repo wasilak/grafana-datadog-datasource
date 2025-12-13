@@ -79,7 +79,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Validates: Requirements 11.1, 11.2, 11.3, 11.4, 11.5**
 
 - [x] 6. Implement log level and service filtering
-  - Add support for level filters (level:ERROR, level:(ERROR OR WARN))
+  - Add support for level filters (status:ERROR, status:(ERROR OR WARN))
   - Add support for service filters (service:api-gateway)
   - Include filtered fields in data frame output
   - _Requirements: 7.1, 7.2, 7.3, 8.1, 8.2_

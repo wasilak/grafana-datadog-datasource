@@ -484,7 +484,7 @@ export function generateLogsSuggestions(
       suggestions = generateLogsSourceSuggestions(context, sources);
       break;
     case 'logs_level':
-      // User is typing level: - suggest log levels
+      // User is typing status: - suggest log levels
       suggestions = generateLogsLevelSuggestions(context);
       break;
     default:
@@ -501,16 +501,16 @@ export function generateLogsSuggestions(
 }
 
 /**
- * Generate logs facet suggestions (service, source, level, etc.)
+ * Generate logs facet suggestions (service, source, status, etc.)
  */
 function generateLogsFacetSuggestions(context: QueryContext): CompletionItem[] {
   const facets = [
     { name: 'service', description: 'Filter by service name' },
     { name: 'source', description: 'Filter by log source' },
-    { name: 'level', description: 'Filter by log level' },
+    { name: 'status', description: 'Filter by log level (DEBUG, INFO, WARN, ERROR, FATAL)' },
     { name: 'host', description: 'Filter by hostname' },
-    { name: 'env', description: 'Filter by environment' },
-    { name: 'version', description: 'Filter by application version' },
+    { name: '@env', description: 'Filter by environment (custom attribute)' },
+    { name: '@version', description: 'Filter by application version (custom attribute)' },
   ];
 
   return facets

@@ -100,8 +100,8 @@ The implementation will leverage the existing plugin architecture, authenticatio
 
 #### Acceptance Criteria
 
-1. WHEN a logs query includes level filters like `level:ERROR` THEN the system SHALL filter logs to only that severity level
-2. WHEN multiple log levels are specified THEN the system SHALL support OR logic like `level:(ERROR OR WARN)`
+1. WHEN a logs query includes level filters like `status:ERROR` THEN the system SHALL filter logs to only that severity level
+2. WHEN multiple log levels are specified THEN the system SHALL support OR logic like `status:(ERROR OR WARN)`
 3. WHEN no level filter is specified THEN the system SHALL return logs of all severity levels
 4. WHEN logs are displayed THEN the system SHALL include the log level as a visible field in the data frame
 5. WHEN log levels are shown THEN the system SHALL use consistent level names (DEBUG, INFO, WARN, ERROR, FATAL)
