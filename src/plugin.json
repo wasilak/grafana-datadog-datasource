@@ -6,6 +6,8 @@
   "backend": true,
   "executable": "gpx_wasilak_datadog_datasource",
   "metrics": true,
+  "logs": true,
+  "streaming": true,
   "annotations": true,
   "category": "tsdb",
   "info": {
