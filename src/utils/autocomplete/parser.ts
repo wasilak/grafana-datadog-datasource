@@ -638,6 +638,18 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
     return 'logs_level';
   }
 
+  // Check for host: pattern (enhanced to handle boolean operators and wildcards)
+  const hostMatch = beforeCursor.match(/\bhost:\s*([^:\s\)]*\*?|[^:\s\)]*\s+(AND|OR)\s+[^:\s\)]*\*?)$/);
+  if (hostMatch) {
+    return 'logs_host';
+  }
+
+  // Check for env: pattern (enhanced to handle boolean operators and wildcards)
+  const envMatch = beforeCursor.match(/\benv:\s*([^:\s\)]*\*?|[^:\s\)]*\s+(AND|OR)\s+[^:\s\)]*\*?)$/);
+  if (envMatch) {
+    return 'logs_env';
+  }
+
   // Check for grouped facet patterns like status:(ERROR OR WARN)
   const groupedFacetMatch = beforeCursor.match(/\b(service|source|status|level|host|env|version):\s*\([^)]*$/);
   if (groupedFacetMatch) {
@@ -650,6 +662,10 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
       case 'status':
       case 'level':
         return 'logs_level';
+      case 'host':
+        return 'logs_host';
+      case 'env':
+        return 'logs_env';
       default:
         return 'logs_facet';
     }
@@ -704,6 +720,8 @@ function extractLogsCurrentToken(line: string, position: number, contextType: Qu
     case 'logs_service':
     case 'logs_source':
     case 'logs_level':
+    case 'logs_host':
+    case 'logs_env':
       // Extract token after the colon
       const colonMatch = beforeCursor.match(/:\s*([^:\s]*)$/);
       return colonMatch ? colonMatch[1] : '';

@@ -9,6 +9,8 @@ export class LogsCompletionItemProvider {
   private services: string[];
   private sources: string[];
   private logLevels: string[];
+  private hosts: string[];
+  private environments: string[];
   private facetNames: string[];
   private operators: string[];
 
@@ -20,6 +22,8 @@ export class LogsCompletionItemProvider {
     this.services = [];
     this.sources = [];
     this.logLevels = [];
+    this.hosts = [];
+    this.environments = [];
     this.facetNames = [];
   }
 
@@ -42,6 +46,20 @@ export class LogsCompletionItemProvider {
    */
   updateLevels(levels: string[]): void {
     this.logLevels = levels;
+  }
+
+  /**
+   * Update hosts data from backend
+   */
+  updateHosts(hosts: string[]): void {
+    this.hosts = hosts;
+  }
+
+  /**
+   * Update environments data from backend
+   */
+  updateEnvironments(environments: string[]): void {
+    this.environments = environments;
   }
 
   /**
@@ -74,6 +92,12 @@ export class LogsCompletionItemProvider {
         break;
       case 'logs_level':
         suggestions.push(...this.getLevelSuggestions(context));
+        break;
+      case 'logs_host':
+        suggestions.push(...this.getHostSuggestions(context));
+        break;
+      case 'logs_env':
+        suggestions.push(...this.getEnvironmentSuggestions(context));
         break;
       default:
         suggestions.push(...this.getDefaultSuggestions(context));
@@ -433,6 +457,10 @@ export class LogsCompletionItemProvider {
       case 'status':
       case 'level':
         return this.getLevelSuggestions(context);
+      case 'host':
+        return this.getHostSuggestions(context);
+      case 'env':
+        return this.getEnvironmentSuggestions(context);
       default:
         return this.getOperatorSuggestions(context);
     }
@@ -471,20 +499,30 @@ export class LogsCompletionItemProvider {
   }
 
   /**
-   * Get host suggestions (would be populated from backend)
+   * Get host suggestions
    */
   private getHostSuggestions(context: QueryContext): CompletionItem[] {
-    // TODO: Implement backend endpoint for host suggestions
-    // For now, return empty array until actual API integration is implemented
-    return [];
+    return this.hosts.map(host => ({
+      label: host,
+      kind: 'logs_host' as const,
+      detail: `Host: ${host}`,
+      insertText: host,
+      sortText: `2_${host}`,
+      documentation: `Filter logs from host: ${host}`
+    }));
   }
 
   /**
    * Get environment suggestions
    */
   private getEnvironmentSuggestions(context: QueryContext): CompletionItem[] {
-    // TODO: Implement backend endpoint for environment suggestions
-    // For now, return empty array until actual API integration is implemented
-    return [];
+    return this.environments.map(env => ({
+      label: env,
+      kind: 'logs_env' as const,
+      detail: `Environment: ${env}`,
+      insertText: env,
+      sortText: `2_${env}`,
+      documentation: `Filter logs from environment: ${env}`
+    }));
   }
 }

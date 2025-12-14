@@ -228,7 +228,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         // Fetch specific field values for logs contexts (service values, source values, etc.)
         let logsFieldValues: string[] = [];
-        if (queryType === 'logs' && ['logs_service', 'logs_source', 'logs_level'].includes(context.contextType)) {
+        if (queryType === 'logs' && ['logs_service', 'logs_source', 'logs_level', 'logs_host', 'logs_env'].includes(context.contextType)) {
           try {
             let fieldName = '';
             switch (context.contextType) {
@@ -240,6 +240,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 break;
               case 'logs_level':
                 fieldName = 'status'; // Datadog uses 'status' for log levels
+                break;
+              case 'logs_host':
+                fieldName = 'host';
+                break;
+              case 'logs_env':
+                fieldName = 'env';
                 break;
             }
             
@@ -269,6 +275,11 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 case 'logs_level':
                   logsFieldValues = logsLevels;
                   break;
+                case 'logs_host':
+                case 'logs_env':
+                  // No fallback data for host/env, will use empty array
+                  logsFieldValues = [];
+                  break;
               }
             } else {
               console.warn('Failed to fetch logs field values:', fieldValuesError);
@@ -282,6 +293,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                   break;
                 case 'logs_level':
                   logsFieldValues = logsLevels;
+                  break;
+                case 'logs_host':
+                case 'logs_env':
+                  // No fallback data for host/env, will use empty array
+                  logsFieldValues = [];
+                  break;
                   break;
               }
             }
@@ -313,6 +330,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 break;
               case 'logs_level':
                 logsProvider.updateLevels(logsFieldValues);
+                break;
+              case 'logs_host':
+                logsProvider.updateHosts(logsFieldValues);
+                break;
+              case 'logs_env':
+                logsProvider.updateEnvironments(logsFieldValues);
                 break;
             }
           }
