@@ -53,20 +53,26 @@ type LogsPageData struct {
 	ID   string `json:"id"`   // Cursor from previous response
 }
 
-// LogEntry represents a single log entry from Datadog
-// This structure matches the expected format from Datadog Logs API v2 response
+// LogEntry represents a single log entry from Datadog (CORRECTED STRUCTURE)
+// Updated to match Grafana's official logs data source standards
 type LogEntry struct {
-	ID         string                 `json:"id"`
-	Timestamp  time.Time             `json:"timestamp"`
-	Message    string                `json:"message"`
-	Level      string                `json:"level"`
-	Service    string                `json:"service,omitempty"`
-	Source     string                `json:"source,omitempty"`
-	Host       string                `json:"host,omitempty"`       // Common log attribute
-	Env        string                `json:"env,omitempty"`        // Environment (prod, staging, etc.)
-	Version    string                `json:"version,omitempty"`    // Application version
-	Tags       map[string]string     `json:"tags,omitempty"`       // Key-value tags
-	Attributes map[string]interface{} `json:"attributes,omitempty"` // Additional structured data
+	ID         string          `json:"id"`
+	Timestamp  time.Time       `json:"timestamp"`
+	Body       string          `json:"body"`       // ✅ CORRECT - Changed from Message to Body
+	Severity   string          `json:"severity"`   // ✅ CORRECT - Changed from Level to Severity
+	Labels     json.RawMessage `json:"labels"`     // ✅ CORRECT - All metadata as JSON
+}
+
+// LogLabels helper struct for JSON marshaling of labels field
+// Contains all metadata that was previously separate fields
+type LogLabels struct {
+	Service    string                 `json:"service,omitempty"`
+	Source     string                 `json:"source,omitempty"`
+	Host       string                 `json:"host,omitempty"`
+	Env        string                 `json:"env,omitempty"`
+	Version    string                 `json:"version,omitempty"`
+	Tags       map[string]string      `json:"tags,omitempty"`
+	Attributes map[string]interface{} `json:"attributes,omitempty"`
 }
 
 // LogsCacheEntry stores cached logs data with timestamp for TTL validation
@@ -1084,20 +1090,16 @@ func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEnt
 			}
 		}
 		
-		// Extract standard fields using the helper function
-		message, level, service, source, host, tags, remainingAttrs := d.extractLogAttributes(attributes)
+		// Extract standard fields using the new helper function
+		body, severity, labels := d.extractLogAttributesV2(attributes)
 		
-		// Create log entry
+		// Create log entry with corrected structure
 		entry := LogEntry{
-			ID:         logID,
-			Timestamp:  timestamp,
-			Message:    message,
-			Level:      level,
-			Service:    service,
-			Source:     source,
-			Host:       host,
-			Tags:       tags,
-			Attributes: remainingAttrs,
+			ID:        logID,
+			Timestamp: timestamp,
+			Body:      body,      // ✅ CORRECT - Changed from Message
+			Severity:  severity,  // ✅ CORRECT - Changed from Level
+			Labels:    labels,    // ✅ CORRECT - All metadata as JSON
 		}
 		
 		logEntries = append(logEntries, entry)
@@ -1151,20 +1153,16 @@ func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface
 			}
 		}
 		
-		// Extract standard fields using the helper function
-		message, level, service, source, host, tags, remainingAttrs := d.extractLogAttributes(attributes)
+		// Extract standard fields using the new helper function
+		body, severity, labels := d.extractLogAttributesV2(attributes)
 		
-		// Create log entry
+		// Create log entry with corrected structure
 		entry := LogEntry{
-			ID:         logID,
-			Timestamp:  timestamp,
-			Message:    message,
-			Level:      level,
-			Service:    service,
-			Source:     source,
-			Host:       host,
-			Tags:       tags,
-			Attributes: remainingAttrs,
+			ID:        logID,
+			Timestamp: timestamp,
+			Body:      body,      // ✅ CORRECT - Changed from Message
+			Severity:  severity,  // ✅ CORRECT - Changed from Level
+			Labels:    labels,    // ✅ CORRECT - All metadata as JSON
 		}
 		
 		logEntries = append(logEntries, entry)
@@ -1175,7 +1173,8 @@ func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface
 	return logEntries, nil
 }
 
-// extractLogAttributes extracts common log attributes from Datadog log entry
+// extractLogAttributes extracts common log attributes from Datadog log entry (LEGACY)
+// This function is kept for backward compatibility but should be replaced with extractLogAttributesV2
 func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (string, string, string, string, string, map[string]string, map[string]interface{}) {
 	var message, level, service, source, host string
 	tags := make(map[string]string)
@@ -1225,7 +1224,83 @@ func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (st
 	return message, level, service, source, host, tags, remainingAttrs
 }
 
-// createEmptyLogsDataFrame creates an empty logs data frame with proper structure
+// extractLogAttributesV2 extracts log attributes in the corrected format for Grafana logs
+// Returns body, severity, and labels as JSON for the new LogEntry structure
+func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (string, string, json.RawMessage) {
+	var body, severity string
+	
+	// Extract body (message content)
+	if msg, ok := attributes["message"].(string); ok {
+		body = msg
+	}
+	
+	// Extract severity (log level)
+	if lvl, ok := attributes["status"].(string); ok {
+		severity = strings.ToUpper(lvl) // Normalize to uppercase
+	}
+	
+	// Build labels structure containing all metadata
+	labels := LogLabels{}
+	
+	// Extract service
+	if svc, ok := attributes["service"].(string); ok {
+		labels.Service = svc
+	}
+	
+	// Extract source
+	if src, ok := attributes["source"].(string); ok {
+		labels.Source = src
+	}
+	
+	// Extract host
+	if h, ok := attributes["host"].(string); ok {
+		labels.Host = h
+	}
+	
+	// Extract environment
+	if env, ok := attributes["env"].(string); ok {
+		labels.Env = env
+	}
+	
+	// Extract version
+	if version, ok := attributes["version"].(string); ok {
+		labels.Version = version
+	}
+	
+	// Extract tags (Datadog returns tags as array of "key:value" strings)
+	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
+		labels.Tags = make(map[string]string)
+		for _, tag := range tagsArray {
+			if tagStr, ok := tag.(string); ok {
+				parts := strings.SplitN(tagStr, ":", 2)
+				if len(parts) == 2 {
+					labels.Tags[parts[0]] = parts[1]
+				}
+			}
+		}
+	}
+	
+	// Collect remaining attributes
+	labels.Attributes = make(map[string]interface{})
+	for key, value := range attributes {
+		if key != "message" && key != "status" && key != "service" && 
+		   key != "source" && key != "host" && key != "tags" && key != "timestamp" &&
+		   key != "env" && key != "version" {
+			labels.Attributes[key] = value
+		}
+	}
+	
+	// Marshal labels to JSON
+	labelsJSON, err := json.Marshal(labels)
+	if err != nil {
+		// If marshaling fails, create minimal JSON
+		labelsJSON = json.RawMessage(`{}`)
+	}
+	
+	return body, severity, labelsJSON
+}
+
+// createEmptyLogsDataFrame creates an empty logs data frame with proper structure (LEGACY)
 func (d *Datasource) createEmptyLogsDataFrame(refID string) data.Frames {
 	logger := log.New()
 	
@@ -1296,6 +1371,61 @@ func (d *Datasource) createEmptyLogsDataFrame(refID string) data.Frames {
 	return data.Frames{frame}
 }
 
+// createEmptyLogsDataFrameV2 creates an empty logs data frame with corrected structure
+func (d *Datasource) createEmptyLogsDataFrameV2(refID string) data.Frames {
+	logger := log.New()
+	
+	// Create data frame with corrected structure for logs
+	frame := data.NewFrame("logs")
+	frame.RefID = refID
+
+	// ✅ CORRECT - Create empty fields with corrected names and types
+	timestampField := data.NewField("timestamp", nil, []time.Time{})
+	timestampField.Config = &data.FieldConfig{
+		DisplayName: "Time",
+	}
+
+	bodyField := data.NewField("body", nil, []string{}) // ✅ CORRECT - Changed from message
+	bodyField.Config = &data.FieldConfig{
+		DisplayName: "Message", // Display name can still be "Message" for UI
+	}
+
+	severityField := data.NewField("severity", nil, []string{}) // ✅ CORRECT - Changed from level
+	severityField.Config = &data.FieldConfig{
+		DisplayName: "Level", // Display name can still be "Level" for UI
+	}
+
+	idField := data.NewField("id", nil, []string{}) // ✅ CORRECT - Added ID field
+	idField.Config = &data.FieldConfig{
+		DisplayName: "ID",
+	}
+
+	labelsField := data.NewField("labels", nil, []json.RawMessage{}) // ✅ CORRECT - Labels as JSON
+	labelsField.Config = &data.FieldConfig{
+		DisplayName: "Labels",
+	}
+
+	// ✅ CORRECT - Add fields in the correct order
+	frame.Fields = append(frame.Fields,
+		timestampField,
+		bodyField,     // ✅ CORRECT - body instead of message
+		severityField, // ✅ CORRECT - severity instead of level
+		idField,       // ✅ CORRECT - id field
+		labelsField,   // ✅ CORRECT - labels as JSON
+	)
+
+	// ✅ CORRECT - Set appropriate metadata for empty logs data frame
+	frame.Meta = &data.FrameMeta{
+		Type: data.FrameTypeLogLines,
+		// ✅ CORRECT - PreferredVisualization directly, not in Custom
+		PreferredVisualization: "logs",
+		ExecutedQueryString: "No log entries found",
+	}
+
+	logger.Debug("Created empty corrected logs data frame", "refID", refID)
+	return data.Frames{frame}
+}
+
 // validateLogEntry validates a log entry and returns any validation errors
 func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 	var errors []string
@@ -1305,19 +1435,27 @@ func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 		errors = append(errors, fmt.Sprintf("Entry %d: missing or invalid timestamp", index))
 	}
 	
-	// Message can be empty, but we should log it for debugging
-	if entry.Message == "" {
+	// Body can be empty, but we should log it for debugging
+	if entry.Body == "" {
 		// This is not an error, just a debug note
 	}
 	
-	// Validate log level if present
-	if entry.Level != "" {
+	// Validate severity if present
+	if entry.Severity != "" {
 		validLevels := map[string]bool{
 			"DEBUG": true, "INFO": true, "WARN": true, 
 			"ERROR": true, "FATAL": true, "TRACE": true,
 		}
-		if !validLevels[strings.ToUpper(entry.Level)] {
-			errors = append(errors, fmt.Sprintf("Entry %d: invalid log level '%s'", index, entry.Level))
+		if !validLevels[strings.ToUpper(entry.Severity)] {
+			errors = append(errors, fmt.Sprintf("Entry %d: invalid log severity '%s'", index, entry.Severity))
+		}
+	}
+	
+	// Validate labels JSON if present
+	if len(entry.Labels) > 0 {
+		var labels LogLabels
+		if err := json.Unmarshal(entry.Labels, &labels); err != nil {
+			errors = append(errors, fmt.Sprintf("Entry %d: invalid labels JSON: %v", index, err))
 		}
 	}
 	
@@ -1326,21 +1464,35 @@ func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 
 // sanitizeLogEntry cleans and normalizes a log entry
 func (d *Datasource) sanitizeLogEntry(entry LogEntry) LogEntry {
-	// Normalize log level to uppercase
-	if entry.Level != "" {
-		entry.Level = strings.ToUpper(entry.Level)
+	// Normalize severity to uppercase
+	if entry.Severity != "" {
+		entry.Severity = strings.ToUpper(entry.Severity)
 	}
 	
-	// Trim whitespace from string fields
-	entry.Message = strings.TrimSpace(entry.Message)
-	entry.Service = strings.TrimSpace(entry.Service)
-	entry.Source = strings.TrimSpace(entry.Source)
-	entry.Host = strings.TrimSpace(entry.Host)
-	entry.Env = strings.TrimSpace(entry.Env)
+	// Trim whitespace from body field
+	entry.Body = strings.TrimSpace(entry.Body)
 	
 	// Ensure timestamp is not zero - use current time as fallback
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now()
+	}
+	
+	// Sanitize labels JSON if present
+	if len(entry.Labels) > 0 {
+		var labels LogLabels
+		if err := json.Unmarshal(entry.Labels, &labels); err == nil {
+			// Clean up string fields in labels
+			labels.Service = strings.TrimSpace(labels.Service)
+			labels.Source = strings.TrimSpace(labels.Source)
+			labels.Host = strings.TrimSpace(labels.Host)
+			labels.Env = strings.TrimSpace(labels.Env)
+			labels.Version = strings.TrimSpace(labels.Version)
+			
+			// Re-marshal cleaned labels
+			if cleanedLabels, err := json.Marshal(labels); err == nil {
+				entry.Labels = cleanedLabels
+			}
+		}
 	}
 	
 	return entry
@@ -1409,19 +1561,39 @@ func (d *Datasource) sanitizeFieldValue(value interface{}) string {
 	return strValue
 }
 
-// createSampleLogEntries creates sample log entries for testing
+// createSampleLogEntries creates sample log entries for testing with corrected structure
 func (d *Datasource) createSampleLogEntries() []LogEntry {
 	now := time.Now()
-	return []LogEntry{
+	
+	// Create sample entries with new structure
+	entries := []LogEntry{
 		{
 			ID:        "log-1",
 			Timestamp: now.Add(-5 * time.Minute),
-			Message:   "Application started successfully",
-			Level:     "INFO",
-			Service:   "web-app",
-			Source:    "application",
-			Host:      "web-01",
-			Env:       "production",
+			Body:      "Application started successfully",  // ✅ CORRECT - Changed from Message
+			Severity:  "INFO",                             // ✅ CORRECT - Changed from Level
+		},
+		{
+			ID:        "log-2",
+			Timestamp: now.Add(-3 * time.Minute),
+			Body:      "Database connection failed",       // ✅ CORRECT - Changed from Message
+			Severity:  "ERROR",                            // ✅ CORRECT - Changed from Level
+		},
+		{
+			ID:        "log-3",
+			Timestamp: now.Add(-1 * time.Minute),
+			Body:      "User authentication successful",   // ✅ CORRECT - Changed from Message
+			Severity:  "DEBUG",                            // ✅ CORRECT - Changed from Level
+		},
+	}
+	
+	// Create labels for each entry
+	labelsData := []LogLabels{
+		{
+			Service: "web-app",
+			Source:  "application",
+			Host:    "web-01",
+			Env:     "production",
 			Tags: map[string]string{
 				"version": "1.2.3",
 				"region":  "us-east-1",
@@ -1432,47 +1604,50 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 			},
 		},
 		{
-			ID:        "log-2",
-			Timestamp: now.Add(-3 * time.Minute),
-			Message:   "Database connection failed",
-			Level:     "ERROR",
-			Service:   "api-gateway",
-			Source:    "database",
-			Host:      "api-01",
-			Env:       "production",
+			Service: "api-gateway",
+			Source:  "database",
+			Host:    "api-01",
+			Env:     "production",
 			Tags: map[string]string{
 				"version": "2.1.0",
 				"region":  "us-east-1",
 			},
 			Attributes: map[string]interface{}{
-				"error_code": 500,
-				"retry_count": 3,
+				"error_code":   500,
+				"retry_count":  3,
 			},
 		},
 		{
-			ID:        "log-3",
-			Timestamp: now.Add(-1 * time.Minute),
-			Message:   "User authentication successful",
-			Level:     "DEBUG",
-			Service:   "auth-service",
-			Source:    "authentication",
-			Host:      "auth-01",
-			Env:       "production",
+			Service: "auth-service",
+			Source:  "authentication",
+			Host:    "auth-01",
+			Env:     "production",
 			Tags: map[string]string{
 				"version": "1.0.5",
 				"region":  "us-west-2",
 			},
 			Attributes: map[string]interface{}{
-				"session_id": "sess-789",
-				"login_method": "oauth",
+				"session_id":    "sess-789",
+				"login_method":  "oauth",
 			},
 		},
 	}
+	
+	// Marshal labels to JSON for each entry
+	for i, labels := range labelsData {
+		if labelsJSON, err := json.Marshal(labels); err == nil {
+			entries[i].Labels = labelsJSON
+		} else {
+			entries[i].Labels = json.RawMessage(`{}`)
+		}
+	}
+	
+	return entries
 }
 
-// createLogsDataFrames creates Grafana DataFrames from log entries
-// This sets appropriate metadata for Grafana's logs panel recognition
-// Requirements: 1.2, 5.1, 5.2, 5.3, 5.4
+// createLogsDataFrames creates Grafana DataFrames from log entries (CORRECTED STRUCTURE)
+// Completely rewritten to match Grafana's official logs data source standards
+// Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 13.1
 func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) data.Frames {
 	logger := log.New()
 
@@ -1485,7 +1660,7 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	// Handle empty log entries case
 	if len(logEntries) == 0 {
 		logger.Debug("No log entries provided, creating empty logs data frame", "refID", refID)
-		return d.createEmptyLogsDataFrame(refID)
+		return d.createEmptyLogsDataFrameV2(refID)
 	}
 
 	// Create data frame with proper structure for logs
@@ -1495,15 +1670,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	// Prepare slices for each field with proper capacity
 	entryCount := len(logEntries)
 	timestamps := make([]time.Time, entryCount)
-	messages := make([]string, entryCount)
-	levels := make([]string, entryCount)
-	services := make([]string, entryCount)
-	sources := make([]string, entryCount)
-	hosts := make([]string, entryCount)
-	envs := make([]string, entryCount)
-
-	// Track additional attributes that appear across log entries
-	additionalFields := make(map[string][]interface{})
+	bodies := make([]string, entryCount)           // ✅ CORRECT - Changed from messages
+	severities := make([]string, entryCount)       // ✅ CORRECT - Changed from levels
+	ids := make([]string, entryCount)              // ✅ CORRECT - Added ID field
+	labels := make([]json.RawMessage, entryCount)  // ✅ CORRECT - Single labels field with JSON
 
 	// Validate and sanitize log entries
 	var validationErrors []string
@@ -1526,285 +1696,91 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 			"errors", validationErrors)
 	}
 
-	// Populate data from sanitized log entries with proper handling of empty values
+	// Populate data from sanitized log entries using corrected field structure
 	for i, entry := range sanitizedEntries {
 		timestamps[i] = entry.Timestamp
 		
-		// Handle message field - preserve multi-line formatting
-		messages[i] = entry.Message // Can be empty after sanitization
+		// ✅ CORRECT - Use Body field instead of Message
+		bodies[i] = entry.Body // Can be empty after sanitization
 		
-		// Handle optional fields with defaults for better display
-		if entry.Level != "" {
-			levels[i] = entry.Level
+		// ✅ CORRECT - Use Severity field instead of Level, with default
+		if entry.Severity != "" {
+			severities[i] = entry.Severity
 		} else {
-			levels[i] = "INFO" // Default level if not specified
-		}
-		
-		if entry.Service != "" {
-			services[i] = entry.Service
-		} else {
-			services[i] = "" // Keep empty for better filtering
+			severities[i] = "INFO" // Default severity if not specified
 		}
 		
-		if entry.Source != "" {
-			sources[i] = entry.Source
+		// ✅ CORRECT - Include ID field
+		ids[i] = entry.ID
+		
+		// ✅ CORRECT - Use Labels field as JSON
+		if len(entry.Labels) > 0 {
+			labels[i] = entry.Labels
 		} else {
-			sources[i] = "" // Keep empty for better filtering
-		}
-
-		if entry.Host != "" {
-			hosts[i] = entry.Host
-		} else {
-			hosts[i] = ""
-		}
-
-		if entry.Env != "" {
-			envs[i] = entry.Env
-		} else {
-			envs[i] = ""
-		}
-
-		// Process additional attributes from the sanitized log entry
-		if entry.Attributes != nil {
-			for attrKey, value := range entry.Attributes {
-				// Skip standard fields that we already handle
-				if attrKey == "timestamp" || attrKey == "message" || attrKey == "level" || 
-				   attrKey == "service" || attrKey == "source" || attrKey == "host" || attrKey == "env" {
-					continue
-				}
-
-				// Sanitize attribute key (remove special characters, make lowercase)
-				sanitizedKey := d.sanitizeFieldName(attrKey)
-				if sanitizedKey == "" {
-					continue // Skip invalid field names
-				}
-
-				// Initialize slice if this is the first time we see this attribute
-				if _, exists := additionalFields[sanitizedKey]; !exists {
-					additionalFields[sanitizedKey] = make([]interface{}, entryCount)
-				}
-
-				// Convert value to string for display with proper sanitization
-				strValue := d.sanitizeFieldValue(value)
-				additionalFields[sanitizedKey][i] = strValue
-			}
-
-			// Process tags as additional fields
-			if entry.Tags != nil {
-				for tagKey, value := range entry.Tags {
-					// Sanitize tag key and add prefix
-					sanitizedTagKey := d.sanitizeFieldName(tagKey)
-					if sanitizedTagKey == "" {
-						continue // Skip invalid tag names
-					}
-					
-					tagFieldKey := "tag_" + sanitizedTagKey // Prefix to distinguish from attributes
-					if _, exists := additionalFields[tagFieldKey]; !exists {
-						additionalFields[tagFieldKey] = make([]interface{}, entryCount)
-					}
-					
-					// Sanitize tag value
-					sanitizedValue := d.sanitizeFieldValue(value)
-					additionalFields[tagFieldKey][i] = sanitizedValue
-				}
-			}
+			labels[i] = json.RawMessage(`{}`) // Empty JSON object if no labels
 		}
 	}
 
-	// Fill in missing values for additional fields
-	for fieldKey, values := range additionalFields {
-		for i := range values {
-			if values[i] == nil {
-				values[i] = ""
-			}
-		}
-		// Avoid unused variable warning
-		_ = fieldKey
-	}
-
-	// Create timestamp field with proper configuration for logs
+	// ✅ CORRECT - Create timestamp field (standard name)
 	timestampField := data.NewField("timestamp", nil, timestamps)
 	timestampField.Config = &data.FieldConfig{
 		DisplayName: "Time",
-		Unit:        "time:YYYY-MM-DD HH:mm:ss", // Proper time formatting
-		Custom: map[string]interface{}{
-			"displayMode": "list", // Display as list for logs panel
-			"sortable":    true,   // Enable sorting for table panel
-		},
+		Unit:        "time:YYYY-MM-DD HH:mm:ss",
 	}
 
-	// Create message field with proper configuration
-	messageField := data.NewField("message", nil, messages)
-	messageField.Config = &data.FieldConfig{
-		DisplayName: "Message",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         400,    // Optimal width for message column
-			"wrap":          true,   // Enable text wrapping for long messages
-		},
+	// ✅ CORRECT - Create body field (changed from message)
+	bodyField := data.NewField("body", nil, bodies)
+	bodyField.Config = &data.FieldConfig{
+		DisplayName: "Message", // Display name can still be "Message" for UI
 	}
 
-	// Create level field with proper configuration
-	levelField := data.NewField("level", nil, levels)
-	levelField.Config = &data.FieldConfig{
-		DisplayName: "Level",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         80,     // Optimal width for level column
-			// Color mapping for different log levels (using custom field for now)
-			"levelColors": map[string]string{
-				"ERROR": "red",
-				"FATAL": "red", 
-				"WARN":  "orange",
-				"INFO":  "blue",
-				"DEBUG": "green",
-				"TRACE": "gray",
-			},
-		},
+	// ✅ CORRECT - Create severity field (changed from level)
+	severityField := data.NewField("severity", nil, severities)
+	severityField.Config = &data.FieldConfig{
+		DisplayName: "Level", // Display name can still be "Level" for UI
 	}
 
-	// Create service field with proper configuration
-	serviceField := data.NewField("service", nil, services)
-	serviceField.Config = &data.FieldConfig{
-		DisplayName: "Service",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         120,    // Optimal width for service column
-		},
+	// ✅ CORRECT - Create ID field
+	idField := data.NewField("id", nil, ids)
+	idField.Config = &data.FieldConfig{
+		DisplayName: "ID",
 	}
 
-	// Create source field with proper configuration
-	sourceField := data.NewField("source", nil, sources)
-	sourceField.Config = &data.FieldConfig{
-		DisplayName: "Source",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         100,    // Optimal width for source column
-		},
+	// ✅ CORRECT - Create labels field with JSON structure
+	labelsField := data.NewField("labels", nil, labels)
+	labelsField.Config = &data.FieldConfig{
+		DisplayName: "Labels",
 	}
 
-	// Create host field with proper configuration
-	hostField := data.NewField("host", nil, hosts)
-	hostField.Config = &data.FieldConfig{
-		DisplayName: "Host",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         100,    // Optimal width for host column
-		},
-	}
-
-	// Create environment field with proper configuration
-	envField := data.NewField("env", nil, envs)
-	envField.Config = &data.FieldConfig{
-		DisplayName: "Environment",
-		Custom: map[string]interface{}{
-			"displayMode":   "list",
-			"sortable":      true,   // Enable sorting for table panel
-			"filterable":    true,   // Enable filtering for table panel
-			"width":         100,    // Optimal width for environment column
-		},
-	}
-
-	// Add core fields to frame in the correct order for logs display
-	// Order is important: timestamp first, then message, then metadata fields
+	// ✅ CORRECT - Add fields in the correct order for Grafana logs recognition
 	frame.Fields = append(frame.Fields,
 		timestampField,
-		messageField,
-		levelField,
-		serviceField,
-		sourceField,
-		hostField,
-		envField,
+		bodyField,     // ✅ CORRECT - body instead of message
+		severityField, // ✅ CORRECT - severity instead of level
+		idField,       // ✅ CORRECT - id field
+		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
-	// Add additional fields from attributes and tags
-	for fieldName, values := range additionalFields {
-		// Convert []interface{} to []string for consistent display
-		stringValues := make([]string, len(values))
-		for i, v := range values {
-			if str, ok := v.(string); ok {
-				stringValues[i] = str
-			} else {
-				stringValues[i] = fmt.Sprintf("%v", v)
-			}
-		}
-
-		additionalField := data.NewField(fieldName, nil, stringValues)
-		additionalField.Config = &data.FieldConfig{
-			DisplayName: fieldName,
-			Custom: map[string]interface{}{
-				"displayMode":   "list",
-				"sortable":      true,   // Enable sorting for table panel
-				"filterable":    true,   // Enable filtering for table panel
-				"width":         150,    // Default width for additional fields
-			},
-		}
-		frame.Fields = append(frame.Fields, additionalField)
-	}
-
-	// Set appropriate metadata to indicate this is log data for Grafana's logs panel recognition
-	// Requirements 13.1, 13.2, 13.3, 13.4, 13.5
+	// ✅ CORRECT - Set appropriate metadata for Grafana's logs panel recognition
 	frame.Meta = &data.FrameMeta{
 		Type: data.FrameTypeLogLines, // Critical: This tells Grafana this is log data
+		// ✅ CORRECT - PreferredVisualization directly, not in Custom
+		PreferredVisualization: "logs",
 		Custom: map[string]interface{}{
-			"preferredVisualisationType": "logs", // Preferred visualization type (Requirement 13.1)
-			// Enhanced metadata for different panel types (Requirement 13.4)
-			"supportedVisualisationTypes": []string{"logs", "table", "stat", "text"},
-			// Table panel configuration (Requirement 13.3)
-			"tableConfig": map[string]interface{}{
-				"sortable":     true,
-				"filterable":   true,
-				"resizable":    true,
-				"defaultSort":  "timestamp",
-				"defaultOrder": "desc",
-			},
-			// Logs panel configuration (Requirement 13.2)
-			"logsConfig": map[string]interface{}{
-				"timestampField": "timestamp",
-				"messageField":   "message",
-				"levelField":     "level",
-				"serviceField":   "service",
-				"sourceField":    "source",
-				"wrapLines":      true,
-				"showTime":       true,
-				"showLevel":      true,
-				"showLabels":     true,
-			},
-			// Field mapping for other panel types (Requirement 13.4)
-			"fieldMapping": map[string]interface{}{
-				"timeField":    "timestamp",
-				"valueFields":  []string{"level", "service", "source", "host", "env"},
-				"labelFields":  []string{"service", "source", "host", "env"},
-				"stringFields": []string{"message", "level", "service", "source", "host", "env"},
-			},
-			// Ensure no interference with metrics (Requirement 13.5)
-			"dataType": "logs",
-			"isMetrics": false,
+			// Enhanced metadata for search highlighting and filtering
+			"searchWords": []string{}, // For search term highlighting
+			"limit":       entryCount, // For pagination info
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
-		// Add field information for better panel compatibility
-		Stats: []data.QueryStat{
-			{FieldConfig: data.FieldConfig{DisplayName: "Log Entries"}, Value: float64(entryCount)},
-		},
 	}
 
-	logger.Debug("Created logs data frame with enhanced structure", 
+	logger.Debug("Created corrected logs data frame structure", 
 		"refID", refID, 
 		"entryCount", entryCount,
 		"frameType", frame.Meta.Type,
-		"fieldCount", len(frame.Fields),
-		"additionalFieldCount", len(additionalFields))
+		"preferredVisualization", frame.Meta.PreferredVisualization,
+		"fieldCount", len(frame.Fields))
 
 	return data.Frames{frame}
 }
