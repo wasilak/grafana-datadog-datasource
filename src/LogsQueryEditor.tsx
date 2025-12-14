@@ -824,7 +824,23 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                   `}</style>
                 </>
               ) : (
-                `of ${currentPage}+`
+                <>
+                  <span>{`of ${currentPage}+`}</span>
+                  {(() => {
+                    const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                    const isCached = isPageCached(cacheKey, currentPage);
+                    return isCached ? (
+                      <span style={{ 
+                        fontSize: '10px', 
+                        color: theme.colors.success.main,
+                        opacity: 0.7,
+                        marginLeft: '4px'
+                      }}>
+                        💾
+                      </span>
+                    ) : null;
+                  })()}
+                </>
               )}
             </span>
             
