@@ -3358,7 +3358,7 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 	if err != nil {
 		logger.Error("Failed to fetch services from Datadog Logs API", "error", err, "traceID", traceID)
 		// Return empty array on error to prevent autocomplete from breaking
-		services = []string{}
+		services = make([]string, 0)
 	}
 
 	// Cache the results
@@ -3460,7 +3460,7 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	if err != nil {
 		logger.Error("Failed to fetch sources from Datadog Logs API", "error", err, "traceID", traceID)
 		// Return empty array on error to prevent autocomplete from breaking
-		sources = []string{}
+		sources = make([]string, 0)
 	}
 
 	// Cache the results
@@ -3731,10 +3731,8 @@ func (d *Datasource) LogsFieldValuesHandler(ctx context.Context, req *backend.Ca
 	fieldValues, err := d.fetchLogsFieldValues(ctx, fieldName, apiKey, appKey, site)
 	if err != nil {
 		logger.Error("Failed to fetch field values from Datadog Logs API", "error", err, "fieldName", fieldName, "traceID", traceID)
-		return sender.Send(&backend.CallResourceResponse{
-			Status: 500,
-			Body:   []byte(fmt.Sprintf(`{"error": "failed to fetch %s values: %s"}`, fieldName, err.Error())),
-		})
+		// Return empty array on error to prevent autocomplete from breaking
+		fieldValues = make([]string, 0)
 	}
 
 	duration := time.Since(startTime)
@@ -3895,8 +3893,8 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 		}
 	}
 
-	// Convert set to slice
-	var fieldValues []string
+	// Convert set to slice - ensure we return empty slice instead of nil
+	fieldValues := make([]string, 0, len(fieldValuesSet))
 	for value := range fieldValuesSet {
 		fieldValues = append(fieldValues, value)
 	}
