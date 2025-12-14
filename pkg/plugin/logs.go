@@ -222,8 +222,19 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
 		d.concurrencyLimit <- struct{}{}
 		
-		// Execute single page request
-		logEntries, cursor, err := d.executeSingleLogsPage(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site)
+		// Add delay between requests to respect rate limits (especially for pagination)
+		if pageCount > 0 {
+			// Progressive delay: 100ms, 200ms, 400ms, etc. to avoid rate limits
+			delay := time.Duration(100*(1<<uint(pageCount-1))) * time.Millisecond
+			if delay > 2*time.Second {
+				delay = 2 * time.Second // Cap at 2 seconds
+			}
+			logger.Debug("Adding delay between paginated requests", "delay", delay, "pageNumber", pageCount+1)
+			time.Sleep(delay)
+		}
+		
+		// Execute single page request with retry logic for rate limits
+		logEntries, cursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site, pageCount+1)
 		
 		// Release semaphore slot
 		<-d.concurrencyLimit
@@ -365,6 +376,56 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		"nextCursor", nextCursor)
 
 	return logEntries, nextCursor, nil
+}
+
+// executeSingleLogsPageWithRetry executes a single page with retry logic for rate limits
+func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageNumber int) ([]LogEntry, string, error) {
+	logger := log.New()
+	
+	maxRetries := 3
+	baseDelay := 1 * time.Second
+	
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		logEntries, nextCursor, err := d.executeSingleLogsPage(ctx, logsQuery, from, to, cursor, apiKey, appKey, site)
+		
+		if err == nil {
+			return logEntries, nextCursor, nil
+		}
+		
+		// Check if this is a rate limit error (HTTP 429)
+		if strings.Contains(err.Error(), "HTTP 429") || strings.Contains(err.Error(), "Too many requests") {
+			if attempt < maxRetries {
+				// Exponential backoff: 1s, 2s, 4s
+				delay := time.Duration(1<<uint(attempt)) * baseDelay
+				logger.Warn("Rate limited by Datadog API, retrying", 
+					"attempt", attempt+1, 
+					"maxRetries", maxRetries+1,
+					"delay", delay,
+					"pageNumber", pageNumber)
+				
+				// Use a separate timer to avoid blocking the main context
+				timer := time.NewTimer(delay)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return nil, "", ctx.Err()
+				case <-timer.C:
+					// Continue to next retry
+				}
+			} else {
+				logger.Error("Max retries exceeded for rate limited request", 
+					"maxRetries", maxRetries+1,
+					"pageNumber", pageNumber)
+				return nil, "", fmt.Errorf("rate limit exceeded after %d retries: %w", maxRetries+1, err)
+			}
+		} else {
+			// Non-rate-limit error, don't retry
+			return nil, "", err
+		}
+	}
+	
+	// This should never be reached, but just in case
+	return nil, "", fmt.Errorf("unexpected error after retries")
 }
 
 // translateLogsQuery translates Grafana query format to Datadog's logs search syntax
