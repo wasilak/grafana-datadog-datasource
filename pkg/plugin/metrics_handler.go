@@ -191,8 +191,18 @@ func (h *MetricsHandler) executeQueries(ctx context.Context) (*backend.QueryData
 		return response, nil
 	}
 
-	// Process the response and create frames for each query/formula
-	h.datasource.processTimeseriesResponse(&resp, h.queryModels, response)
+	// Process the response and create frames for each query/formula using parser
+	parser := NewMetricsResponseParser(h.datasource)
+	err = parser.ParseTimeseriesResponse(&resp, h.queryModels, response)
+	if err != nil {
+		logger.Error("Failed to parse metrics response", "error", err)
+		// Return error for all queries
+		for refID := range h.queryModels {
+			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, 
+				fmt.Sprintf("Failed to process metrics response: %v", err))
+		}
+		return response, nil
+	}
 
 	return response, nil
 }

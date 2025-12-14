@@ -195,6 +195,9 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel, q *backend.DataQuery) (data.Frames, error) {
 	logger := log.New()
 
+	// Create logs response parser
+	parser := NewLogsResponseParser(d)
+
 	// Translate Grafana query to Datadog logs search syntax
 	logsQuery, err := d.translateLogsQuery(qm, q)
 	if err != nil {
@@ -244,7 +247,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
 			"currentPage", currentPage)
-		frames := d.createLogsDataFrames(cachedEntry.LogEntries, q.RefID)
+		// Use parser to create frames from cached entries
+		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID)
 		return frames, nil
 	}
 	
@@ -267,8 +271,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		"cacheTTL", cacheTTL)
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
-	// Create Grafana data frames from log entries
-	frames := d.createLogsDataFrames(logEntries, q.RefID)
+	// Use parser to create Grafana data frames from log entries
+	frames := parser.createLogsDataFrames(logEntries, q.RefID)
 	
 	// Add pagination metadata to the response
 	if len(frames) > 0 {
@@ -529,8 +533,9 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		return nil, "", fmt.Errorf("failed to decode logs API response: %w", err)
 	}
 
-	// Parse log entries from response
-	logEntries, err := d.parseDatadogLogsResponseV2(logsResponse.Data)
+	// Parse log entries from response using parser
+	parser := NewLogsResponseParser(d)
+	logEntries, err := parser.convertDataArrayToLogEntries(logsResponse.Data)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to parse logs response: %w", err)
 	}
