@@ -88,7 +88,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 7: Log Level and Service Filtering**
   - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3, 8.4, 8.5**
 
-- [ ] 7. Add variable interpolation support for logs
+- [x] 7. Add variable interpolation support for logs
   - Extend applyTemplateVariables method in datasource.ts for logs queries
   - Reuse existing variableInterpolationService patterns
   - Add safety measures for logs query injection prevention
@@ -98,7 +98,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 5: Variable Interpolation Consistency**
   - **Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5**
 
-- [ ] 8. Implement pagination and caching for logs
+- [x] 8. Implement pagination and caching for logs
   - Add pagination support using Datadog's cursor-based system
   - Extend existing AutocompleteCache system for logs results
   - Implement 30-second cache TTL and concurrency limiting
@@ -108,7 +108,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 8: Pagination and Caching Consistency**
   - **Validates: Requirements 10.1, 10.4**
 
-- [ ] 9. Extend error handling for logs
+- [x] 9. Extend error handling for logs
   - Extend parseDatadogError function for logs-specific errors
   - Add logs permission scope messages (logs_read_data)
   - Reuse existing error message formatting patterns
@@ -118,7 +118,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - **Property 9: Error handling Pattern Reuse**
   - **Validates: Requirements 12.2, 12.3**
 
-- [ ] 10. Add query validation and help system
+- [x] 10. Add query validation and help system
   - Extend existing QueryEditorHelp component for logs syntax
   - Add logs-specific validation in filterQuery method
   - Provide contextual help for Datadog logs search syntax
