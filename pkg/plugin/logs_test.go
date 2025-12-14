@@ -464,6 +464,19 @@ func TestLogsAPIIntegrationConsistency(t *testing.T) {
 				{"boolean operators lowercase", "error and warning", "error AND warning"},
 				{"boolean operators mixed case", "error Or warning", "error OR warning"},
 				{"not operator", "not error", "NOT error"},
+				
+				// Task 11: Advanced Boolean Operators and Wildcards
+				{"complex boolean with grouping", "service:(web-app OR api-service) AND status:ERROR", "service:(web-app OR api-service) AND status:ERROR"},
+				{"nested boolean expressions", "(service:web-app OR service:api) AND (status:ERROR OR status:WARN)", "(service:web-app OR service:api) AND (status:ERROR OR status:WARN)"},
+				{"wildcard patterns", "error* AND NOT test-*", "error* AND NOT test-*"},
+				{"wildcard in facets", "service:web-* AND host:prod-*", "service:web-* AND host:prod-*"},
+				{"multiple wildcards normalized", "error** service", "error* service"},
+				{"log level normalization", "status:error OR status:warn", "status:ERROR OR status:WARN"},
+				{"grouped log levels", "status:(error OR warn OR fatal)", "status:(ERROR OR WARN OR FATAL)"},
+				{"custom attributes", "@env:production AND @version:1.*", "@env:production AND @version:1.*"},
+				{"quoted service names", "service:\"my service\" AND status:ERROR", "service:\"my service\" AND status:ERROR"},
+				{"service names with spaces auto-quoted", "service:my service", "service:\"my service\""},
+				{"complex query with all features", "service:(web-* OR api-*) AND status:(ERROR OR WARN) AND NOT source:health-check", "service:(web-* OR api-*) AND status:(ERROR OR WARN) AND NOT source:health-check"},
 			}
 			
 			for _, tc := range testCases {
@@ -586,30 +599,43 @@ func TestLogsPaginationAndCaching(t *testing.T) {
 		
 		// Test Property: Cache key consistency
 		t.Run("cache key consistency", func(t *testing.T) {
-			// Property: Cache keys should be deterministic and unique for different queries
+			// Property: Cache keys should be deterministic and unique for different queries and pages
 			// Requirements: 10.4 - cache logs results appropriately
 			
 			// Test that same query parameters produce same cache key
 			query1 := "service:web-app"
 			from1 := int64(1640995200000)
 			to1 := int64(1640998800000)
+			cursor1 := "first"
+			pageSize1 := 100
 			
-			cacheKey1 := fmt.Sprintf("logs:%s:%d:%d", query1, from1, to1)
-			cacheKey1Duplicate := fmt.Sprintf("logs:%s:%d:%d", query1, from1, to1)
+			cacheKey1 := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query1, from1, to1, cursor1, pageSize1)
+			cacheKey1Duplicate := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query1, from1, to1, cursor1, pageSize1)
 			
 			assert.Equal(t, cacheKey1, cacheKey1Duplicate, "Same parameters should produce same cache key")
 			
 			// Test that different query parameters produce different cache keys
 			query2 := "service:api-gateway"
-			cacheKey2 := fmt.Sprintf("logs:%s:%d:%d", query2, from1, to1)
+			cacheKey2 := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query2, from1, to1, cursor1, pageSize1)
 			
 			assert.NotEqual(t, cacheKey1, cacheKey2, "Different queries should produce different cache keys")
 			
 			// Test that different time ranges produce different cache keys
 			from2 := int64(1640991600000)
-			cacheKey3 := fmt.Sprintf("logs:%s:%d:%d", query1, from2, to1)
+			cacheKey3 := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query1, from2, to1, cursor1, pageSize1)
 			
 			assert.NotEqual(t, cacheKey1, cacheKey3, "Different time ranges should produce different cache keys")
+			
+			// Test that different pagination parameters produce different cache keys
+			cursor2 := "page2-cursor"
+			cacheKey4 := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query1, from1, to1, cursor2, pageSize1)
+			
+			assert.NotEqual(t, cacheKey1, cacheKey4, "Different cursors should produce different cache keys")
+			
+			pageSize2 := 50
+			cacheKey5 := fmt.Sprintf("logs:%s:%d:%d:%s:%d", query1, from1, to1, cursor1, pageSize2)
+			
+			assert.NotEqual(t, cacheKey1, cacheKey5, "Different page sizes should produce different cache keys")
 		})
 		
 		// Test Property: Pagination state consistency

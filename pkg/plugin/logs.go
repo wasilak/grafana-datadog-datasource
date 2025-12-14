@@ -199,8 +199,22 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	from := q.TimeRange.From.UnixMilli()
 	to := q.TimeRange.To.UnixMilli()
 
-	// Create cache key for this query (includes query, time range)
-	cacheKey := fmt.Sprintf("logs:%s:%d:%d", logsQuery, from, to)
+	// Get pagination parameters first (needed for cache key)
+	pageSize := 100 // Default page size
+	if qm.PageSize != nil && *qm.PageSize > 0 {
+		pageSize = *qm.PageSize
+		if pageSize > 1000 {
+			pageSize = 1000 // Cap at 1000 for API limits
+		}
+	}
+
+	// Create cache key for this query (includes query, time range, and pagination)
+	// Include cursor and page size to ensure each page is cached separately
+	cursorKey := qm.NextCursor
+	if cursorKey == "" {
+		cursorKey = "first" // Use "first" for the first page
+	}
+	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%s:%d", logsQuery, from, to, cursorKey, pageSize)
 	
 	// Check cache first (30-second TTL as per requirements)
 	cacheTTL := 30 * time.Second
@@ -210,15 +224,6 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		return frames, nil
 	}
 
-	// Get pagination parameters
-	pageSize := 100 // Default page size
-	if qm.PageSize != nil && *qm.PageSize > 0 {
-		pageSize = *qm.PageSize
-		if pageSize > 1000 {
-			pageSize = 1000 // Cap at 1000 for API limits
-		}
-	}
-	
 	currentPage := 1 // Default to first page
 	if qm.CurrentPage != nil && *qm.CurrentPage > 0 {
 		currentPage = *qm.CurrentPage
