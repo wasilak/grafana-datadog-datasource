@@ -5,6 +5,7 @@ import { generateSuggestions, generateLogsSuggestions, groupSuggestions } from '
 import { validateQuery } from '../utils/queryValidator';
 import { getBackendSrv } from '@grafana/runtime';
 import { variableInterpolationService } from '../utils/variableInterpolation';
+import { LogsCompletionItemProvider } from '../utils/autocomplete/logsCompletionProvider';
 
 const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
 
@@ -42,6 +43,9 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
   if (!datasourceUid) {
     console.warn('useQueryAutocomplete: datasourceUid is required but not provided');
   }
+
+  // Initialize logs completion provider for context-aware suggestions
+  const logsProviderRef = useRef<LogsCompletionItemProvider>(new LogsCompletionItemProvider());
 
   // State management
   const [state, setState] = useState<AutocompleteState>({
@@ -89,6 +93,8 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let metrics: string[] = [];
         let logsServices: string[] = [];
         let logsSources: string[] = [];
+        let logsLevels: string[] = [];
+        let logsFields: string[] = [];
         
         if (queryType === 'metrics') {
           // Fetch metric names from backend (existing pattern)
@@ -113,48 +119,58 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             }
           }
         } else if (queryType === 'logs') {
-          // Fetch logs services and sources from backend (reusing existing patterns)
-          try {
-            const servicesResponse = await getBackendSrv()
-              .fetch({
-                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`,
-                method: 'GET',
-              })
-              .toPromise();
-            logsServices = (servicesResponse as any).data as string[];
-          } catch (servicesError) {
-            const err = servicesError as any;
-            if (err.status === 401) {
-              throw new Error('Datadog credentials invalid');
-            } else if (err.status === 404) {
-              throw new Error('Logs services endpoint not found (backend not available)');
-            } else {
-              console.warn('Failed to fetch logs services:', servicesError);
-              // Continue with empty services if backend call fails
-              logsServices = [];
-            }
-          }
+          // Fetch logs services, sources, levels, and fields from backend (reusing existing patterns)
+          const logsEndpoints = [
+            { name: 'services', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`, target: 'logsServices' },
+            { name: 'sources', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`, target: 'logsSources' },
+            { name: 'levels', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/levels`, target: 'logsLevels' },
+            { name: 'fields', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/fields`, target: 'logsFields' }
+          ];
 
-          try {
-            const sourcesResponse = await getBackendSrv()
-              .fetch({
-                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`,
-                method: 'GET',
-              })
-              .toPromise();
-            logsSources = (sourcesResponse as any).data as string[];
-          } catch (sourcesError) {
-            const err = sourcesError as any;
-            if (err.status === 401) {
-              throw new Error('Datadog credentials invalid');
-            } else if (err.status === 404) {
-              throw new Error('Logs sources endpoint not found (backend not available)');
-            } else {
-              console.warn('Failed to fetch logs sources:', sourcesError);
-              // Continue with empty sources if backend call fails
-              logsSources = [];
+          // Fetch all logs autocomplete data in parallel for better performance
+          const logsPromises = logsEndpoints.map(async (endpoint) => {
+            try {
+              const response = await getBackendSrv()
+                .fetch({
+                  url: endpoint.url,
+                  method: 'GET',
+                })
+                .toPromise();
+              return { target: endpoint.target, data: (response as any).data as string[] };
+            } catch (error) {
+              const err = error as any;
+              if (err.status === 401) {
+                throw new Error('Datadog credentials invalid');
+              } else if (err.status === 404) {
+                throw new Error(`Logs ${endpoint.name} endpoint not found (backend not available)`);
+              } else {
+                console.warn(`Failed to fetch logs ${endpoint.name}:`, error);
+                // Continue with empty data if backend call fails
+                return { target: endpoint.target, data: [] };
+              }
             }
-          }
+          });
+
+          // Wait for all logs data to be fetched
+          const logsResults = await Promise.all(logsPromises);
+          
+          // Assign results to appropriate variables
+          logsResults.forEach(result => {
+            switch (result.target) {
+              case 'logsServices':
+                logsServices = result.data;
+                break;
+              case 'logsSources':
+                logsSources = result.data;
+                break;
+              case 'logsLevels':
+                logsLevels = result.data;
+                break;
+              case 'logsFields':
+                logsFields = result.data;
+                break;
+            }
+          });
         }
 
         // Fetch tags for the metric if in tag context or grouping_tag context
@@ -214,7 +230,15 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         if (queryType === 'metrics') {
           suggestions = generateSuggestions(context, metrics, tags, tagValues);
         } else if (queryType === 'logs') {
-          suggestions = generateLogsSuggestions(context, logsServices, logsSources);
+          // Update logs provider with backend data
+          const logsProvider = logsProviderRef.current;
+          logsProvider.updateServices(logsServices);
+          logsProvider.updateSources(logsSources);
+          logsProvider.updateLevels(logsLevels);
+          logsProvider.updateFields(logsFields);
+          
+          // Use context-aware completion provider for enhanced suggestions
+          suggestions = logsProvider.getContextSpecificSuggestions(queryText, context.cursorPosition, context);
         }
         
         console.log('Suggestions generated:', {

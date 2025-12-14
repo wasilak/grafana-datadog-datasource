@@ -35,6 +35,8 @@ type Datasource struct {
 	cache            *AutocompleteCache
 	logsCache        map[string]*LogsCacheEntry // Separate cache for logs data
 	logsCacheMu      sync.Mutex                 // Mutex for logs cache
+	logsAutocompleteCache map[string]*LogsAutocompleteCacheEntry // Cache for logs autocomplete data
+	logsAutocompleteMu    sync.Mutex                             // Mutex for logs autocomplete cache
 	concurrencyLimit chan struct{}              // Semaphore for max 5 concurrent requests
 }
 
@@ -51,6 +53,12 @@ type AutocompleteCache struct {
 
 // CacheEntry stores cached data with timestamp for TTL validation
 type CacheEntry struct {
+	Data      []string
+	Timestamp time.Time
+}
+
+// LogsAutocompleteCacheEntry stores cached logs autocomplete data with timestamp for TTL validation
+type LogsAutocompleteCacheEntry struct {
 	Data      []string
 	Timestamp time.Time
 }
@@ -90,6 +98,7 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 			entries: make(map[string]*CacheEntry),
 		},
 		logsCache:        make(map[string]*LogsCacheEntry), // Initialize logs cache
+		logsAutocompleteCache: make(map[string]*LogsAutocompleteCacheEntry), // Initialize logs autocomplete cache
 		concurrencyLimit: make(chan struct{}, 5),           // Max 5 concurrent requests to Datadog
 	}
 
@@ -851,6 +860,10 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.LogsServicesHandler(ctx, req, sender)
 	case req.Method == "GET" && req.Path == "autocomplete/logs/sources":
 		return d.LogsSourcesHandler(ctx, req, sender)
+	case req.Method == "GET" && req.Path == "autocomplete/logs/levels":
+		return d.LogsLevelsHandler(ctx, req, sender)
+	case req.Method == "GET" && req.Path == "autocomplete/logs/fields":
+		return d.LogsFieldsHandler(ctx, req, sender)
 	// Variable resource handlers - Grafana strips "resources/" prefix
 	case req.Method == "POST" && req.Path == "metrics":
 		return d.VariableMetricsHandler(ctx, req, sender)
@@ -1568,6 +1581,49 @@ func (d *Datasource) CleanExpiredLogsCache(ttl time.Duration) {
 	for key, entry := range d.logsCache {
 		if now.Sub(entry.Timestamp) > ttl {
 			delete(d.logsCache, key)
+		}
+	}
+}
+
+// GetCachedLogsAutocompleteEntry retrieves a cached logs autocomplete entry if valid (not expired)
+func (d *Datasource) GetCachedLogsAutocompleteEntry(key string, ttl time.Duration) *LogsAutocompleteCacheEntry {
+	d.logsAutocompleteMu.Lock()
+	defer d.logsAutocompleteMu.Unlock()
+
+	entry, ok := d.logsAutocompleteCache[key]
+	if !ok {
+		return nil
+	}
+
+	// Check if expired
+	if time.Since(entry.Timestamp) > ttl {
+		delete(d.logsAutocompleteCache, key)
+		return nil
+	}
+
+	return entry
+}
+
+// SetCachedLogsAutocompleteEntry stores logs autocomplete data in cache with current timestamp
+func (d *Datasource) SetCachedLogsAutocompleteEntry(key string, data []string) {
+	d.logsAutocompleteMu.Lock()
+	defer d.logsAutocompleteMu.Unlock()
+
+	d.logsAutocompleteCache[key] = &LogsAutocompleteCacheEntry{
+		Data:      data,
+		Timestamp: time.Now(),
+	}
+}
+
+// CleanExpiredLogsAutocompleteCache removes expired entries from logs autocomplete cache
+func (d *Datasource) CleanExpiredLogsAutocompleteCache(ttl time.Duration) {
+	d.logsAutocompleteMu.Lock()
+	defer d.logsAutocompleteMu.Unlock()
+
+	now := time.Now()
+	for key, entry := range d.logsAutocompleteCache {
+		if now.Sub(entry.Timestamp) > ttl {
+			delete(d.logsAutocompleteCache, key)
 		}
 	}
 }
@@ -3241,6 +3297,29 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
+	// Check cache first (30 second TTL for autocomplete data)
+	cacheKey := "logs_services"
+	cacheTTL := 30 * time.Second
+	
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, cacheTTL); cachedEntry != nil {
+		logger.Info("LogsServicesHandler cache hit", "traceID", traceID, "serviceCount", len(cachedEntry.Data))
+		
+		// Return cached data
+		respData, err := json.Marshal(cachedEntry.Data)
+		if err != nil {
+			logger.Error("failed to marshal cached services response", "error", err, "traceID", traceID)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "failed to marshal response"}`),
+			})
+		}
+
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
 	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
 	// For now, we're using placeholder data so credentials are not needed
 	
@@ -3267,6 +3346,9 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 		"user-service",
 		"web-app",
 	}
+
+	// Cache the results
+	d.SetCachedLogsAutocompleteEntry(cacheKey, services)
 
 	duration := time.Since(startTime)
 	logger.Info("LogsServicesHandler completed",
@@ -3311,6 +3393,29 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	d.concurrencyLimit <- struct{}{}
 	defer func() { <-d.concurrencyLimit }()
 
+	// Check cache first (30 second TTL for autocomplete data)
+	cacheKey := "logs_sources"
+	cacheTTL := 30 * time.Second
+	
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, cacheTTL); cachedEntry != nil {
+		logger.Info("LogsSourcesHandler cache hit", "traceID", traceID, "sourceCount", len(cachedEntry.Data))
+		
+		// Return cached data
+		respData, err := json.Marshal(cachedEntry.Data)
+		if err != nil {
+			logger.Error("failed to marshal cached sources response", "error", err, "traceID", traceID)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "failed to marshal response"}`),
+			})
+		}
+
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
 	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
 	// For now, we're using placeholder data so credentials are not needed
 
@@ -3336,6 +3441,9 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 		"syslog",
 	}
 
+	// Cache the results
+	d.SetCachedLogsAutocompleteEntry(cacheKey, sources)
+
 	duration := time.Since(startTime)
 	logger.Info("LogsSourcesHandler completed",
 		"traceID", traceID,
@@ -3350,6 +3458,185 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	respData, err := json.Marshal(sources)
 	if err != nil {
 		logger.Error("failed to marshal sources response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsLevelsHandler handles GET /autocomplete/logs/levels requests
+// Provides available log levels for autocomplete suggestions
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	logger.Info("LogsLevelsHandler called", "traceID", traceID, "path", req.Path)
+
+	// Reuse existing timeout configuration (2 seconds for autocomplete)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Check cache first (30 second TTL for autocomplete data)
+	cacheKey := "logs_levels"
+	cacheTTL := 30 * time.Second
+	
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, cacheTTL); cachedEntry != nil {
+		logger.Info("LogsLevelsHandler cache hit", "traceID", traceID, "levelCount", len(cachedEntry.Data))
+		
+		// Return cached data
+		respData, err := json.Marshal(cachedEntry.Data)
+		if err != nil {
+			logger.Error("failed to marshal cached levels response", "error", err, "traceID", traceID)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "failed to marshal response"}`),
+			})
+		}
+
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Standard log levels used in most logging systems
+	// These are consistent with Datadog's log level conventions
+	levels := []string{
+		"DEBUG",
+		"INFO", 
+		"WARN",
+		"ERROR",
+		"FATAL",
+		"TRACE",
+	}
+
+	// Cache the results
+	d.SetCachedLogsAutocompleteEntry(cacheKey, levels)
+
+	duration := time.Since(startTime)
+	logger.Info("LogsLevelsHandler completed",
+		"traceID", traceID,
+		"duration", duration,
+		"levelCount", len(levels))
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, "/autocomplete/logs/levels", 200, duration, len(levels), nil)
+
+	// Return levels as JSON array (same format as other autocomplete endpoints)
+	respData, err := json.Marshal(levels)
+	if err != nil {
+		logger.Error("failed to marshal levels response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsFieldsHandler handles GET /autocomplete/logs/fields requests
+// Provides available log fields/facets for autocomplete suggestions
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	logger.Info("LogsFieldsHandler called", "traceID", traceID, "path", req.Path)
+
+	// Reuse existing timeout configuration (2 seconds for autocomplete)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Check cache first (30 second TTL for autocomplete data)
+	cacheKey := "logs_fields"
+	cacheTTL := 30 * time.Second
+	
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, cacheTTL); cachedEntry != nil {
+		logger.Info("LogsFieldsHandler cache hit", "traceID", traceID, "fieldCount", len(cachedEntry.Data))
+		
+		// Return cached data
+		respData, err := json.Marshal(cachedEntry.Data)
+		if err != nil {
+			logger.Error("failed to marshal cached fields response", "error", err, "traceID", traceID)
+			return sender.Send(&backend.CallResourceResponse{
+				Status: 500,
+				Body:   []byte(`{"error": "failed to marshal response"}`),
+			})
+		}
+
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Common log fields/facets available in Datadog logs
+	// These follow Datadog's standard log attribute conventions
+	fields := []string{
+		"service",
+		"source", 
+		"status",
+		"level",
+		"host",
+		"env",
+		"version",
+		"@timestamp",
+		"@message",
+		"@severity",
+		"@source_category",
+		"@trace_id",
+		"@span_id",
+		"@user_id",
+		"@session_id",
+		"@request_id",
+		"@error_kind",
+		"@error_message",
+		"@error_stack",
+		"@http_method",
+		"@http_status_code",
+		"@http_url",
+		"@http_useragent",
+		"@network_client_ip",
+		"@duration",
+	}
+
+	// Cache the results
+	d.SetCachedLogsAutocompleteEntry(cacheKey, fields)
+
+	duration := time.Since(startTime)
+	logger.Info("LogsFieldsHandler completed",
+		"traceID", traceID,
+		"duration", duration,
+		"fieldCount", len(fields))
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, "/autocomplete/logs/fields", 200, duration, len(fields), nil)
+
+	// Return fields as JSON array (same format as other autocomplete endpoints)
+	respData, err := json.Marshal(fields)
+	if err != nil {
+		logger.Error("failed to marshal fields response", "error", err, "traceID", traceID)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 500,
 			Body:   []byte(`{"error": "failed to marshal response"}`),
