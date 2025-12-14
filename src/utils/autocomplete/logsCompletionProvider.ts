@@ -13,21 +13,14 @@ export class LogsCompletionItemProvider {
   private operators: string[];
 
   constructor() {
-    // Initialize with common log levels
-    this.logLevels = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL', 'TRACE'];
-    
-    // Initialize with common facet names
-    this.facetNames = [
-      'service', 'source', 'status', 'level', 'host', 'env', 'version',
-      '@timestamp', '@message', '@severity', '@source_category'
-    ];
-    
-    // Initialize with logical operators
+    // Initialize with logical operators (these are static and don't come from backend)
     this.operators = ['AND', 'OR', 'NOT'];
     
-    // Initialize empty arrays for backend-driven data
+    // Initialize empty arrays for all backend-driven data
     this.services = [];
     this.sources = [];
+    this.logLevels = [];
+    this.facetNames = [];
   }
 
   /**
@@ -416,24 +409,9 @@ export class LogsCompletionItemProvider {
    * Get suggestions for text inside quotes
    */
   private getQuotedTextSuggestions(context: QueryContext): CompletionItem[] {
-    return [
-      {
-        label: 'error message',
-        kind: 'logs_operator' as const,
-        detail: 'Common error message pattern',
-        insertText: 'error message',
-        sortText: '1_error',
-        documentation: 'Search for logs containing "error message"'
-      },
-      {
-        label: 'failed to connect',
-        kind: 'logs_operator' as const,
-        detail: 'Common connection error pattern',
-        insertText: 'failed to connect',
-        sortText: '1_failed',
-        documentation: 'Search for connection failure messages'
-      }
-    ];
+    // TODO: Implement backend-driven text pattern suggestions
+    // For now, return empty array until actual API integration is implemented
+    return [];
   }
 
   /**
@@ -486,34 +464,20 @@ export class LogsCompletionItemProvider {
   }
 
   /**
-   * Get host suggestions (placeholder - would be populated from backend)
+   * Get host suggestions (would be populated from backend)
    */
   private getHostSuggestions(context: QueryContext): CompletionItem[] {
-    const commonHosts = ['web-01', 'web-02', 'api-01', 'db-01', 'cache-01'];
-    
-    return commonHosts.map(host => ({
-      label: host,
-      kind: 'logs_facet' as const,
-      detail: `Host: ${host}`,
-      insertText: host,
-      sortText: `2_${host}`,
-      documentation: `Filter logs from host: ${host}`
-    }));
+    // TODO: Implement backend endpoint for host suggestions
+    // For now, return empty array until actual API integration is implemented
+    return [];
   }
 
   /**
    * Get environment suggestions
    */
   private getEnvironmentSuggestions(context: QueryContext): CompletionItem[] {
-    const environments = ['production', 'staging', 'development', 'test'];
-    
-    return environments.map(env => ({
-      label: env,
-      kind: 'logs_facet' as const,
-      detail: `Environment: ${env}`,
-      insertText: env,
-      sortText: `2_${env}`,
-      documentation: `Filter logs from ${env} environment`
-    }));
+    // TODO: Implement backend endpoint for environment suggestions
+    // For now, return empty array until actual API integration is implemented
+    return [];
   }
 }

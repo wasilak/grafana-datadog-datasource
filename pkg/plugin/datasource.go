@@ -3330,22 +3330,11 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 	}
 
 	// TODO: Implement actual Datadog Logs API call to get services
-	// For now, return a placeholder list of common services
 	// The actual implementation would call Datadog's Logs API to get unique service values
 	// from recent log data, similar to how MetricsHandler gets metric names
+	// For now, return empty array until actual API integration is implemented
 	
-	services := []string{
-		"api-gateway",
-		"auth-service", 
-		"cache-service",
-		"database",
-		"frontend",
-		"load-balancer",
-		"monitoring",
-		"payment-service",
-		"user-service",
-		"web-app",
-	}
+	services := []string{}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, services)
@@ -3426,20 +3415,11 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	}
 
 	// TODO: Implement actual Datadog Logs API call to get sources
-	// For now, return a placeholder list of common log sources
 	// The actual implementation would call Datadog's Logs API to get unique source values
 	// from recent log data, similar to how MetricsHandler gets metric names
+	// For now, return empty array until actual API integration is implemented
 	
-	sources := []string{
-		"application",
-		"docker",
-		"kubernetes",
-		"nginx",
-		"postgres",
-		"redis",
-		"system",
-		"syslog",
-	}
+	sources := []string{}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, sources)
@@ -3511,16 +3491,12 @@ func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallRes
 		})
 	}
 
-	// Standard log levels used in most logging systems
-	// These are consistent with Datadog's log level conventions
-	levels := []string{
-		"DEBUG",
-		"INFO", 
-		"WARN",
-		"ERROR",
-		"FATAL",
-		"TRACE",
-	}
+	// TODO: Implement actual Datadog Logs API call to get available log levels
+	// The actual implementation would call Datadog's Logs API to get unique level values
+	// from recent log data
+	// For now, return empty array until actual API integration is implemented
+	
+	levels := []string{}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, levels)
@@ -3591,35 +3567,12 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 		})
 	}
 
-	// Common log fields/facets available in Datadog logs
-	// These follow Datadog's standard log attribute conventions
-	fields := []string{
-		"service",
-		"source", 
-		"status",
-		"level",
-		"host",
-		"env",
-		"version",
-		"@timestamp",
-		"@message",
-		"@severity",
-		"@source_category",
-		"@trace_id",
-		"@span_id",
-		"@user_id",
-		"@session_id",
-		"@request_id",
-		"@error_kind",
-		"@error_message",
-		"@error_stack",
-		"@http_method",
-		"@http_status_code",
-		"@http_url",
-		"@http_useragent",
-		"@network_client_ip",
-		"@duration",
-	}
+	// TODO: Implement actual Datadog Logs API call to get available log fields/facets
+	// The actual implementation would call Datadog's Logs API to get unique field names
+	// from recent log data
+	// For now, return empty array until actual API integration is implemented
+	
+	fields := []string{}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, fields)
