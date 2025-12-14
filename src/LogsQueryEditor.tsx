@@ -720,14 +720,15 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             }}>
               {isLoading ? (
                 <>
-                  <span>Loading...</span>
+                  <span style={{ opacity: 0.7 }}>Loading page {currentPage}...</span>
                   <div style={{
-                    width: '12px',
-                    height: '12px',
-                    border: `2px solid ${theme.colors.border.weak}`,
-                    borderTop: `2px solid ${theme.colors.primary.main}`,
+                    width: '10px',
+                    height: '10px',
+                    border: `1px solid ${theme.colors.border.weak}`,
+                    borderTop: `1px solid ${theme.colors.primary.main}`,
                     borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
+                    animation: 'spin 1s linear infinite',
+                    opacity: 0.8
                   }} />
                   <style>{`
                     @keyframes spin {
