@@ -3777,18 +3777,21 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	logger.Info("Fetching logs field values", "fieldName", fieldName, "datadogFieldName", datadogFieldName)
 
 	// Create search request to get recent logs and extract field values
-	// Query recent logs (last 6 hours) to get current field values
+	// Query recent logs (last 1 hour) to get current field values
+	// Use broader query first, then filter during extraction
 	requestBody := map[string]interface{}{
 		"filter": map[string]interface{}{
-			"from": "now-6h",
+			"from": "now-1h", // Shorter time range for faster response
 			"to":   "now",
-			"query": fmt.Sprintf("%s:*", datadogFieldName), // Only get logs that have this field
+			"query": "*", // Get all recent logs, filter during extraction
 		},
 		"sort": "timestamp",
 		"page": map[string]interface{}{
 			"limit": 100, // Get up to 100 log entries to extract field values
 		},
 	}
+
+	logger.Info("Logs search request", "fieldName", fieldName, "requestBody", requestBody)
 
 	// Marshal request body
 	jsonBody, err := json.Marshal(requestBody)
@@ -3828,6 +3831,13 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	}
 
 	logger.Info("Logs search API success", "fieldName", fieldName, "status", resp.StatusCode, "responseSize", len(body))
+	
+	// Log first 500 chars of response for debugging
+	responsePreview := string(body)
+	if len(responsePreview) > 500 {
+		responsePreview = responsePreview[:500] + "..."
+	}
+	logger.Info("Logs search API response preview", "fieldName", fieldName, "response", responsePreview)
 
 	// Parse response - Logs Search API returns an array of log entries in data field
 	var searchResponse struct {
@@ -3889,7 +3899,19 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 				}
 			}
 		} else if i < 3 { // Log first few failed extractions for debugging
-			logger.Info("No field value found", "fieldName", fieldName, "entryIndex", i, "availableKeys", getMapKeys(logEntry.Attributes))
+			availableKeys := getMapKeys(logEntry.Attributes)
+			logger.Info("No field value found", "fieldName", fieldName, "entryIndex", i, "availableKeys", availableKeys, "searchPatterns", searchPatterns)
+			
+			// Also log some sample attribute values for debugging
+			sampleAttrs := make(map[string]interface{})
+			count := 0
+			for k, v := range logEntry.Attributes {
+				if count < 5 { // Log first 5 attributes
+					sampleAttrs[k] = v
+					count++
+				}
+			}
+			logger.Info("Sample log attributes", "fieldName", fieldName, "entryIndex", i, "sampleAttrs", sampleAttrs)
 		}
 	}
 
