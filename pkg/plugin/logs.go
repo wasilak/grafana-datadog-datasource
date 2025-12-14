@@ -303,6 +303,12 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		return nil, "", fmt.Errorf("failed to marshal logs request: %w", err)
 	}
 
+	// Debug logging to help troubleshoot API issues
+	logger.Debug("Sending logs API request", 
+		"url", url,
+		"requestBody", string(jsonBody),
+		"query", logsQuery)
+
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonBody)))
 	if err != nil {
@@ -328,6 +334,10 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	// Check response status
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+		logger.Error("Logs API request failed", 
+			"statusCode", resp.StatusCode,
+			"responseBody", string(bodyBytes),
+			"requestBody", string(jsonBody))
 		errorMsg := d.parseLogsError(fmt.Errorf("HTTP %d", resp.StatusCode), resp.StatusCode, string(bodyBytes))
 		return nil, "", fmt.Errorf("%s", errorMsg)
 	}
