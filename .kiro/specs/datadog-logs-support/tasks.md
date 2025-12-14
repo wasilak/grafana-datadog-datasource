@@ -130,7 +130,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - Test error message display
   - _Requirements: 3.3, 3.4, 3.5_
 
-- [ ] 11. Implement boolean operators and advanced search
+- [x] 11. Implement boolean operators and advanced search
   - Add support for AND, OR, NOT operators in logs queries
   - Add wildcard pattern support (error*)
   - Integrate with Grafana's time range picker
@@ -142,7 +142,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - Test time range integration
   - _Requirements: 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 12. Add logs visualization metadata
+- [x] 12. Add logs visualization metadata
   - Set appropriate DataFrame metadata for logs panel recognition
   - Configure preferred visualization type as "logs"
   - Ensure compatibility with table and mixed panels
@@ -154,7 +154,7 @@ This implementation plan converts the datadog-logs-support design into actionabl
   - Test mixed panel scenarios
   - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 13. Checkpoint - Ensure all tests pass
+- [x] 13. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 14. Add comprehensive integration testing
