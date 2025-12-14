@@ -4,36 +4,66 @@
 
 This design document outlines the implementation of logs query support for the Grafana Datadog datasource plugin. The implementation will extend the existing plugin architecture to support Datadog's Logs Search API while maximally reusing existing patterns for authentication, error handling, caching, and user interface components.
 
+**CRITICAL UPDATE**: After reviewing the official Grafana logs data source tutorial, we've identified fundamental architectural issues in our current implementation that must be fixed. The pagination caching problems are symptoms of Grafana not properly recognizing our data as logs due to incorrect field structure.
+
 The design follows Grafana's plugin development best practices and leverages the existing infrastructure to ensure consistency and maintainability. The logs functionality will be seamlessly integrated with the current metrics implementation, sharing common components and patterns while providing logs-specific features.
+
+## Critical Architectural Fixes Required
+
+### 🚨 Root Cause Analysis
+The pagination and caching issues we've been experiencing are caused by **incorrect data frame structure**, not actual caching problems. Grafana expects specific field names and structure for logs data sources:
+
+1. **Field Names**: Must use `body` (not `message`), `severity` (not `level`)
+2. **Labels Structure**: Must use single `labels` field with JSON (not separate fields)
+3. **Metadata**: Must use `PreferredVisualization: "logs"` directly (not in custom meta)
+
+### 🔧 Immediate Fixes Needed
+1. ✅ **Plugin Configuration**: Added `"logs": true` and `"streaming": true` to plugin.json
+2. ❌ **Data Frame Structure**: Must rewrite `createLogsDataFrames()` function completely
+3. ❌ **Frontend Caching**: Remove complex frontend caching system (likely unnecessary)
+4. ❌ **Enhanced Features**: Add search highlighting, filtering, and trace linking
 
 ## Architecture
 
+### Architectural Insights from OpenSearch Analysis
+
+After analyzing the OpenSearch datasource implementation, we've identified several sophisticated patterns that should be incorporated into our design:
+
+1. **Query Handler Pattern**: Clean separation of different query types using a common interface
+2. **Request Builder Pattern**: Abstracted API request construction with proper authentication handling
+3. **Response Parser Pattern**: Dedicated classes for converting API responses to Grafana data frames
+4. **Context-Aware Autocomplete**: Advanced completion providers with cursor position analysis
+
+These patterns will significantly improve maintainability, testability, and user experience.
+
 ### High-Level Architecture
 
-The logs support will be implemented as an extension to the existing datasource architecture:
+The logs support will be implemented as an extension to the existing datasource architecture, incorporating proven patterns from the OpenSearch implementation:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Grafana Frontend                         │
 ├─────────────────────────────────────────────────────────────┤
-│  Query Editor (Existing)     │  Logs Query Editor (New)    │
+│  Query Editor (Enhanced)     │  Logs Query Editor (New)    │
 │  - CodeEditor component      │  - Reuses CodeEditor        │
-│  - Autocomplete system       │  - Extends autocomplete     │
+│  - Context-aware autocomplete│  - Advanced completion      │
 │  - Variable interpolation    │  - Reuses interpolation     │
 ├─────────────────────────────────────────────────────────────┤
-│              DataSource Class (Extended)                   │
-│  - QueryData method          │  - Logs query detection     │
-│  - Metrics API calls         │  - Logs API calls           │
-│  - Error handling            │  - Shared error patterns    │
+│              DataSource Class (Enhanced)                   │
+│  - Query Handler Router      │  - Supplementary Queries    │
+│  - Request Builders          │  - Response Parsers         │
+│  - Configuration Management  │  - Advanced Error Handling  │
 ├─────────────────────────────────────────────────────────────┤
-│                Backend Plugin (Extended)                   │
-│  - Metrics handlers          │  - Logs handlers            │
-│  - Resource endpoints        │  - Logs autocomplete        │
-│  - Authentication            │  - Shared auth patterns     │
+│                Backend Plugin (Enhanced)                   │
+│  - MetricsHandler            │  - LogsHandler              │
+│  - Request Builders          │  - Response Parsers         │
+│  - Resource endpoints        │  - Comprehensive Testing    │
+│  - Authentication            │  - Configuration Options    │
 ├─────────────────────────────────────────────────────────────┤
 │                   Datadog APIs                             │
 │  - Metrics API v2            │  - Logs API v2              │
 │  - /metrics/query            │  - /logs/events/search      │
+│  - /metrics/autocomplete     │  - /logs/aggregate          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,13 +75,37 @@ The system will automatically detect whether to use logs or metrics functionalit
 2. **Query Routing**: Route queries to appropriate API endpoints based on detected type
 3. **UI Adaptation**: Show appropriate query editor interface based on context
 
-### Data Flow
+### Enhanced Data Flow (Based on OpenSearch Patterns)
 
 ```
-User Input → Query Type Detection → API Selection → Data Processing → Grafana Display
-     ↓              ↓                    ↓              ↓              ↓
-Query Editor → Panel Context → Logs/Metrics API → Data Frames → Logs/Graph Panel
+User Input → Query Handler Router → Request Builder → API Call → Response Parser → Data Frames
+     ↓              ↓                    ↓              ↓              ↓              ↓
+Query Editor → MetricsHandler/     → DatadogRequest → Datadog → LogsResponse → Grafana
+              LogsHandler            Builder          API       Parser        Display
 ```
+
+### Key Architectural Patterns
+
+#### 1. Query Handler Pattern
+Following OpenSearch's approach, we'll implement a clean handler architecture:
+- **QueryHandler Interface**: Common interface for all query types
+- **MetricsHandler**: Handles existing metrics queries
+- **LogsHandler**: Handles new logs queries
+- **Router**: Routes queries to appropriate handlers based on type
+
+#### 2. Request Builder Pattern
+Abstract API request construction for maintainability:
+- **DatadogRequestBuilder**: Base class with common authentication
+- **DatadogLogsRequestBuilder**: Logs-specific request construction
+- **DatadogMetricsRequestBuilder**: Metrics-specific request construction
+
+#### 3. Response Parser Pattern
+Separate response processing from query handling:
+- **ResponseParser Interface**: Common parsing interface
+- **LogsResponseParser**: Converts Datadog logs responses to Grafana data frames
+- **MetricsResponseParser**: Handles metrics response parsing
+
+
 
 ## Components and Interfaces
 
@@ -258,41 +312,43 @@ interface LogsQuery extends DataQuery {
 }
 ```
 
-#### LogsDataFrame Structure
+#### LogsDataFrame Structure (CORRECTED - Based on Official Grafana Tutorial)
 
 ```typescript
 interface LogsDataFrame extends DataFrame {
   name: string;
   fields: [
     {
-      name: 'timestamp';
+      name: 'timestamp';        // ✅ CORRECT - Official standard
       type: FieldType.time;
       values: number[];         // Unix timestamps in milliseconds
     },
     {
-      name: 'message';
+      name: 'body';            // ✅ CORRECT - Changed from 'message' to 'body'
       type: FieldType.string;
       values: string[];         // Log message content
     },
     {
-      name: 'level';
+      name: 'severity';        // ✅ CORRECT - Changed from 'level' to 'severity'
       type: FieldType.string;
       values: string[];         // Log levels (DEBUG, INFO, WARN, ERROR, FATAL)
     },
     {
-      name: 'service';
+      name: 'id';             // ✅ CORRECT - Log entry ID
       type: FieldType.string;
-      values: string[];         // Service names
+      values: string[];         // Unique log entry identifiers
     },
     {
-      name: 'source';
-      type: FieldType.string;
-      values: string[];         // Log sources
+      name: 'labels';         // ✅ CORRECT - Single labels field with JSON
+      type: FieldType.other;
+      values: json.RawMessage[]; // All metadata as JSON: service, source, host, env, tags, attributes
     }
   ];
   meta: {
-    type: FrameType.LogLines;  // Indicate this is log data
-    preferredVisualisationType: 'logs';
+    type: FrameType.LogLines;           // ✅ CORRECT - Indicate this is log data
+    PreferredVisualization: 'logs';     // ✅ CORRECT - Direct property, not custom
+    searchWords?: string[];             // ✅ NEW - For search highlighting
+    limit?: number;                     // ✅ NEW - For pagination
   };
 }
 ```
@@ -341,17 +397,24 @@ type LogsPageData struct {
 }
 ```
 
-#### Log Entry Model
+#### Log Entry Model (CORRECTED)
 
 ```go
 type LogEntry struct {
     ID         string                 `json:"id"`
     Timestamp  time.Time             `json:"timestamp"`
-    Message    string                `json:"message"`
-    Level      string                `json:"level"`
-    Service    string                `json:"service,omitempty"`
-    Source     string                `json:"source,omitempty"`
-    Tags       map[string]string     `json:"tags,omitempty"`
+    Body       string                `json:"body"`       // ✅ CORRECT - Changed from Message
+    Severity   string                `json:"severity"`   // ✅ CORRECT - Changed from Level
+    Labels     json.RawMessage       `json:"labels"`     // ✅ CORRECT - All metadata as JSON
+}
+
+// Helper struct for building labels JSON
+type LogLabels struct {
+    Service    string            `json:"service,omitempty"`
+    Source     string            `json:"source,omitempty"`
+    Host       string            `json:"host,omitempty"`
+    Env        string            `json:"env,omitempty"`
+    Tags       map[string]string `json:"tags,omitempty"`
     Attributes map[string]interface{} `json:"attributes,omitempty"`
 }
 ```
@@ -381,8 +444,8 @@ The following properties provide unique validation value and cover the essential
 *For any* panel context, the system should automatically detect whether to use logs or metrics mode and route queries to the appropriate API endpoint
 **Validates: Requirements 2.1, 2.2, 2.5**
 
-**Property 3: Logs Data Frame Structure**
-*For any* logs API response, the system should create a properly structured data frame with timestamp, message, level, service, and source fields, with appropriate metadata for Grafana's logs panel
+**Property 3: Logs Data Frame Structure (CORRECTED)**
+*For any* logs API response, the system should create a properly structured data frame with timestamp, body, severity, id, and labels fields following Grafana's official logs data source standards, with appropriate metadata for Grafana's logs panel recognition
 **Validates: Requirements 1.2, 5.1, 5.2, 5.3, 5.4, 5.5, 13.1**
 
 **Property 4: Logs Query Parameter Handling**
@@ -443,6 +506,28 @@ Logs API Error → Existing Error Parser → Logs-Specific Extensions → User M
   HTTP Status → parseDatadogError() → Logs Context → Friendly Message
 ```
 
+## Enhanced Features (Based on Official Tutorial)
+
+### Search Word Highlighting
+- Extract search terms from logs query
+- Add `searchWords` array to frame metadata
+- Grafana will automatically highlight matching words in log messages
+
+### Log Filtering Support
+- Implement `modifyQuery` method in datasource
+- Support `ADD_FILTER` and `ADD_FILTER_OUT` operations
+- Allow users to click log values to add/remove filters
+
+### Trace Linking
+- Extract trace IDs from Datadog log attributes
+- Add data links to trace fields
+- Enable seamless navigation from logs to traces
+
+### Live Tailing (Streaming)
+- Add `"streaming": true` to plugin.json (✅ Already added)
+- Implement streaming query support
+- Enable real-time log updates
+
 ## Testing Strategy
 
 ### Dual Testing Approach
@@ -489,3 +574,229 @@ func TestLogsAPIIntegrationConsistency(t *testing.T) {
 - **Test Organization**: Property tests grouped by component, unit tests for specific scenarios
 
 The testing strategy ensures that both concrete examples work correctly (unit tests) and that the general correctness properties hold across all possible inputs (property tests), providing comprehensive validation of the logs functionality.
+
+## Logs Histogram and Volume Visualization
+
+### Overview
+
+Based on analysis of the OpenSearch plugin implementation, Grafana provides a **Supplementary Queries** system specifically designed for logs volume histograms. This is the proper way to implement histogram support, rather than returning multiple data frames in a single query.
+
+The implementation will use Grafana's `DataSourceWithSupplementaryQueriesSupport` interface to automatically generate histogram queries when logs are displayed in Grafana's logs panel.
+
+### Supplementary Queries Architecture
+
+```typescript
+export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> 
+  implements DataSourceWithSupplementaryQueriesSupport<MyQuery> {
+  
+  // Declare support for logs volume histograms
+  getSupportedSupplementaryQueryTypes(): SupplementaryQueryType[] {
+    return [SupplementaryQueryType.LogsVolume];
+  }
+  
+  // Generate histogram query from logs query
+  getSupplementaryQuery(options: SupplementaryQueryOptions, query: MyQuery): MyQuery | undefined {
+    if (options.type === SupplementaryQueryType.LogsVolume && query.queryType === 'logs') {
+      return this.createLogsVolumeQuery(query);
+    }
+    return undefined;
+  }
+  
+  // Handle supplementary query requests
+  getSupplementaryRequest(
+    type: SupplementaryQueryType, 
+    request: DataQueryRequest<MyQuery>
+  ): DataQueryRequest<MyQuery> | undefined {
+    if (type === SupplementaryQueryType.LogsVolume) {
+      return this.getLogsVolumeDataProvider(request);
+    }
+    return undefined;
+  }
+}
+```
+
+### Logs Volume Query Generation
+
+```typescript
+private createLogsVolumeQuery(originalQuery: MyQuery): MyQuery {
+  return {
+    refId: `log-volume-${originalQuery.refId}`,
+    queryType: 'logs-volume',
+    logQuery: originalQuery.logQuery,  // Same search criteria
+    // Histogram-specific parameters
+    aggregation: 'count',
+    bucketSize: 'auto',
+    groupBy: ['@timestamp'],
+  };
+}
+```
+
+### Backend Implementation
+
+The backend will handle logs volume queries separately from regular logs queries:
+
+```go
+func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+    response := &backend.QueryDataResponse{
+        Responses: make(map[string]backend.DataResponse),
+    }
+    
+    for _, query := range req.Queries {
+        var dataResponse backend.DataResponse
+        
+        switch query.QueryType {
+        case "logs":
+            dataResponse = d.queryLogs(ctx, query, req.PluginContext)
+        case "logs-volume":
+            dataResponse = d.queryLogsVolume(ctx, query, req.PluginContext)
+        default:
+            // Handle metrics queries...
+        }
+        
+        response.Responses[query.RefID] = dataResponse
+    }
+    
+    return response, nil
+}
+```
+
+### Logs Volume Query Implementation
+
+```go
+func (d *Datasource) queryLogsVolume(ctx context.Context, query backend.DataQuery, pCtx backend.PluginContext) backend.DataResponse {
+    // 1. Calculate appropriate bucket size based on time range
+    bucketSize := calculateBucketSize(query.TimeRange)
+    
+    // 2. Construct Datadog Logs Aggregation API request
+    aggRequest := LogsAggregationRequest{
+        Query: extractLogQuery(query.JSON),
+        Time: TimeRange{
+            From: query.TimeRange.From.Format(time.RFC3339),
+            To: query.TimeRange.To.Format(time.RFC3339),
+        },
+        Compute: []Compute{{Aggregation: "count"}},
+        GroupBy: []GroupBy{{
+            Facet: "@timestamp",
+            Histogram: Histogram{Interval: bucketSize},
+        }},
+    }
+    
+    // 3. Execute aggregation API call
+    response, err := d.callLogsAggregationAPI(ctx, aggRequest, pCtx)
+    if err != nil {
+        return backend.DataResponse{Error: err}
+    }
+    
+    // 4. Transform response to Grafana data frame
+    frame := createLogsVolumeDataFrame(response, bucketSize)
+    
+    return backend.DataResponse{Frames: []*data.Frame{frame}}
+}
+```
+
+### Bucket Size Calculation
+
+```go
+func calculateBucketSize(timeRange backend.TimeRange) string {
+    duration := timeRange.To.Sub(timeRange.From)
+    
+    switch {
+    case duration <= time.Hour:
+        return "1m"
+    case duration <= 6*time.Hour:
+        return "5m"
+    case duration <= 24*time.Hour:
+        return "15m"
+    case duration <= 7*24*time.Hour:
+        return "1h"
+    default:
+        return "4h"
+    }
+}
+```
+
+### Logs Volume Data Frame Structure
+
+The logs volume query returns a separate data frame optimized for histogram visualization:
+
+```typescript
+interface LogsVolumeDataFrame extends DataFrame {
+  name: 'logs-volume';
+  refId: 'log-volume-A';  // Prefixed with log-volume-
+  fields: [
+    {
+      name: 'Time';
+      type: FieldType.time;
+      values: number[];         // Time bucket timestamps
+    },
+    {
+      name: 'Count';
+      type: FieldType.number;
+      values: number[];         // Log count per time bucket
+    }
+  ];
+  meta: {
+    preferredVisualisationType: 'graph';  // For histogram display
+    custom: {
+      bucketSize: string;      // '1m', '5m', '15m', '1h', 'auto'
+    }
+  };
+}
+```
+
+### Automatic Histogram Generation
+
+With the supplementary queries approach, **no UI controls are needed**. Grafana automatically:
+
+1. Detects when logs queries are displayed in logs panels
+2. Calls `getSupplementaryRequest()` to generate histogram queries
+3. Executes both the original logs query and the histogram query
+4. Displays the histogram above the logs automatically
+
+This provides a much cleaner user experience with zero configuration required.
+
+### Error Handling for Histogram
+
+Histogram generation failures should not prevent log entries from being displayed:
+
+```go
+func (d *Datasource) queryLogsWithHistogram(ctx context.Context, query LogsQuery) (*backend.QueryDataResponse, error) {
+    // 1. Always fetch log entries first
+    logsFrame, err := d.queryLogEntries(ctx, query)
+    if err != nil {
+        return nil, err
+    }
+    
+    response := &backend.QueryDataResponse{
+        Responses: map[string]backend.DataResponse{
+            query.RefID: {Frames: []*data.Frame{logsFrame}},
+        },
+    }
+    
+    // 2. Optionally add histogram if enabled
+    if query.Histogram != nil && query.Histogram.Enabled {
+        histogramFrame, err := d.generateLogsHistogram(ctx, query, timeRange)
+        if err != nil {
+            // Log error but continue with logs data
+            log.Warn("Failed to generate histogram", "error", err)
+        } else {
+            response.Responses[query.RefID].Frames = append(
+                response.Responses[query.RefID].Frames,
+                histogramFrame,
+            )
+        }
+    }
+    
+    return response, nil
+}
+```
+
+### Additional Correctness Properties
+
+**Property 10: Logs Histogram Data Frame Structure**
+*For any* logs query with histogram enabled, the system should generate a properly formatted histogram data frame with time buckets and aggregated values that Grafana recognizes for histogram visualization
+**Validates: Requirements 18.1, 18.2, 18.3**
+
+**Property 11: Logs Histogram Integration Consistency**
+*For any* logs query, enabling or disabling histogram should not affect the logs data frame structure or content, and histogram failures should not prevent logs from being displayed
+**Validates: Requirements 18.4, 18.5**

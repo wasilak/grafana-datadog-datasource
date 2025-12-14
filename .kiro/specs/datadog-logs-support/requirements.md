@@ -226,6 +226,18 @@ The implementation will leverage the existing plugin architecture, authenticatio
 4. WHEN logs are exported THEN the system SHALL preserve the original timestamp formatting and timezone information
 5. WHEN export operations fail THEN the system SHALL show appropriate error messages and retry options
 
+### Requirement 18: Logs Volume Histogram Support
+
+**User Story:** As a dashboard user, I want to see log volume histograms automatically displayed above log entries in Grafana's logs panel, so that I can visualize log patterns over time and identify spikes or anomalies in log activity without any manual configuration.
+
+#### Acceptance Criteria
+
+1. WHEN displaying logs in Grafana's logs panel THEN the system SHALL automatically generate and display a log volume histogram using Grafana's supplementary queries system
+2. WHEN generating log volume data THEN the system SHALL use Datadog's Logs Aggregation API to create timeseries data with appropriate time buckets based on the query time range
+3. WHEN creating log volume data frames THEN the system SHALL format them with proper metadata that Grafana recognizes for histogram visualization above the logs
+4. WHEN log volume queries are executed THEN the system SHALL use the same authentication, error handling, and timeout patterns as regular logs queries
+5. WHEN log volume generation fails THEN the system SHALL continue to display log entries normally without the histogram and log the error appropriately
+
 ## Non-Functional Requirements
 
 ### Performance
