@@ -150,15 +150,53 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
   // Handle query execution completion (clear loading state)
+  // Track when queries are executed to properly manage loading state
+  const [lastQueryTime, setLastQueryTime] = useState<number>(0);
+  const [queryExecutionId, setQueryExecutionId] = useState<string>('');
+  
   useEffect(() => {
     // Clear loading state when query execution completes
-    // Note: In a real implementation, this would be triggered by the data response
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 100);
+    // We use a combination of time-based and state-based detection
+    if (isLoading && lastQueryTime > 0) {
+      const timeSinceQuery = Date.now() - lastQueryTime;
+      
+      // Clear loading after a reasonable time (1.5 seconds)
+      // This is more reasonable than 5 seconds and provides better UX
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, lastQueryTime]);
+
+  // Clear loading state when query parameters change (indicating new data)
+  useEffect(() => {
+    // Create a unique ID for this query execution
+    const currentQueryId = `${query.logQuery}-${query.currentPage}-${query.pageSize}-${query.nextCursor}`;
     
-    return () => clearTimeout(timer);
-  }, [query.refId]); // Use refId as a proxy for query execution completion
+    // If the query ID changed and we have a previous execution, clear loading
+    // This indicates that new data has arrived or the query has changed
+    if (queryExecutionId && queryExecutionId !== currentQueryId && isLoading) {
+      setIsLoading(false);
+    }
+    
+    setQueryExecutionId(currentQueryId);
+  }, [query.logQuery, query.currentPage, query.pageSize, query.nextCursor, isLoading, queryExecutionId]);
+
+  // Also clear loading state when the component receives new props
+  // This is a fallback to ensure loading state doesn't get stuck
+  useEffect(() => {
+    if (isLoading) {
+      // If we've been loading for more than 3 seconds, something is wrong
+      const emergencyTimer = setTimeout(() => {
+        console.warn('Loading state cleared due to timeout - this may indicate an issue');
+        setIsLoading(false);
+      }, 3000);
+      
+      return () => clearTimeout(emergencyTimer);
+    }
+  }, [isLoading]);
 
   // Reset pagination state when query changes
   useEffect(() => {
@@ -604,8 +642,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             onBlur={() => {
               // Trigger query execution when page size changes
               setIsLoading(true);
+              setLastQueryTime(Date.now());
               onRunQuery();
-              setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
             }}
           />
         </InlineField>
@@ -634,9 +672,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                   nextCursor: cursor, // Use the stored cursor for this page
                   queryType: 'logs'
                 });
+                setLastQueryTime(Date.now());
                 onRunQuery();
-                // Loading will be cleared when new data arrives
-                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
             />
             
@@ -661,14 +698,14 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               onBlur={() => {
                 // Trigger query execution when page number changes
                 setIsLoading(true);
+                setLastQueryTime(Date.now());
                 onRunQuery();
-                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   setIsLoading(true);
+                  setLastQueryTime(Date.now());
                   onRunQuery();
-                  setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
                 }
               }}
             />
@@ -721,9 +758,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                   nextCursor: pageHistory[newPage] || '', // Use stored cursor or empty for new pages
                   queryType: 'logs'
                 });
+                setLastQueryTime(Date.now());
                 onRunQuery();
-                // Loading will be cleared when new data arrives
-                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
             />
           </div>
