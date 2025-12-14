@@ -124,7 +124,7 @@ After reviewing the official Grafana logs data source tutorial, we've identified
 ## Phase 3: Enhanced Logs Features (Based on Official Tutorial)
 
 - [ ] 8. Implement Search Word Highlighting
-- [ ] 8.1 Extract search terms from logs query
+- [-] 8.1 Extract search terms from logs query
   - Parse Datadog query syntax to identify search terms (not facet filters)
   - Add `searchWords` array to frame metadata
   - Enable Grafana's automatic word highlighting in log messages
