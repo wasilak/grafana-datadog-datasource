@@ -276,11 +276,15 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	
 	// Create request body matching Datadog's actual API format
 	// Based on the API error, it seems Datadog expects a simpler structure
+	// Convert timestamps to ISO format as Datadog might expect that instead of milliseconds
+	fromTime := time.UnixMilli(from).UTC().Format(time.RFC3339)
+	toTime := time.UnixMilli(to).UTC().Format(time.RFC3339)
+	
 	requestBody := map[string]interface{}{
 		"filter": map[string]interface{}{
 			"query": logsQuery,
-			"from":  fmt.Sprintf("%d", from),
-			"to":    fmt.Sprintf("%d", to),
+			"from":  fromTime,
+			"to":    toTime,
 		},
 		"sort": "timestamp",
 		"page": map[string]interface{}{
