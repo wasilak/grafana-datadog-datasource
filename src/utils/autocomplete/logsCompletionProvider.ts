@@ -122,7 +122,14 @@ export class LogsCompletionItemProvider {
       '@source_category': 'Filter by source category'
     };
 
-    return this.facetNames.map(facet => ({
+    // Always provide basic Datadog facets even if backend doesn't return field data
+    // These are standard Datadog log facets that are always available
+    const basicFacets = ['service', 'source', 'status', 'host', 'env'];
+    
+    // Combine backend fields with basic facets, removing duplicates
+    const allFacets = [...new Set([...basicFacets, ...this.facetNames])];
+
+    return allFacets.map(facet => ({
       label: `${facet}:`,
       kind: 'logs_facet' as const,
       detail: facetDescriptions[facet] || `Filter by ${facet}`,
