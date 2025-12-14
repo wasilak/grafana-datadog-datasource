@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -3320,21 +3321,39 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 		})
 	}
 
-	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
-	// For now, we're using placeholder data so credentials are not needed
-	
+	// Get API credentials from secure JSON data
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
 	// Get Datadog site configuration (reusing existing pattern)
 	site := d.JSONData.Site
 	if site == "" {
 		site = "datadoghq.com" // Default to US
 	}
 
-	// TODO: Implement actual Datadog Logs API call to get services
-	// The actual implementation would call Datadog's Logs API to get unique service values
-	// from recent log data, similar to how MetricsHandler gets metric names
-	// For now, return empty array until actual API integration is implemented
-	
-	services := []string{}
+	// Call Datadog Logs API to get unique service values from recent log data
+	// Use logs aggregation API to get unique service values
+	services, err := d.fetchLogsFieldValues(ctx, "service", apiKey, appKey, site)
+	if err != nil {
+		logger.Error("Failed to fetch services from Datadog Logs API", "error", err, "traceID", traceID)
+		// Return empty array on error to prevent autocomplete from breaking
+		services = []string{}
+	}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, services)
@@ -3405,8 +3424,24 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 		})
 	}
 
-	// TODO: Get API credentials from secure JSON data when implementing actual Datadog Logs API calls
-	// For now, we're using placeholder data so credentials are not needed
+	// Get API credentials from secure JSON data
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
 
 	// Get Datadog site configuration (reusing existing pattern)
 	site := d.JSONData.Site
@@ -3414,12 +3449,13 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 		site = "datadoghq.com" // Default to US
 	}
 
-	// TODO: Implement actual Datadog Logs API call to get sources
-	// The actual implementation would call Datadog's Logs API to get unique source values
-	// from recent log data, similar to how MetricsHandler gets metric names
-	// For now, return empty array until actual API integration is implemented
-	
-	sources := []string{}
+	// Call Datadog Logs API to get unique source values from recent log data
+	sources, err := d.fetchLogsFieldValues(ctx, "source", apiKey, appKey, site)
+	if err != nil {
+		logger.Error("Failed to fetch sources from Datadog Logs API", "error", err, "traceID", traceID)
+		// Return empty array on error to prevent autocomplete from breaking
+		sources = []string{}
+	}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, sources)
@@ -3491,12 +3527,16 @@ func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallRes
 		})
 	}
 
-	// TODO: Implement actual Datadog Logs API call to get available log levels
-	// The actual implementation would call Datadog's Logs API to get unique level values
-	// from recent log data
-	// For now, return empty array until actual API integration is implemented
-	
-	levels := []string{}
+	// Provide standard log levels - these are typically consistent across applications
+	// We can also fetch actual levels from Datadog if needed, but standard levels are usually sufficient
+	levels := []string{
+		"DEBUG",
+		"INFO", 
+		"WARN",
+		"ERROR",
+		"FATAL",
+		"TRACE",
+	}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, levels)
@@ -3567,12 +3607,23 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 		})
 	}
 
-	// TODO: Implement actual Datadog Logs API call to get available log fields/facets
-	// The actual implementation would call Datadog's Logs API to get unique field names
-	// from recent log data
-	// For now, return empty array until actual API integration is implemented
-	
-	fields := []string{}
+	// Provide common log fields/facets that are typically available in Datadog logs
+	// These are standard fields that users commonly filter on
+	fields := []string{
+		"service",
+		"source", 
+		"status",
+		"host",
+		"@env",
+		"@version",
+		"@timestamp",
+		"@message",
+		"@level",
+		"@logger_name",
+		"@thread_name",
+		"@trace_id",
+		"@span_id",
+	}
 
 	// Cache the results
 	d.SetCachedLogsAutocompleteEntry(cacheKey, fields)
@@ -3600,4 +3651,108 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 		Status: 200,
 		Body:   respData,
 	})
+}
+
+// fetchLogsFieldValues fetches unique values for a specific field from Datadog Logs API
+// This method uses the Logs Aggregation API to get unique field values from recent log data
+func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey, appKey, site string) ([]string, error) {
+	logger := log.New()
+	
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Use Datadog Logs Aggregation API to get unique field values
+	// This is more efficient than searching through individual log entries
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/aggregate", site)
+	
+	// Create aggregation request to get unique values for the field
+	// Query recent logs (last 24 hours) to get current field values
+	requestBody := map[string]interface{}{
+		"filter": map[string]interface{}{
+			"from": "now-24h",
+			"to":   "now",
+			"query": "*", // Get all logs to find all possible field values
+		},
+		"compute": []map[string]interface{}{
+			{
+				"aggregation": "cardinality",
+				"field":       fieldName,
+			},
+		},
+		"group_by": []map[string]interface{}{
+			{
+				"facet": fieldName,
+				"limit": 100, // Limit to top 100 values for autocomplete
+				"sort": map[string]interface{}{
+					"aggregation": "cardinality",
+					"order":       "desc",
+				},
+			},
+		},
+	}
+
+	// Marshal request body
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs aggregation request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(fetchCtx, "POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logs aggregation request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("DD-API-KEY", apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", appKey)
+
+	// Execute request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs aggregation request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read logs aggregation response: %w", err)
+	}
+
+	// Check for API errors
+	if resp.StatusCode != 200 {
+		logger.Error("Logs aggregation API error", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("logs aggregation API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var aggregationResponse struct {
+		Data struct {
+			Buckets []struct {
+				By map[string]interface{} `json:"by"`
+			} `json:"buckets"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &aggregationResponse); err != nil {
+		logger.Error("Failed to parse logs aggregation response", "error", err, "body", string(body))
+		return nil, fmt.Errorf("failed to parse logs aggregation response: %w", err)
+	}
+
+	// Extract field values from buckets
+	var fieldValues []string
+	for _, bucket := range aggregationResponse.Data.Buckets {
+		if value, exists := bucket.By[fieldName]; exists {
+			if strValue, ok := value.(string); ok && strValue != "" {
+				fieldValues = append(fieldValues, strValue)
+			}
+		}
+	}
+
+	logger.Info("Fetched logs field values", "field", fieldName, "count", len(fieldValues))
+	return fieldValues, nil
 }
