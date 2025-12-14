@@ -450,7 +450,24 @@ func parseDatadogErrorResponse(responseBody string, queryText string) string {
 func suggestQueryFix(errorMsg string, queryText string) string {
 	lowerError := strings.ToLower(errorMsg)
 
-	// Check for specific error patterns and provide suggestions
+	// Check for logs-specific error patterns first
+	if strings.Contains(lowerError, "logs") || strings.Contains(lowerError, "log") {
+		if strings.Contains(lowerError, "service") || strings.Contains(lowerError, "facet") {
+			return "Suggestion: Use logs facet syntax 'service:api-gateway' or 'source:nginx'. Multiple facets: 'service:web-app source:nginx'"
+		}
+		if strings.Contains(lowerError, "status") || strings.Contains(lowerError, "level") {
+			return "Suggestion: Use log level syntax 'status:ERROR' or 'status:(ERROR OR WARN)'. Valid levels: DEBUG, INFO, WARN, ERROR, FATAL"
+		}
+		if strings.Contains(lowerError, "operator") || strings.Contains(lowerError, "boolean") {
+			return "Suggestion: Use boolean operators 'AND', 'OR', 'NOT'. Example: 'service:web-app AND status:ERROR'"
+		}
+		if strings.Contains(lowerError, "wildcard") || strings.Contains(lowerError, "pattern") {
+			return "Suggestion: Use wildcard patterns like 'error*' or '*exception*' for text matching"
+		}
+		return "Suggestion: Use Datadog logs search syntax. Examples: 'service:web-app status:ERROR', 'error AND service:api', 'source:nginx'"
+	}
+
+	// Check for metrics-specific error patterns
 	if strings.Contains(lowerError, "metric") || strings.Contains(lowerError, "unknown") {
 		return "Suggestion: Verify the metric name exists. Common formats: 'system.cpu', 'datadog.estimated_usage.metrics.custom', 'avg:system.cpu{*}'"
 	}
@@ -745,12 +762,20 @@ func (d *Datasource) queryDatadog(ctx context.Context, api *datadogV2.MetricsApi
 // parseDatadogError parses Datadog API errors and returns user-friendly messages
 func (d *Datasource) parseDatadogError(err error, httpStatus int, responseBody string) string {
 	if httpStatus == 401 || strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Unauthorized") {
-		return "Invalid Datadog API credentials"
+		return "Invalid Datadog API credentials - check your API key and App key"
 	} else if httpStatus == 403 || strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+		// Check if this is a logs-specific permission error
+		if strings.Contains(responseBody, "logs") || strings.Contains(err.Error(), "logs") {
+			return "API key missing required permissions - need 'logs_read_data' scope"
+		}
 		return "API key missing required permissions (need 'metrics_read' scope)"
 	} else if httpStatus == 400 || strings.Contains(err.Error(), "400") {
 		return parseDatadogErrorResponse(responseBody, "")
 	} else if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
+		// Check if this is a logs query timeout
+		if strings.Contains(responseBody, "logs") || strings.Contains(err.Error(), "logs") {
+			return "Log query timeout - try narrowing your search criteria or time range"
+		}
 		return "Query timeout - Datadog API took too long to respond"
 	} else if httpStatus >= 500 {
 		return fmt.Sprintf("Datadog API error (%d) - service may be unavailable", httpStatus)

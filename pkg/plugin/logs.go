@@ -164,7 +164,15 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 		frames, err := d.executeSingleLogsQuery(ddCtx, &qm, &q)
 		if err != nil {
 			logger.Error("failed to execute logs query", "error", err, "refID", q.RefID)
-			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
+			// Use existing error handling patterns for consistent error messages
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "HTTP") || strings.Contains(errorMsg, "API") {
+				// Error already processed by parseDatadogError, use as-is
+				response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, errorMsg)
+			} else {
+				// Generic error, format consistently
+				response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("Logs query error: %s", errorMsg))
+			}
 			continue
 		}
 
@@ -349,14 +357,17 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to execute logs API request: %w", err)
+		// Use existing error handling patterns for timeout and network errors
+		errorMsg := d.parseLogsError(err, 0, "")
+		return nil, "", fmt.Errorf("%s", errorMsg)
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, "", fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		errorMsg := d.parseLogsError(fmt.Errorf("HTTP %d", resp.StatusCode), resp.StatusCode, string(bodyBytes))
+		return nil, "", fmt.Errorf("%s", errorMsg)
 	}
 
 	// Parse response
@@ -1402,4 +1413,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 		"additionalFieldCount", len(additionalFields))
 
 	return data.Frames{frame}
+}
+// parseLogsError provides logs-specific error handling using existing error patterns
+func (d *Datasource) parseLogsError(err error, httpStatus int, responseBody string) string {
+	// Add logs context to the response body for better error detection
+	logsContext := fmt.Sprintf("logs: %s", responseBody)
+	return d.parseDatadogError(err, httpStatus, logsContext)
 }
