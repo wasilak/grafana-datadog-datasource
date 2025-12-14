@@ -12,6 +12,8 @@ export class LogsCompletionItemProvider {
   private hosts: string[];
   private environments: string[];
   private facetNames: string[];
+  private tagNames: string[];
+  private tagValues: Map<string, string[]>;
   private operators: string[];
 
   constructor() {
@@ -25,6 +27,8 @@ export class LogsCompletionItemProvider {
     this.hosts = [];
     this.environments = [];
     this.facetNames = [];
+    this.tagNames = [];
+    this.tagValues = new Map();
   }
 
   /**
@@ -70,6 +74,20 @@ export class LogsCompletionItemProvider {
   }
 
   /**
+   * Update tag names data from backend
+   */
+  updateTagNames(tagNames: string[]): void {
+    this.tagNames = tagNames;
+  }
+
+  /**
+   * Update tag values data from backend for a specific tag
+   */
+  updateTagValues(tagName: string, values: string[]): void {
+    this.tagValues.set(tagName, values);
+  }
+
+  /**
    * Get completion items based on query context and cursor position
    * Implements context-aware suggestion logic similar to OpenSearch's approach
    */
@@ -98,6 +116,12 @@ export class LogsCompletionItemProvider {
         break;
       case 'logs_env':
         suggestions.push(...this.getEnvironmentSuggestions(context));
+        break;
+      case 'logs_tag':
+        suggestions.push(...this.getTagSuggestions(context));
+        break;
+      case 'logs_tag_value':
+        suggestions.push(...this.getTagValueSuggestions(context));
         break;
       default:
         suggestions.push(...this.getDefaultSuggestions(context));
@@ -150,8 +174,8 @@ export class LogsCompletionItemProvider {
     // These are standard Datadog log facets that are always available
     const basicFacets = ['service', 'source', 'status', 'host', 'env'];
     
-    // Combine backend fields with basic facets, removing duplicates
-    const allFacets = [...new Set([...basicFacets, ...this.facetNames])];
+    // Combine backend fields, basic facets, and tag names, removing duplicates
+    const allFacets = [...new Set([...basicFacets, ...this.facetNames, ...this.tagNames])];
 
     return allFacets.map(facet => ({
       label: `${facet}:`,
@@ -462,6 +486,11 @@ export class LogsCompletionItemProvider {
       case 'env':
         return this.getEnvironmentSuggestions(context);
       default:
+        // Check if this is a tag name
+        if (this.tagNames.includes(facet)) {
+          const tagContext = { ...context, nearestFacet: facet };
+          return this.getTagValueSuggestions(tagContext);
+        }
         return this.getOperatorSuggestions(context);
     }
   }
@@ -494,6 +523,12 @@ export class LogsCompletionItemProvider {
       case 'env':
         return this.getEnvironmentSuggestions(context);
       default:
+        // Check if this is a tag name
+        if (this.tagNames.includes(facet)) {
+          // Create a context for tag values
+          const tagContext = { ...context, nearestFacet: facet };
+          return this.getTagValueSuggestions(tagContext);
+        }
         return [];
     }
   }
@@ -523,6 +558,41 @@ export class LogsCompletionItemProvider {
       insertText: env,
       sortText: `2_${env}`,
       documentation: `Filter logs from environment: ${env}`
+    }));
+  }
+
+  /**
+   * Get tag name suggestions
+   */
+  private getTagSuggestions(context: QueryContext): CompletionItem[] {
+    return this.tagNames.map(tagName => ({
+      label: `${tagName}:`,
+      kind: 'logs_tag' as const,
+      detail: `Tag: ${tagName}`,
+      insertText: `${tagName}:`,
+      sortText: `2_${tagName}`,
+      documentation: `Filter logs by tag: ${tagName}`
+    }));
+  }
+
+  /**
+   * Get tag value suggestions for a specific tag
+   */
+  private getTagValueSuggestions(context: QueryContext): CompletionItem[] {
+    // Extract tag name from context - this should be set when we detect we're after a tag:
+    const tagName = context.nearestFacet;
+    if (!tagName || !this.tagValues.has(tagName)) {
+      return [];
+    }
+
+    const values = this.tagValues.get(tagName) || [];
+    return values.map(value => ({
+      label: value,
+      kind: 'logs_tag_value' as const,
+      detail: `${tagName}: ${value}`,
+      insertText: value,
+      sortText: `2_${value}`,
+      documentation: `Filter logs where ${tagName} equals ${value}`
     }));
   }
 }

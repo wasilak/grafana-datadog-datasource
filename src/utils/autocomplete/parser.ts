@@ -598,12 +598,23 @@ export function parseLogsQuery(queryText: string, cursorPosition: number): Query
   // Extract current token based on context
   const currentToken = extractLogsCurrentToken(lineContent, positionInLine, contextType);
 
+  // Extract nearest facet for tag value contexts
+  let nearestFacet: string | undefined;
+  if (contextType === 'logs_tag_value') {
+    const beforeCursor = lineContent.substring(0, positionInLine);
+    const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):([^:\s\)]*)$/);
+    if (facetMatch) {
+      nearestFacet = facetMatch[1];
+    }
+  }
+
   return {
     contextType,
     currentToken,
     existingTags: new Set(), // Not used for logs queries
     lineContent,
     cursorPosition,
+    nearestFacet,
   };
 }
 
@@ -691,6 +702,19 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
     const facetName = facetMatch[1];
     if (['service', 'source', 'status', 'level', 'host', 'env', 'version'].includes(facetName)) {
       return 'logs_facet';
+    } else {
+      // This could be a tag name - return logs_tag_value context
+      return 'logs_tag_value';
+    }
+  }
+
+  // Check for arbitrary tag patterns (tag_name:value)
+  const tagMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):([^:\s\)]*\*?)$/);
+  if (tagMatch) {
+    const tagName = tagMatch[1];
+    // If it's not a known facet, treat it as a tag
+    if (!['service', 'source', 'status', 'level', 'host', 'env', 'version'].includes(tagName)) {
+      return 'logs_tag_value';
     }
   }
 
@@ -722,12 +746,14 @@ function extractLogsCurrentToken(line: string, position: number, contextType: Qu
     case 'logs_level':
     case 'logs_host':
     case 'logs_env':
+    case 'logs_tag_value':
       // Extract token after the colon
       const colonMatch = beforeCursor.match(/:\s*([^:\s]*)$/);
       return colonMatch ? colonMatch[1] : '';
       
     case 'logs_facet':
-      // Extract the facet name being typed
+    case 'logs_tag':
+      // Extract the facet/tag name being typed
       const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*)$/);
       return facetMatch ? facetMatch[1] : '';
       

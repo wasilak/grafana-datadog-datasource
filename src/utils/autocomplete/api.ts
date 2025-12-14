@@ -162,6 +162,106 @@ export async function fetchTagsForMetric(
 }
 
 /**
+ * Fetch available tag names from Datadog Logs API via backend resource endpoint
+ * Uses the backend /autocomplete/logs/tags endpoint which handles authentication and caching
+ */
+export async function fetchLogsTagNames(datasource: any): Promise<string[]> {
+  const cacheKey = 'logs_tag_names';
+
+  // Check cache first
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < DEFAULT_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Enforce concurrent request limit
+  if (concurrentRequests >= MAX_CONCURRENT_REQUESTS) {
+    return []; // Return empty list if too many concurrent requests
+  }
+
+  concurrentRequests++;
+
+  try {
+    // Set timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    // Call backend resource endpoint for logs tag names
+    const response = await datasource.getResource('autocomplete/logs/tags', {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    // Backend returns array of tag names
+    const tagNames: string[] = Array.isArray(response) ? response : [];
+
+    // Cache the results
+    cache.set(cacheKey, {
+      data: tagNames,
+      timestamp: Date.now(),
+    });
+
+    return tagNames;
+  } catch (error) {
+    console.warn('Failed to fetch logs tag names:', error);
+    return [];
+  } finally {
+    concurrentRequests--;
+  }
+}
+
+/**
+ * Fetch available values for a specific tag from Datadog Logs API via backend resource endpoint
+ * Uses the backend /autocomplete/logs/tag-values/{tagName} endpoint which handles authentication and caching
+ */
+export async function fetchLogsTagValues(tagName: string, datasource: any): Promise<string[]> {
+  const cacheKey = `logs_tag_values_${tagName}`;
+
+  // Check cache first
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < DEFAULT_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Enforce concurrent request limit
+  if (concurrentRequests >= MAX_CONCURRENT_REQUESTS) {
+    return []; // Return empty list if too many concurrent requests
+  }
+
+  concurrentRequests++;
+
+  try {
+    // Set timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    // Call backend resource endpoint for specific tag values
+    const response = await datasource.getResource(`autocomplete/logs/tag-values/${encodeURIComponent(tagName)}`, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    // Backend returns array of tag values
+    const tagValues: string[] = Array.isArray(response) ? response : [];
+
+    // Cache the results
+    cache.set(cacheKey, {
+      data: tagValues,
+      timestamp: Date.now(),
+    });
+
+    return tagValues;
+  } catch (error) {
+    console.warn(`Failed to fetch logs tag values for ${tagName}:`, error);
+    return [];
+  } finally {
+    concurrentRequests--;
+  }
+}
+
+/**
  * Generate completion items from raw data strings
  */
 export function createCompletionItems(

@@ -98,6 +98,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let logsSources: string[] = [];
         let logsLevels: string[] = [];
         let logsFields: string[] = [];
+        let logsTags: string[] = [];
         
         if (queryType === 'metrics') {
           // Fetch metric names from backend (existing pattern)
@@ -122,12 +123,13 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             }
           }
         } else if (queryType === 'logs') {
-          // Fetch logs services, sources, levels, and fields from backend (reusing existing patterns)
+          // Fetch logs services, sources, levels, fields, and tags from backend (reusing existing patterns)
           const logsEndpoints = [
             { name: 'services', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`, target: 'logsServices' },
             { name: 'sources', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`, target: 'logsSources' },
             { name: 'levels', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/levels`, target: 'logsLevels' },
-            { name: 'fields', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/fields`, target: 'logsFields' }
+            { name: 'fields', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/fields`, target: 'logsFields' },
+            { name: 'tags', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/tags`, target: 'logsTags' }
           ];
 
           // Fetch all logs autocomplete data in parallel for better performance
@@ -171,6 +173,9 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 break;
               case 'logsFields':
                 logsFields = result.data;
+                break;
+              case 'logsTags':
+                logsTags = result.data;
                 break;
             }
           });
@@ -222,6 +227,31 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
               console.warn('Failed to fetch tag values:', tagValuesError);
               // Continue with empty tag values if backend call fails
               tagValues = [];
+            }
+          }
+        }
+
+        // Fetch tag values for logs tag contexts
+        let logsTagValues: string[] = [];
+        if (queryType === 'logs' && context.contextType === 'logs_tag_value' && context.nearestFacet) {
+          try {
+            const tagValuesResponse = await getBackendSrv()
+              .fetch({
+                url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/tag-values/${encodeURIComponent(context.nearestFacet)}`,
+                method: 'GET',
+              })
+              .toPromise();
+            logsTagValues = (tagValuesResponse as any).data as string[];
+          } catch (tagValuesError) {
+            const err = tagValuesError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              console.warn('Logs tag values endpoint not found');
+              logsTagValues = [];
+            } else {
+              console.warn('Failed to fetch logs tag values:', tagValuesError);
+              logsTagValues = [];
             }
           }
         }
@@ -318,6 +348,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           logsProvider.updateSources(logsSources);
           logsProvider.updateLevels(logsLevels);
           logsProvider.updateFields(logsFields);
+          logsProvider.updateTagNames(logsTags);
+          
+          // Update tag values if we fetched them for a specific tag
+          if (logsTagValues.length > 0 && context.nearestFacet) {
+            logsProvider.updateTagValues(context.nearestFacet, logsTagValues);
+          }
           
           // If we have specific field values for the current context, use them
           if (logsFieldValues.length > 0) {
@@ -353,6 +389,8 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           tagValuesCount: tagValues.length,
           logsServicesCount: logsServices.length,
           logsSourcesCount: logsSources.length,
+          logsTagsCount: logsTags.length,
+          logsTagValuesCount: logsTagValues.length,
           suggestionsCount: suggestions.length,
           suggestions: suggestions.slice(0, 5), // First 5 for debugging
         });

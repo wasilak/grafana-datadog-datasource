@@ -867,6 +867,10 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.LogsFieldsHandler(ctx, req, sender)
 	case req.Method == "GET" && strings.HasPrefix(req.Path, "autocomplete/logs/field-values/"):
 		return d.LogsFieldValuesHandler(ctx, req, sender)
+	case req.Method == "GET" && req.Path == "autocomplete/logs/tags":
+		return d.LogsTagsHandler(ctx, req, sender)
+	case req.Method == "GET" && strings.HasPrefix(req.Path, "autocomplete/logs/tag-values/"):
+		return d.LogsTagValuesHandler(ctx, req, sender)
 	// Variable resource handlers - Grafana strips "resources/" prefix
 	case req.Method == "POST" && req.Path == "metrics":
 		return d.VariableMetricsHandler(ctx, req, sender)
@@ -3755,7 +3759,8 @@ func (d *Datasource) LogsFieldValuesHandler(ctx context.Context, req *backend.Ca
 }
 
 // fetchLogsFieldValues fetches unique values for a specific field from Datadog Logs API
-// This method uses the Logs Aggregation API to get unique field values from recent log data
+// This method uses the Logs Search API to get field values from actual log entries
+// Falls back from Logs Aggregation API due to potential availability issues
 func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey, appKey, site string) ([]string, error) {
 	logger := log.New()
 	
@@ -3763,44 +3768,32 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	// Use Datadog Logs Aggregation API to get unique field values
-	// This is more efficient than searching through individual log entries
-	url := fmt.Sprintf("https://api.%s/api/v2/logs/aggregate", site)
+	// Use Datadog Logs Search API to get field values from actual log entries
+	// This is more reliable than the aggregation API which may not be available
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 	
 	// Map frontend field names to Datadog log attribute names
 	datadogFieldName := fieldName
 	switch fieldName {
 	case "host":
-		datadogFieldName = "@host" // Datadog uses @host for hostname
+		datadogFieldName = "host" // Try without @ prefix first
 	case "env":
-		datadogFieldName = "@env" // Datadog uses @env for environment
+		datadogFieldName = "env" // Try without @ prefix first
 	case "status":
-		datadogFieldName = "@status" // Datadog uses @status for log level
+		datadogFieldName = "status" // Standard status field
 	}
 
-	// Create aggregation request to get unique values for the field
-	// Query recent logs (last 24 hours) to get current field values
+	// Create search request to get recent logs and extract field values
+	// Query recent logs (last 6 hours) to get current field values
 	requestBody := map[string]interface{}{
 		"filter": map[string]interface{}{
-			"from": "now-24h",
+			"from": "now-6h",
 			"to":   "now",
-			"query": "*", // Get all logs to find all possible field values
+			"query": fmt.Sprintf("%s:*", datadogFieldName), // Only get logs that have this field
 		},
-		"compute": []map[string]interface{}{
-			{
-				"aggregation": "cardinality",
-				"field":       datadogFieldName,
-			},
-		},
-		"group_by": []map[string]interface{}{
-			{
-				"facet": datadogFieldName,
-				"limit": 100, // Limit to top 100 values for autocomplete
-				"sort": map[string]interface{}{
-					"aggregation": "cardinality",
-					"order":       "desc",
-				},
-			},
+		"sort": "timestamp",
+		"page": map[string]interface{}{
+			"limit": 100, // Get up to 100 log entries to extract field values
 		},
 	}
 
@@ -3867,4 +3860,408 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 
 	logger.Info("Fetched logs field values", "field", fieldName, "count", len(fieldValues))
 	return fieldValues, nil
+}
+
+// LogsTagsHandler handles GET /autocomplete/logs/tags requests
+// Provides available tag names for autocomplete suggestions
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsTagsHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	logger.Info("LogsTagsHandler called", "path", req.Path, "traceID", traceID)
+
+	// Check cache first (reusing existing caching pattern)
+	cacheKey := "logs_tags"
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, 30*time.Second); cachedEntry != nil {
+		logger.Info("LogsTagsHandler cache hit", "tagCount", len(cachedEntry.Data), "traceID", traceID)
+		
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, "/autocomplete/logs/tags", 200, duration, len(cachedEntry.Data), nil)
+		
+		respData, _ := json.Marshal(cachedEntry.Data)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Get API credentials from secure JSON data (reusing existing pattern)
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Get Datadog site configuration (reusing existing pattern)
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Apply concurrency limiting (reusing existing pattern from metrics implementation)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case d.concurrencyLimit <- struct{}{}:
+		defer func() { <-d.concurrencyLimit }()
+	}
+
+	// Call Datadog Logs API to get available tag names from recent log data
+	tags, err := d.fetchLogsTags(ctx, apiKey, appKey, site)
+	if err != nil {
+		logger.Error("Failed to fetch tags from Datadog Logs API", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(fmt.Sprintf(`{"error": "failed to fetch tags: %s"}`, err.Error())),
+		})
+	}
+
+	// Cache the results (reusing existing caching pattern with 30 second TTL)
+	d.SetCachedLogsAutocompleteEntry(cacheKey, tags)
+
+	duration := time.Since(startTime)
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, "/autocomplete/logs/tags", 200, duration, len(tags), nil)
+
+	// Return tags as JSON array (same format as other autocomplete endpoints)
+	respData, err := json.Marshal(tags)
+	if err != nil {
+		logger.Error("failed to marshal tags response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsTagValuesHandler handles GET /autocomplete/logs/tag-values/{tagName} requests
+// Provides specific tag values for autocomplete suggestions (e.g., values for "environment" tag)
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsTagValuesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	// Extract tag name from path
+	pathParts := strings.Split(req.Path, "/")
+	if len(pathParts) < 4 {
+		logger.Error("Invalid tag values path", "path", req.Path, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "tag name is required"}`),
+		})
+	}
+	tagName := pathParts[3]
+
+	logger.Info("LogsTagValuesHandler called", "path", req.Path, "tagName", tagName, "traceID", traceID)
+
+	// Check cache first (reusing existing caching pattern)
+	cacheKey := fmt.Sprintf("logs_tag_values_%s", tagName)
+	if cachedEntry := d.GetCachedLogsAutocompleteEntry(cacheKey, 30*time.Second); cachedEntry != nil {
+		logger.Info("LogsTagValuesHandler cache hit", "tagName", tagName, "valueCount", len(cachedEntry.Data), "traceID", traceID)
+		
+		duration := time.Since(startTime)
+		logVariableResponse(logger, traceID, fmt.Sprintf("/autocomplete/logs/tag-values/%s", tagName), 200, duration, len(cachedEntry.Data), nil)
+		
+		respData, _ := json.Marshal(cachedEntry.Data)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 200,
+			Body:   respData,
+		})
+	}
+
+	// Get API credentials from secure JSON data (reusing existing pattern)
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Get Datadog site configuration (reusing existing pattern)
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Apply concurrency limiting (reusing existing pattern from metrics implementation)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case d.concurrencyLimit <- struct{}{}:
+		defer func() { <-d.concurrencyLimit }()
+	}
+
+	// Call Datadog Logs API to get unique tag values from recent log data
+	tagValues, err := d.fetchLogsTagValues(ctx, tagName, apiKey, appKey, site)
+	if err != nil {
+		logger.Error("Failed to fetch tag values from Datadog Logs API", "error", err, "tagName", tagName, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(fmt.Sprintf(`{"error": "failed to fetch %s values: %s"}`, tagName, err.Error())),
+		})
+	}
+
+	// Cache the results (reusing existing caching pattern with 30 second TTL)
+	d.SetCachedLogsAutocompleteEntry(cacheKey, tagValues)
+
+	duration := time.Since(startTime)
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, fmt.Sprintf("/autocomplete/logs/tag-values/%s", tagName), 200, duration, len(tagValues), nil)
+
+	// Return tag values as JSON array (same format as other autocomplete endpoints)
+	respData, err := json.Marshal(tagValues)
+	if err != nil {
+		logger.Error("failed to marshal tag values response", "error", err, "tagName", tagName, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// fetchLogsTags fetches available tag names from Datadog Logs API
+// This method uses the Logs Search API to get tag names from actual log entries
+func (d *Datasource) fetchLogsTags(ctx context.Context, apiKey, appKey, site string) ([]string, error) {
+	logger := log.New()
+	
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Use Datadog Logs Search API to get tag names from actual log entries
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
+	
+	// Create search request to get recent logs and extract tag names
+	// Query recent logs (last 6 hours) to get current tag names
+	requestBody := map[string]interface{}{
+		"filter": map[string]interface{}{
+			"from": "now-6h",
+			"to":   "now",
+			"query": "*", // Get all logs to extract tag names
+		},
+		"sort": "timestamp",
+		"page": map[string]interface{}{
+			"limit": 50, // Get up to 50 log entries to extract tag names
+		},
+	}
+
+	// Marshal request body
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs search request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(fetchCtx, "POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logs search request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("DD-API-KEY", apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", appKey)
+
+	// Execute request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs search request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read logs search response: %w", err)
+	}
+
+	// Check for API errors
+	if resp.StatusCode != 200 {
+		logger.Error("Logs search API error", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("logs search API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var searchResponse struct {
+		Data []struct {
+			Attributes struct {
+				Tags []string `json:"tags"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &searchResponse); err != nil {
+		logger.Error("Failed to parse logs search response", "error", err, "body", string(body))
+		return nil, fmt.Errorf("failed to parse logs search response: %w", err)
+	}
+
+	// Extract unique tag names from all log entries
+	tagNamesSet := make(map[string]bool)
+	for _, logEntry := range searchResponse.Data {
+		for _, tag := range logEntry.Attributes.Tags {
+			// Tags are in format "key:value", extract the key part
+			if colonIndex := strings.Index(tag, ":"); colonIndex > 0 {
+				tagName := tag[:colonIndex]
+				tagNamesSet[tagName] = true
+			}
+		}
+	}
+
+	// Convert set to slice
+	var tagNames []string
+	for tagName := range tagNamesSet {
+		tagNames = append(tagNames, tagName)
+	}
+
+	// Sort for consistent results
+	sort.Strings(tagNames)
+
+	logger.Info("Fetched logs tag names", "count", len(tagNames))
+	return tagNames, nil
+}
+
+// fetchLogsTagValues fetches unique values for a specific tag from Datadog Logs API
+// This method uses the Logs Search API to get tag values from actual log entries
+func (d *Datasource) fetchLogsTagValues(ctx context.Context, tagName, apiKey, appKey, site string) ([]string, error) {
+	logger := log.New()
+	
+	// Create context with timeout
+	fetchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Use Datadog Logs Search API to get tag values from actual log entries
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
+	
+	// Create search request to get recent logs with the specific tag
+	// Query recent logs (last 6 hours) to get current tag values
+	requestBody := map[string]interface{}{
+		"filter": map[string]interface{}{
+			"from": "now-6h",
+			"to":   "now",
+			"query": fmt.Sprintf("%s:*", tagName), // Only get logs that have this tag
+		},
+		"sort": "timestamp",
+		"page": map[string]interface{}{
+			"limit": 100, // Get up to 100 log entries to extract tag values
+		},
+	}
+
+	// Marshal request body
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs search request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(fetchCtx, "POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logs search request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("DD-API-KEY", apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", appKey)
+
+	// Execute request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs search request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read logs search response: %w", err)
+	}
+
+	// Check for API errors
+	if resp.StatusCode != 200 {
+		logger.Error("Logs search API error", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("logs search API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var searchResponse struct {
+		Data []struct {
+			Attributes struct {
+				Tags []string `json:"tags"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &searchResponse); err != nil {
+		logger.Error("Failed to parse logs search response", "error", err, "body", string(body))
+		return nil, fmt.Errorf("failed to parse logs search response: %w", err)
+	}
+
+	// Extract unique tag values for the specific tag name
+	tagValuesSet := make(map[string]bool)
+	for _, logEntry := range searchResponse.Data {
+		for _, tag := range logEntry.Attributes.Tags {
+			// Tags are in format "key:value", find matching key and extract value
+			if colonIndex := strings.Index(tag, ":"); colonIndex > 0 {
+				currentTagName := tag[:colonIndex]
+				if currentTagName == tagName {
+					tagValue := tag[colonIndex+1:]
+					if tagValue != "" {
+						tagValuesSet[tagValue] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Convert set to slice
+	var tagValues []string
+	for tagValue := range tagValuesSet {
+		tagValues = append(tagValues, tagValue)
+	}
+
+	// Sort for consistent results
+	sort.Strings(tagValues)
+
+	logger.Info("Fetched logs tag values", "tag", tagName, "count", len(tagValues))
+	return tagValues, nil
 }
