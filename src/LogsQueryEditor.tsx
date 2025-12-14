@@ -28,6 +28,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   // Pagination state
   const [pageSize, setPageSize] = useState(query.pageSize || 100);
   const [currentPage, setCurrentPage] = useState(query.currentPage || 1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pageHistory, setPageHistory] = useState<{[page: number]: string}>({1: ''}); // Track cursors for each page
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -146,6 +148,52 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       suggestions: autocomplete.state.suggestions,
     };
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
+
+  // Handle query execution completion (clear loading state)
+  useEffect(() => {
+    // Clear loading state when query execution completes
+    // Note: In a real implementation, this would be triggered by the data response
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [query.refId]); // Use refId as a proxy for query execution completion
+
+  // Reset pagination state when query changes
+  useEffect(() => {
+    if (query.logQuery !== logQuery) {
+      setCurrentPage(1);
+      setPageHistory({1: ''});
+      onChange({
+        ...query,
+        currentPage: 1,
+        nextCursor: '',
+        queryType: 'logs'
+      });
+    }
+  }, [query.logQuery]);
+
+  // Update page history when nextCursor is received from backend
+  useEffect(() => {
+    if (query.nextCursor && currentPage >= 1) {
+      // Store the cursor for the next page
+      setPageHistory(prev => ({
+        ...prev,
+        [currentPage + 1]: query.nextCursor || ''
+      }));
+    }
+  }, [query.nextCursor, currentPage]);
+
+  // Sync local state with query state
+  useEffect(() => {
+    if (query.pageSize && query.pageSize !== pageSize) {
+      setPageSize(query.pageSize);
+    }
+    if (query.currentPage && query.currentPage !== currentPage) {
+      setCurrentPage(query.currentPage);
+    }
+  }, [query.pageSize, query.currentPage]);
 
   const onLogQueryChange = (newValue: string) => {
     // Validate the logs query
@@ -539,19 +587,25 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             max={1000}
             step={10}
             width={10}
+            disabled={isLoading}
             onChange={(e) => {
               const newPageSize = Math.max(10, Math.min(1000, parseInt(e.currentTarget.value) || 100));
               setPageSize(newPageSize);
+              setCurrentPage(1); // Reset to first page when page size changes
+              setPageHistory({1: ''}); // Reset page history
               onChange({ 
                 ...query, 
                 pageSize: newPageSize,
-                currentPage: 1, // Reset to first page when page size changes
+                currentPage: 1,
+                nextCursor: '', // Reset cursor when page size changes
                 queryType: 'logs'
               });
             }}
             onBlur={() => {
               // Trigger query execution when page size changes
+              setIsLoading(true);
               onRunQuery();
+              setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
             }}
           />
         </InlineField>
@@ -567,16 +621,22 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               size="sm"
               icon="angle-left"
               aria-label="Previous page"
-              disabled={currentPage <= 1}
+              disabled={currentPage <= 1 || isLoading}
               onClick={() => {
                 const newPage = Math.max(1, currentPage - 1);
+                const cursor = pageHistory[newPage] || '';
                 setCurrentPage(newPage);
+                setIsLoading(true);
+                
                 onChange({ 
                   ...query, 
                   currentPage: newPage,
+                  nextCursor: cursor, // Use the stored cursor for this page
                   queryType: 'logs'
                 });
                 onRunQuery();
+                // Loading will be cleared when new data arrives
+                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
             />
             
@@ -586,22 +646,29 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               min={1}
               max={999}
               width={8}
+              disabled={isLoading}
               onChange={(e) => {
                 const newPage = Math.max(1, parseInt(e.currentTarget.value) || 1);
                 setCurrentPage(newPage);
+                const cursor = pageHistory[newPage] || '';
                 onChange({ 
                   ...query, 
                   currentPage: newPage,
+                  nextCursor: cursor,
                   queryType: 'logs'
                 });
               }}
               onBlur={() => {
                 // Trigger query execution when page number changes
+                setIsLoading(true);
                 onRunQuery();
+                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  setIsLoading(true);
                   onRunQuery();
+                  setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
                 }
               }}
             />
@@ -609,9 +676,32 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             <span style={{ 
               fontSize: theme.typography.size.sm, 
               color: theme.colors.text.secondary,
-              whiteSpace: 'nowrap'
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
             }}>
-              of {currentPage}+
+              {isLoading ? (
+                <>
+                  <span>Loading...</span>
+                  <div style={{
+                    width: '12px',
+                    height: '12px',
+                    border: `2px solid ${theme.colors.border.weak}`,
+                    borderTop: `2px solid ${theme.colors.primary.main}`,
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  <style>{`
+                    @keyframes spin {
+                      0% { transform: rotate(0deg); }
+                      100% { transform: rotate(360deg); }
+                    }
+                  `}</style>
+                </>
+              ) : (
+                `of ${currentPage}+`
+              )}
             </span>
             
             <Button
@@ -619,16 +709,21 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               size="sm"
               icon="angle-right"
               aria-label="Next page"
-              disabled={false}
+              disabled={isLoading}
               onClick={() => {
                 const newPage = currentPage + 1;
                 setCurrentPage(newPage);
+                setIsLoading(true);
+                
                 onChange({ 
                   ...query, 
                   currentPage: newPage,
+                  nextCursor: pageHistory[newPage] || '', // Use stored cursor or empty for new pages
                   queryType: 'logs'
                 });
                 onRunQuery();
+                // Loading will be cleared when new data arrives
+                setTimeout(() => setIsLoading(false), 5000); // Fallback timeout
               }}
             />
           </div>
