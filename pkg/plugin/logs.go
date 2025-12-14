@@ -1493,8 +1493,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	timestampField := data.NewField("timestamp", nil, timestamps)
 	timestampField.Config = &data.FieldConfig{
 		DisplayName: "Time",
+		Unit:        "time:YYYY-MM-DD HH:mm:ss", // Proper time formatting
 		Custom: map[string]interface{}{
 			"displayMode": "list", // Display as list for logs panel
+			"sortable":    true,   // Enable sorting for table panel
 		},
 	}
 
@@ -1503,7 +1505,11 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	messageField.Config = &data.FieldConfig{
 		DisplayName: "Message",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         400,    // Optimal width for message column
+			"wrap":          true,   // Enable text wrapping for long messages
 		},
 	}
 
@@ -1512,9 +1518,20 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	levelField.Config = &data.FieldConfig{
 		DisplayName: "Level",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         80,     // Optimal width for level column
+			// Color mapping for different log levels (using custom field for now)
+			"levelColors": map[string]string{
+				"ERROR": "red",
+				"FATAL": "red", 
+				"WARN":  "orange",
+				"INFO":  "blue",
+				"DEBUG": "green",
+				"TRACE": "gray",
+			},
 		},
-		// TODO: Add color mapping for different log levels when SDK supports it
 	}
 
 	// Create service field with proper configuration
@@ -1522,7 +1539,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	serviceField.Config = &data.FieldConfig{
 		DisplayName: "Service",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         120,    // Optimal width for service column
 		},
 	}
 
@@ -1531,7 +1551,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	sourceField.Config = &data.FieldConfig{
 		DisplayName: "Source",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         100,    // Optimal width for source column
 		},
 	}
 
@@ -1540,7 +1563,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	hostField.Config = &data.FieldConfig{
 		DisplayName: "Host",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         100,    // Optimal width for host column
 		},
 	}
 
@@ -1549,7 +1575,10 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	envField.Config = &data.FieldConfig{
 		DisplayName: "Environment",
 		Custom: map[string]interface{}{
-			"displayMode": "list",
+			"displayMode":   "list",
+			"sortable":      true,   // Enable sorting for table panel
+			"filterable":    true,   // Enable filtering for table panel
+			"width":         100,    // Optimal width for environment column
 		},
 	}
 
@@ -1581,20 +1610,60 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 		additionalField.Config = &data.FieldConfig{
 			DisplayName: fieldName,
 			Custom: map[string]interface{}{
-				"displayMode": "list",
+				"displayMode":   "list",
+				"sortable":      true,   // Enable sorting for table panel
+				"filterable":    true,   // Enable filtering for table panel
+				"width":         150,    // Default width for additional fields
 			},
 		}
 		frame.Fields = append(frame.Fields, additionalField)
 	}
 
 	// Set appropriate metadata to indicate this is log data for Grafana's logs panel recognition
+	// Requirements 13.1, 13.2, 13.3, 13.4, 13.5
 	frame.Meta = &data.FrameMeta{
 		Type: data.FrameTypeLogLines, // Critical: This tells Grafana this is log data
 		Custom: map[string]interface{}{
-			"preferredVisualisationType": "logs", // Preferred visualization type
+			"preferredVisualisationType": "logs", // Preferred visualization type (Requirement 13.1)
+			// Enhanced metadata for different panel types (Requirement 13.4)
+			"supportedVisualisationTypes": []string{"logs", "table", "stat", "text"},
+			// Table panel configuration (Requirement 13.3)
+			"tableConfig": map[string]interface{}{
+				"sortable":     true,
+				"filterable":   true,
+				"resizable":    true,
+				"defaultSort":  "timestamp",
+				"defaultOrder": "desc",
+			},
+			// Logs panel configuration (Requirement 13.2)
+			"logsConfig": map[string]interface{}{
+				"timestampField": "timestamp",
+				"messageField":   "message",
+				"levelField":     "level",
+				"serviceField":   "service",
+				"sourceField":    "source",
+				"wrapLines":      true,
+				"showTime":       true,
+				"showLevel":      true,
+				"showLabels":     true,
+			},
+			// Field mapping for other panel types (Requirement 13.4)
+			"fieldMapping": map[string]interface{}{
+				"timeField":    "timestamp",
+				"valueFields":  []string{"level", "service", "source", "host", "env"},
+				"labelFields":  []string{"service", "source", "host", "env"},
+				"stringFields": []string{"message", "level", "service", "source", "host", "env"},
+			},
+			// Ensure no interference with metrics (Requirement 13.5)
+			"dataType": "logs",
+			"isMetrics": false,
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
+		// Add field information for better panel compatibility
+		Stats: []data.QueryStat{
+			{FieldConfig: data.FieldConfig{DisplayName: "Log Entries"}, Value: float64(entryCount)},
+		},
 	}
 
 	logger.Debug("Created logs data frame with enhanced structure", 
