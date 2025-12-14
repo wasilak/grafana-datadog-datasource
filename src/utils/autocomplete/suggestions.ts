@@ -505,21 +505,44 @@ export function generateLogsSuggestions(
  */
 function generateLogsFacetSuggestions(context: QueryContext): CompletionItem[] {
   const facets = [
-    { name: 'service', description: 'Filter by service name' },
-    { name: 'source', description: 'Filter by log source' },
-    { name: 'status', description: 'Filter by log level (DEBUG, INFO, WARN, ERROR, FATAL)' },
-    { name: 'host', description: 'Filter by hostname' },
-    { name: '@env', description: 'Filter by environment (custom attribute)' },
-    { name: '@version', description: 'Filter by application version (custom attribute)' },
+    { name: 'service', description: 'Filter by service name (e.g., service:web-app, service:(api OR web))' },
+    { name: 'source', description: 'Filter by log source (e.g., source:nginx, source:application)' },
+    { name: 'status', description: 'Filter by log level (e.g., status:ERROR, status:(ERROR OR WARN))' },
+    { name: 'host', description: 'Filter by hostname (e.g., host:web-01, host:prod-*)' },
+    { name: '@env', description: 'Filter by environment (e.g., @env:production, @env:(staging OR prod))' },
+    { name: '@version', description: 'Filter by application version (e.g., @version:1.2.3, @version:1.*)' },
   ];
 
-  return facets
-    .filter(facet => facet.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+  // Add advanced pattern suggestions based on context
+  const advancedPatterns = [];
+  
+  // If we're in a search context, suggest some common advanced patterns
+  if (context.contextType === 'logs_search') {
+    advancedPatterns.push(
+      { name: 'error*', description: 'Wildcard search - matches error, errors, errorCode, etc.' },
+      { name: '"exact phrase"', description: 'Exact phrase search - matches the exact text' },
+      { name: '-excluded', description: 'Exclude term - logs that do not contain "excluded"' }
+    );
+  }
+
+  const allSuggestions = [...facets, ...advancedPatterns];
+
+  return allSuggestions
+    .filter(facet => {
+      // For advanced patterns, only show if relevant to current token
+      if (['error*', '"exact phrase"', '-excluded'].includes(facet.name)) {
+        return context.currentToken.length === 0 || 
+               facet.name.toLowerCase().includes(context.currentToken.toLowerCase());
+      }
+      return facet.name.toLowerCase().includes(context.currentToken.toLowerCase());
+    })
     .map(facet => ({
-      label: `${facet.name}:`,
+      label: facet.name.includes(':') ? facet.name : `${facet.name}:`,
       kind: 'logs_facet' as const,
       detail: facet.description,
-      insertText: `${facet.name}:`,
+      insertText: facet.name.includes(':') || ['error*', '"exact phrase"', '-excluded'].includes(facet.name) 
+        ? facet.name 
+        : `${facet.name}:`,
       sortText: `1_${facet.name}`, // Sort facets first
     }));
 }
@@ -529,18 +552,44 @@ function generateLogsFacetSuggestions(context: QueryContext): CompletionItem[] {
  */
 function generateLogsOperatorSuggestions(context: QueryContext): CompletionItem[] {
   const operators = [
-    { name: 'AND', description: 'Logical AND operator' },
-    { name: 'OR', description: 'Logical OR operator' },
-    { name: 'NOT', description: 'Logical NOT operator' },
+    { name: 'AND', description: 'Logical AND operator - both conditions must be true' },
+    { name: 'OR', description: 'Logical OR operator - either condition can be true' },
+    { name: 'NOT', description: 'Logical NOT operator - excludes matching logs' },
   ];
 
-  return operators
-    .filter(op => op.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+  // Add wildcard pattern suggestions if appropriate
+  const wildcardSuggestions = [];
+  if (context.currentToken && !context.currentToken.includes('*')) {
+    wildcardSuggestions.push({
+      name: '*',
+      description: 'Wildcard - matches any characters (e.g., error* matches error, errors, errorCode)',
+    });
+  }
+
+  // Add grouping suggestions
+  const groupingSuggestions = [
+    { name: '()', description: 'Group conditions - use with OR/AND (e.g., status:(ERROR OR WARN))' },
+  ];
+
+  const allSuggestions = [...operators, ...wildcardSuggestions, ...groupingSuggestions];
+
+  return allSuggestions
+    .filter(op => {
+      if (op.name === '*') {
+        // Only suggest wildcard if we're in a search context and not already typing one
+        return context.contextType === 'logs_search' && !context.currentToken.includes('*');
+      }
+      if (op.name === '()') {
+        // Only suggest grouping if we're in a facet context
+        return ['logs_service', 'logs_source', 'logs_level', 'logs_facet'].includes(context.contextType);
+      }
+      return op.name.toLowerCase().includes(context.currentToken.toLowerCase());
+    })
     .map(op => ({
       label: op.name,
       kind: 'logs_operator' as const,
       detail: op.description,
-      insertText: ` ${op.name} `,
+      insertText: op.name === '()' ? '(' : (op.name === '*' ? '*' : ` ${op.name} `),
       sortText: `3_${op.name}`, // Sort operators after facets and services
     }));
 }
@@ -588,8 +637,24 @@ function generateLogsLevelSuggestions(context: QueryContext): CompletionItem[] {
     { name: 'TRACE', description: 'Trace level logs' },
   ];
 
-  return levels
-    .filter(level => level.name.toLowerCase().includes(context.currentToken.toLowerCase()))
+  // Add common boolean combinations for log levels
+  const levelCombinations = [
+    { name: '(ERROR OR WARN)', description: 'Error or warning logs' },
+    { name: '(ERROR OR WARN OR FATAL)', description: 'Error, warning, or fatal logs' },
+    { name: '(INFO OR DEBUG)', description: 'Info or debug logs' },
+  ];
+
+  const allSuggestions = [...levels, ...levelCombinations];
+
+  return allSuggestions
+    .filter(level => {
+      // For combinations, only show if we're not already in a grouped context
+      if (level.name.includes('(')) {
+        return !context.lineContent.includes('(') && 
+               level.name.toLowerCase().includes(context.currentToken.toLowerCase());
+      }
+      return level.name.toLowerCase().includes(context.currentToken.toLowerCase());
+    })
     .map(level => ({
       label: level.name,
       kind: 'logs_level' as const,

@@ -35,6 +35,12 @@ const LOGS_EXAMPLES: LogsExample[] = [
     category: 'basic',
     description: 'Search with wildcard patterns (error, errors, errorCode, etc.)'
   },
+  {
+    title: 'Advanced Wildcards',
+    expression: 'web-* OR api-*',
+    category: 'basic',
+    description: 'Multiple wildcard patterns with boolean operators'
+  },
 
   // Filtering by facets
   {
@@ -63,9 +69,15 @@ const LOGS_EXAMPLES: LogsExample[] = [
   },
   {
     title: 'Environment Filter',
-    expression: 'env:production',
+    expression: '@env:production',
     category: 'filtering',
-    description: 'Filter logs by environment'
+    description: 'Filter logs by environment (custom attribute with @ prefix)'
+  },
+  {
+    title: 'Wildcard in Facets',
+    expression: 'service:web-* AND host:prod-*',
+    category: 'filtering',
+    description: 'Use wildcards in facet filters for pattern matching'
   },
 
   // Boolean operators
@@ -93,13 +105,31 @@ const LOGS_EXAMPLES: LogsExample[] = [
     category: 'boolean',
     description: 'Use parentheses to group conditions'
   },
+  {
+    title: 'Complex Boolean Logic',
+    expression: '(service:web-app OR service:api) AND NOT (status:DEBUG OR status:TRACE)',
+    category: 'boolean',
+    description: 'Complex boolean expressions with multiple groupings'
+  },
 
   // Advanced patterns
   {
     title: 'Multiple Services',
-    expression: 'service:(web-app OR api-service)',
+    expression: 'service:(web-app OR api-service OR auth-service)',
     category: 'advanced',
     description: 'Filter by multiple services using parentheses'
+  },
+  {
+    title: 'Multiple Log Levels',
+    expression: 'status:(ERROR OR WARN OR FATAL)',
+    category: 'advanced',
+    description: 'Filter by multiple log levels in a single expression'
+  },
+  {
+    title: 'Negated Wildcards',
+    expression: 'error* NOT test-*',
+    category: 'advanced',
+    description: 'Combine wildcards with NOT operator for exclusion'
   },
   {
     title: 'Range Query',
@@ -109,17 +139,23 @@ const LOGS_EXAMPLES: LogsExample[] = [
   },
   {
     title: 'Complex Query',
-    expression: 'service:web-app status:(ERROR OR WARN) NOT source:health-check',
+    expression: 'service:(web-* OR api-*) AND status:(ERROR OR WARN) AND NOT source:health-check',
     category: 'advanced',
-    description: 'Complex query combining multiple operators and facets'
+    description: 'Complex query combining wildcards, grouping, and boolean operators'
   },
   {
     title: 'Variable Usage',
     expression: 'service:$service status:$log_level',
     category: 'advanced',
     description: 'Use Grafana variables in logs queries'
+  },
+  {
+    title: 'Custom Attributes',
+    expression: '@env:$environment AND @version:1.* AND service:$service',
+    category: 'advanced',
+    description: 'Combine custom attributes with variables and wildcards'
   }
-];
+];;
 
 export function LogsQueryEditorHelp({ onClickExample }: LogsQueryEditorHelpProps) {
   const theme = useTheme2();
@@ -151,17 +187,17 @@ export function LogsQueryEditorHelp({ onClickExample }: LogsQueryEditorHelpProps
   const getCategoryDescription = (category: string) => {
     switch (category) {
       case 'basic':
-        return 'Simple text and wildcard searches';
+        return 'Simple text searches and wildcard patterns (*, error*, web-*)';
       case 'filtering':
-        return 'Filter logs by service, level, source, and other facets';
+        return 'Filter logs by service, level, source, host, and custom attributes (@env, @version)';
       case 'boolean':
-        return 'Combine conditions with AND, OR, and NOT operators';
+        return 'Combine conditions with AND, OR, NOT operators and parentheses for grouping';
       case 'advanced':
-        return 'Complex queries with multiple conditions and variables';
+        return 'Complex queries with multiple conditions, variables, and advanced patterns';
       default:
         return '';
     }
-  };
+  };;
 
   // Group examples by category
   const groupedExamples = LOGS_EXAMPLES.reduce((groups, example) => {

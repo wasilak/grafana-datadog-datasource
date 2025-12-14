@@ -81,4 +81,67 @@ describe('logsQueryValidator', () => {
       expect(suggestions).toContain('Use AND, OR, NOT operators to combine search terms');
     });
   });
+
+  describe('Advanced Boolean Operators and Wildcards (Task 11)', () => {
+    it('should validate complex boolean expressions with grouping', () => {
+      const result = validateLogsQuery('service:(web-app OR api-service) AND status:(ERROR OR WARN)');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should validate NOT operator with complex expressions', () => {
+      const result = validateLogsQuery('service:web-app AND NOT (status:DEBUG OR status:TRACE)');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should validate wildcard patterns in facets', () => {
+      const result = validateLogsQuery('service:web-* AND host:prod-*');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should validate wildcard patterns in search terms', () => {
+      const result = validateLogsQuery('error* AND NOT test-*');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should detect invalid wildcard patterns', () => {
+      const result = validateLogsQuery('error** AND status:ERROR');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('Invalid wildcard pattern');
+    });
+
+    it('should validate nested boolean expressions', () => {
+      const result = validateLogsQuery('(service:web-app OR service:api) AND (status:ERROR OR status:WARN) AND NOT host:test-*');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should detect invalid boolean operator sequences in groups', () => {
+      const result = validateLogsQuery('status:(ERROR OR OR WARN)');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('Invalid boolean operator usage');
+    });
+
+    it('should validate time range integration warnings', () => {
+      const result = validateLogsQuery('service:web-app AND @timestamp:>now-1h');
+      expect(result.isValid).toBe(true);
+      // Note: Time range warnings are currently handled in the backend, not frontend validation
+      // This test validates that the query is syntactically valid
+    });
+
+    it('should validate custom attributes with wildcards', () => {
+      const result = validateLogsQuery('@env:prod* AND @version:1.* AND service:web-*');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should validate quoted strings with wildcards', () => {
+      const result = validateLogsQuery('"error message*" AND service:web-app');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+  });
 });

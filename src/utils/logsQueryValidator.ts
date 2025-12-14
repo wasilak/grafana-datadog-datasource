@@ -65,13 +65,34 @@ function validateBasicSyntax(query: string): LogsValidationResult {
     return facetCheck;
   }
 
-  // Check for invalid boolean operators
+  // Check for invalid boolean operators (Requirements 4.3)
   const booleanCheck = validateBooleanOperators(query);
   if (!booleanCheck.isValid) {
     return booleanCheck;
   }
 
-  return { isValid: true };
+  // Check for invalid wildcard patterns (Requirements 4.4)
+  const wildcardCheck = validateWildcardPatterns(query);
+  if (!wildcardCheck.isValid) {
+    return wildcardCheck;
+  }
+
+  // Check for time range integration issues (Requirements 4.5)
+  const timeRangeCheck = validateTimeRangeIntegration(query);
+  if (!timeRangeCheck.isValid) {
+    return timeRangeCheck;
+  }
+
+  // Collect warnings from all checks
+  const allWarnings: string[] = [];
+  if (booleanCheck.warnings) allWarnings.push(...booleanCheck.warnings);
+  if (wildcardCheck.warnings) allWarnings.push(...wildcardCheck.warnings);
+  if (timeRangeCheck.warnings) allWarnings.push(...timeRangeCheck.warnings);
+
+  return { 
+    isValid: true,
+    warnings: allWarnings.length > 0 ? allWarnings : undefined
+  };
 }
 
 /**
@@ -191,24 +212,151 @@ function validateFacetSyntax(query: string): LogsValidationResult {
  * Validates boolean operator usage
  */
 function validateBooleanOperators(query: string): LogsValidationResult {
+  // Enhanced validation for boolean operators supporting advanced patterns
+  // Requirements 4.3: Support for AND, OR, NOT operators
+  
   // Check for invalid operator sequences
   const invalidSequences = [
-    /\b(AND|OR|NOT)\s+(AND|OR|NOT)\b/g,  // Double operators
-    /^\s*(AND|OR)\b/,                     // Starting with AND/OR
+    /\b(AND|OR|NOT)\s+(AND|OR|NOT)\b/g,  // Double operators (except NOT followed by others)
+    /^\s*(AND|OR)\b/,                     // Starting with AND/OR (NOT is allowed at start)
     /\b(AND|OR)\s*$/,                     // Ending with AND/OR
+    /\bNOT\s+NOT\b/g,                     // Double NOT
   ];
 
   for (const pattern of invalidSequences) {
     const match = pattern.exec(query);
     if (match) {
+      // Special case: NOT followed by AND/OR is valid (e.g., "NOT service:test AND status:ERROR")
+      if (match[0].includes('NOT') && (match[0].includes('AND') || match[0].includes('OR'))) {
+        const notAndOrPattern = /\bNOT\s+(AND|OR)\b/;
+        if (notAndOrPattern.test(match[0])) {
+          return {
+            isValid: false,
+            error: `Invalid operator sequence: "${match[0].trim()}". Use "NOT condition AND/OR" instead.`
+          };
+        }
+      } else {
+        return {
+          isValid: false,
+          error: `Invalid boolean operator usage: "${match[0].trim()}"`
+        };
+      }
+    }
+  }
+
+  // Validate grouped expressions: status:(ERROR OR WARN)
+  const groupedExpressions = query.match(/\w+:\s*\([^)]+\)/g);
+  if (groupedExpressions) {
+    for (const expr of groupedExpressions) {
+      const groupContent = expr.match(/\(([^)]+)\)/)?.[1];
+      if (groupContent) {
+        // Validate boolean operators within groups
+        const groupResult = validateBooleanOperators(groupContent);
+        if (!groupResult.isValid) {
+          return {
+            isValid: false,
+            error: `Invalid grouped expression "${expr}": ${groupResult.error}`
+          };
+        }
+      }
+    }
+  }
+
+  // Check for unmatched parentheses in boolean expressions
+  const openParens = (query.match(/\(/g) || []).length;
+  const closeParens = (query.match(/\)/g) || []).length;
+  if (openParens !== closeParens) {
+    return {
+      isValid: false,
+      error: `Unmatched parentheses in boolean expression. Found ${openParens} opening and ${closeParens} closing parentheses.`
+    };
+  }
+
+  return { isValid: true };
+}
+
+// Validates wildcard pattern syntax
+// Implements Requirements 4.4 for wildcard pattern support
+function validateWildcardPatterns(query: string): LogsValidationResult {
+  // Check for invalid wildcard patterns
+  const invalidPatterns = [
+    /\*{2,}/g,                           // Multiple consecutive asterisks
+    /^\*/,                               // Starting with asterisk (usually not useful)
+    /\*\s+\*/g,                          // Asterisks separated by spaces
+  ];
+
+  for (const pattern of invalidPatterns) {
+    const match = pattern.exec(query);
+    if (match) {
+      if (match[0].includes('**')) {
+        return {
+          isValid: false,
+          error: `Invalid wildcard pattern: "${match[0]}". Use single asterisk (*) for wildcards.`
+        };
+      }
+      if (match[0] === '*' && pattern.source === '^\\*') {
+        // Starting with asterisk - this is a warning, not an error
+        continue;
+      }
       return {
         isValid: false,
-        error: `Invalid boolean operator usage: "${match[0].trim()}"`
+        error: `Invalid wildcard pattern: "${match[0].trim()}"`
       };
     }
   }
 
+  // Validate wildcard usage in facet filters
+  const facetWildcards = query.match(/\w+:\s*[^:\s]*\*/g);
+  if (facetWildcards) {
+    for (const facetWildcard of facetWildcards) {
+      // Check if wildcard is properly positioned (at the end of the value)
+      const wildcardInMiddle = /\w+:\s*[^:\s]*\*[^:\s\)]+/;
+      if (wildcardInMiddle.test(facetWildcard)) {
+        return {
+          isValid: false,
+          error: `Invalid wildcard in facet filter: "${facetWildcard}". Wildcards should be at the end of the value.`
+        };
+      }
+    }
+  }
+
   return { isValid: true };
+}
+
+// Validates time range integration patterns
+// Implements Requirements 4.5 for time range integration
+function validateTimeRangeIntegration(query: string): LogsValidationResult {
+  // Check for inline time filters that might conflict with Grafana's time picker
+  const timeFilterPatterns = [
+    /@timestamp:/i,
+    /timestamp:/i,
+    /\btime:/i,
+    /\bdate:/i,
+  ];
+
+  const warnings: string[] = [];
+  
+  for (const pattern of timeFilterPatterns) {
+    if (pattern.test(query)) {
+      warnings.push(
+        `Found inline time filter in query. Consider using Grafana's time range picker instead for better integration.`
+      );
+      break; // Only show this warning once
+    }
+  }
+
+  // Check for relative time expressions
+  const relativeTimePattern = /@timestamp:\s*[><]=?\s*now[-+]\w+/i;
+  if (relativeTimePattern.test(query)) {
+    warnings.push(
+      `Relative time filters will be combined with Grafana's time range picker. Ensure this is intended.`
+    );
+  }
+
+  return { 
+    isValid: true, 
+    warnings: warnings.length > 0 ? warnings : undefined 
+  };
 }
 
 /**

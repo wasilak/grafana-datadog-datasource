@@ -620,31 +620,68 @@ function detectLogsContextType(line: string, position: number): QueryContext['co
   // Look backwards from cursor position to find facet patterns
   const beforeCursor = line.substring(0, position);
   
-  // Check for service: pattern
-  const serviceMatch = beforeCursor.match(/\bservice:\s*([^:\s]*)$/);
+  // Check for service: pattern (enhanced to handle boolean operators and wildcards)
+  const serviceMatch = beforeCursor.match(/\bservice:\s*([^:\s\)]*\*?|[^:\s\)]*\s+(AND|OR)\s+[^:\s\)]*\*?)$/);
   if (serviceMatch) {
     return 'logs_service';
   }
 
-  // Check for source: pattern
-  const sourceMatch = beforeCursor.match(/\bsource:\s*([^:\s]*)$/);
+  // Check for source: pattern (enhanced to handle boolean operators and wildcards)
+  const sourceMatch = beforeCursor.match(/\bsource:\s*([^:\s\)]*\*?|[^:\s\)]*\s+(AND|OR)\s+[^:\s\)]*\*?)$/);
   if (sourceMatch) {
     return 'logs_source';
   }
 
-  // Check for status: or level: pattern (level: for backward compatibility)
-  const levelMatch = beforeCursor.match(/\b(status|level):\s*([^:\s]*)$/);
+  // Check for status: or level: pattern (enhanced to handle boolean operators and wildcards)
+  const levelMatch = beforeCursor.match(/\b(status|level):\s*(\([^)]*\)|[^:\s\)]*\*?)$/);
   if (levelMatch) {
     return 'logs_level';
   }
 
+  // Check for grouped facet patterns like status:(ERROR OR WARN)
+  const groupedFacetMatch = beforeCursor.match(/\b(service|source|status|level|host|env|version):\s*\([^)]*$/);
+  if (groupedFacetMatch) {
+    const facetName = groupedFacetMatch[1];
+    switch (facetName) {
+      case 'service':
+        return 'logs_service';
+      case 'source':
+        return 'logs_source';
+      case 'status':
+      case 'level':
+        return 'logs_level';
+      default:
+        return 'logs_facet';
+    }
+  }
+
+  // Check if we're typing after a boolean operator
+  const booleanOperatorMatch = beforeCursor.match(/\b(AND|OR|NOT)\s+([a-zA-Z_][a-zA-Z0-9_]*:?)?$/);
+  if (booleanOperatorMatch) {
+    // If there's a facet name after the operator, determine the context
+    const facetName = booleanOperatorMatch[2];
+    if (facetName && facetName.endsWith(':')) {
+      const cleanFacetName = facetName.slice(0, -1);
+      if (['service', 'source', 'status', 'level', 'host', 'env', 'version'].includes(cleanFacetName)) {
+        return 'logs_facet';
+      }
+    }
+    return 'logs_search';
+  }
+
   // Check if we're typing a facet name (word followed by colon)
-  const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):?\s*$/);
+  const facetMatch = beforeCursor.match(/\b([a-zA-Z_][a-zA-Z0-9_]*):?$/);
   if (facetMatch && beforeCursor.endsWith(':')) {
     const facetName = facetMatch[1];
     if (['service', 'source', 'status', 'level', 'host', 'env', 'version'].includes(facetName)) {
       return 'logs_facet';
     }
+  }
+
+  // Check for wildcard patterns in search terms
+  const wildcardMatch = beforeCursor.match(/\b\w+\*$/);
+  if (wildcardMatch) {
+    return 'logs_search';
   }
 
   // Default to general logs search context
