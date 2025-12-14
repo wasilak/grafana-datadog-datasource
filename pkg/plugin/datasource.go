@@ -3800,13 +3800,13 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	// Marshal request body
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal logs aggregation request: %w", err)
+		return nil, fmt.Errorf("failed to marshal logs search request: %w", err)
 	}
 
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(fetchCtx, "POST", url, strings.NewReader(string(jsonBody)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logs aggregation request: %w", err)
+		return nil, fmt.Errorf("failed to create logs search request: %w", err)
 	}
 
 	// Set headers
@@ -3818,44 +3818,67 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute logs aggregation request: %w", err)
+		return nil, fmt.Errorf("failed to execute logs search request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read logs aggregation response: %w", err)
+		return nil, fmt.Errorf("failed to read logs search response: %w", err)
 	}
 
 	// Check for API errors
 	if resp.StatusCode != 200 {
-		logger.Error("Logs aggregation API error", "status", resp.StatusCode, "body", string(body))
-		return nil, fmt.Errorf("logs aggregation API error: %d - %s", resp.StatusCode, string(body))
+		logger.Error("Logs search API error", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("logs search API error: %d - %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var aggregationResponse struct {
-		Data struct {
-			Buckets []struct {
-				By map[string]interface{} `json:"by"`
-			} `json:"buckets"`
+	// Parse response - Logs Search API returns an array of log entries in data field
+	var searchResponse struct {
+		Data []struct {
+			Attributes map[string]interface{} `json:"attributes"`
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(body, &aggregationResponse); err != nil {
-		logger.Error("Failed to parse logs aggregation response", "error", err, "body", string(body))
-		return nil, fmt.Errorf("failed to parse logs aggregation response: %w", err)
+	if err := json.Unmarshal(body, &searchResponse); err != nil {
+		logger.Error("Failed to parse logs search response", "error", err, "body", string(body))
+		return nil, fmt.Errorf("failed to parse logs search response: %w", err)
 	}
 
-	// Extract field values from buckets
-	var fieldValues []string
-	for _, bucket := range aggregationResponse.Data.Buckets {
-		if value, exists := bucket.By[datadogFieldName]; exists {
-			if strValue, ok := value.(string); ok && strValue != "" {
-				fieldValues = append(fieldValues, strValue)
+	// Extract unique field values from log entries
+	fieldValuesSet := make(map[string]bool)
+	for _, logEntry := range searchResponse.Data {
+		// Try to get the field value from different possible locations in the log attributes
+		var fieldValue interface{}
+		
+		// First try direct attribute access
+		if val, exists := logEntry.Attributes[datadogFieldName]; exists {
+			fieldValue = val
+		} else if val, exists := logEntry.Attributes["@"+datadogFieldName]; exists {
+			// Try with @ prefix (common in Datadog)
+			fieldValue = val
+		} else if attributes, exists := logEntry.Attributes["attributes"]; exists {
+			// Try nested attributes
+			if attrMap, ok := attributes.(map[string]interface{}); ok {
+				if val, exists := attrMap[datadogFieldName]; exists {
+					fieldValue = val
+				}
 			}
 		}
+		
+		// Convert to string and add to set (for uniqueness)
+		if fieldValue != nil {
+			if strValue, ok := fieldValue.(string); ok && strValue != "" {
+				fieldValuesSet[strValue] = true
+			}
+		}
+	}
+
+	// Convert set to slice
+	var fieldValues []string
+	for value := range fieldValuesSet {
+		fieldValues = append(fieldValues, value)
 	}
 
 	logger.Info("Fetched logs field values", "field", fieldName, "count", len(fieldValues))
