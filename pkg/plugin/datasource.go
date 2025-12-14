@@ -3772,16 +3772,11 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	// This is more reliable than the aggregation API which may not be available
 	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 	
-	// Map frontend field names to Datadog log attribute names
+	// Use field name as-is - Datadog logs support dynamic field names
+	// The field extraction logic below will try multiple locations (@field, field, nested attributes)
 	datadogFieldName := fieldName
-	switch fieldName {
-	case "host":
-		datadogFieldName = "host" // Try without @ prefix first
-	case "env":
-		datadogFieldName = "env" // Try without @ prefix first
-	case "status":
-		datadogFieldName = "status" // Standard status field
-	}
+
+	logger.Info("Fetching logs field values", "fieldName", fieldName, "datadogFieldName", datadogFieldName)
 
 	// Create search request to get recent logs and extract field values
 	// Query recent logs (last 6 hours) to get current field values
@@ -3830,9 +3825,11 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 
 	// Check for API errors
 	if resp.StatusCode != 200 {
-		logger.Error("Logs search API error", "status", resp.StatusCode, "body", string(body))
-		return nil, fmt.Errorf("logs search API error: %d - %s", resp.StatusCode, string(body))
+		logger.Error("Logs search API error", "fieldName", fieldName, "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("logs search API error for field %s: %d - %s", fieldName, resp.StatusCode, string(body))
 	}
+
+	logger.Info("Logs search API success", "fieldName", fieldName, "status", resp.StatusCode, "responseSize", len(body))
 
 	// Parse response - Logs Search API returns an array of log entries in data field
 	var searchResponse struct {
@@ -3842,27 +3839,45 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	}
 
 	if err := json.Unmarshal(body, &searchResponse); err != nil {
-		logger.Error("Failed to parse logs search response", "error", err, "body", string(body))
-		return nil, fmt.Errorf("failed to parse logs search response: %w", err)
+		logger.Error("Failed to parse logs search response", "fieldName", fieldName, "error", err, "body", string(body))
+		return nil, fmt.Errorf("failed to parse logs search response for field %s: %w", fieldName, err)
 	}
+
+	logger.Info("Parsed logs search response", "fieldName", fieldName, "logEntryCount", len(searchResponse.Data))
 
 	// Extract unique field values from log entries
 	fieldValuesSet := make(map[string]bool)
-	for _, logEntry := range searchResponse.Data {
+	logger.Info("Starting field extraction", "fieldName", fieldName, "datadogFieldName", datadogFieldName, "logEntryCount", len(searchResponse.Data))
+	
+	for i, logEntry := range searchResponse.Data {
 		// Try to get the field value from different possible locations in the log attributes
 		var fieldValue interface{}
 		
-		// First try direct attribute access
-		if val, exists := logEntry.Attributes[datadogFieldName]; exists {
-			fieldValue = val
-		} else if val, exists := logEntry.Attributes["@"+datadogFieldName]; exists {
-			// Try with @ prefix (common in Datadog)
-			fieldValue = val
-		} else if attributes, exists := logEntry.Attributes["attributes"]; exists {
-			// Try nested attributes
-			if attrMap, ok := attributes.(map[string]interface{}); ok {
-				if val, exists := attrMap[datadogFieldName]; exists {
-					fieldValue = val
+		// Try multiple common patterns for Datadog log fields
+		searchPatterns := []string{
+			datadogFieldName,           // Direct field name (e.g., "service")
+			"@" + datadogFieldName,     // @ prefix (e.g., "@service")
+			"dd." + datadogFieldName,   // Datadog prefix (e.g., "dd.service")
+		}
+		
+		// First try direct attribute access with various patterns
+		for _, pattern := range searchPatterns {
+			if val, exists := logEntry.Attributes[pattern]; exists {
+				fieldValue = val
+				break
+			}
+		}
+		
+		// If not found, try nested attributes
+		if fieldValue == nil {
+			if attributes, exists := logEntry.Attributes["attributes"]; exists {
+				if attrMap, ok := attributes.(map[string]interface{}); ok {
+					for _, pattern := range searchPatterns {
+						if val, exists := attrMap[pattern]; exists {
+							fieldValue = val
+							break
+						}
+					}
 				}
 			}
 		}
@@ -3871,7 +3886,12 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 		if fieldValue != nil {
 			if strValue, ok := fieldValue.(string); ok && strValue != "" {
 				fieldValuesSet[strValue] = true
+				if i < 3 { // Log first few successful extractions for debugging
+					logger.Info("Found field value", "fieldName", fieldName, "value", strValue, "entryIndex", i)
+				}
 			}
+		} else if i < 3 { // Log first few failed extractions for debugging
+			logger.Info("No field value found", "fieldName", fieldName, "entryIndex", i, "availableKeys", getMapKeys(logEntry.Attributes))
 		}
 	}
 
@@ -3881,8 +3901,17 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 		fieldValues = append(fieldValues, value)
 	}
 
-	logger.Info("Fetched logs field values", "field", fieldName, "count", len(fieldValues))
+	logger.Info("Fetched logs field values", "field", fieldName, "count", len(fieldValues), "values", fieldValues)
 	return fieldValues, nil
+}
+
+// getMapKeys returns the keys of a map for debugging purposes
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // LogsTagsHandler handles GET /autocomplete/logs/tags requests
