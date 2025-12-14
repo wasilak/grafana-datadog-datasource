@@ -37,7 +37,26 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
 
   filterQuery(query: MyQuery): boolean {
     // Allow execution if query text is provided OR if it's an expression query OR if it's a logs query
-    return !!query.queryText || (query.type === 'math' && !!query.expression) || !!query.logQuery;
+    const hasMetricsQuery = !!query.queryText;
+    const hasExpressionQuery = query.type === 'math' && !!query.expression;
+    const hasLogsQuery = !!query.logQuery;
+    
+    // For logs queries, perform additional validation
+    if (hasLogsQuery && query.logQuery) {
+      // Import validation function dynamically to avoid circular dependencies
+      import('./utils/logsQueryValidator').then(({ validateLogsQuery }) => {
+        const validation = validateLogsQuery(query.logQuery!);
+        if (!validation.isValid) {
+          console.warn('Logs query validation failed:', validation.error);
+          // Note: We still allow the query to proceed as validation errors 
+          // will be shown in the UI, but the query might fail at runtime
+        }
+      }).catch(err => {
+        console.warn('Failed to load logs query validator:', err);
+      });
+    }
+    
+    return hasMetricsQuery || hasExpressionQuery || hasLogsQuery;
   }
 
   /**

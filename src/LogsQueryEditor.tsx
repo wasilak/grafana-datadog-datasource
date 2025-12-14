@@ -7,6 +7,8 @@ import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { QueryEditorHelp } from './QueryEditorHelp';
+import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
+import { validateLogsQuery, getQuerySuggestions } from './utils/logsQueryValidator';
 
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -21,6 +23,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -141,6 +145,11 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
   const onLogQueryChange = (newValue: string) => {
+    // Validate the logs query
+    const validation = validateLogsQuery(newValue);
+    setValidationError(validation.isValid ? null : validation.error || null);
+    setValidationWarnings(validation.warnings || []);
+
     // Update the logs query state
     onChange({ 
       ...query, 
@@ -167,6 +176,25 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       // Trigger autocomplete for logs context
       autocomplete.onInput(newValue, cursorPos);
     }, 0);
+  };
+
+  // Handle example selection from help component
+  const handleExampleClick = (exampleQuery: any) => {
+    const newValue = exampleQuery.logQuery || '';
+    
+    // Update editor content
+    if (editorRef.current) {
+      const model = editorRef.current.getModel();
+      if (model) {
+        model.setValue(newValue);
+      }
+    }
+    
+    // Trigger change handler
+    onLogQueryChange(newValue);
+    
+    // Close help panel
+    setShowHelp(false);
   };
 
   // Helper function to calculate suggestions dropdown position
@@ -334,6 +362,24 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             />
 
             {/* Display validation error */}
+            {validationError && (
+              <Alert title="Logs Query Validation" severity="error" style={{ marginTop: '8px' }}>
+                {validationError}
+              </Alert>
+            )}
+
+            {/* Display validation warnings */}
+            {validationWarnings.length > 0 && (
+              <Alert title="Logs Query Suggestions" severity="warning" style={{ marginTop: '8px' }}>
+                <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                  {validationWarnings.map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                </ul>
+              </Alert>
+            )}
+
+            {/* Display autocomplete validation error */}
             {autocomplete.state.validationError && (
               <Alert title="Logs Query Validation" severity="warning" style={{ marginTop: '8px' }}>
                 {autocomplete.state.validationError}
@@ -478,103 +524,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
       {/* Logs Help Component */}
       {showHelp && (
-        <div style={{
-          padding: theme.spacing(2),
-          backgroundColor: theme.colors.background.secondary,
-          border: `1px solid ${theme.colors.border.weak}`,
-          borderRadius: theme.shape.radius.default
-        }}>
-          <h4 style={{ 
-            margin: `0 0 ${theme.spacing(1)} 0`,
-            color: theme.colors.text.primary,
-            fontSize: theme.typography.h5.fontSize,
-            fontWeight: theme.typography.fontWeightMedium
-          }}>
-            Datadog Logs Search Syntax
-          </h4>
-          
-          <Stack direction="column" gap={1}>
-            <div>
-              <code style={{ 
-                fontFamily: theme.typography.fontFamilyMonospace,
-                color: theme.colors.primary.text 
-              }}>
-                service:web-app
-              </code>
-              <span style={{ 
-                marginLeft: theme.spacing(1),
-                fontSize: theme.typography.bodySmall.fontSize,
-                color: theme.colors.text.secondary
-              }}>
-                - Filter by service name
-              </span>
-            </div>
-            
-            <div>
-              <code style={{ 
-                fontFamily: theme.typography.fontFamilyMonospace,
-                color: theme.colors.primary.text 
-              }}>
-                status:ERROR
-              </code>
-              <span style={{ 
-                marginLeft: theme.spacing(1),
-                fontSize: theme.typography.bodySmall.fontSize,
-                color: theme.colors.text.secondary
-              }}>
-                - Filter by log level (DEBUG, INFO, WARN, ERROR, FATAL)
-              </span>
-            </div>
-            
-            <div>
-              <code style={{ 
-                fontFamily: theme.typography.fontFamilyMonospace,
-                color: theme.colors.primary.text 
-              }}>
-                source:nginx
-              </code>
-              <span style={{ 
-                marginLeft: theme.spacing(1),
-                fontSize: theme.typography.bodySmall.fontSize,
-                color: theme.colors.text.secondary
-              }}>
-                - Filter by log source
-              </span>
-            </div>
-            
-            <div>
-              <code style={{ 
-                fontFamily: theme.typography.fontFamilyMonospace,
-                color: theme.colors.primary.text 
-              }}>
-                error AND timeout
-              </code>
-              <span style={{ 
-                marginLeft: theme.spacing(1),
-                fontSize: theme.typography.bodySmall.fontSize,
-                color: theme.colors.text.secondary
-              }}>
-                - Boolean operators (AND, OR, NOT)
-              </span>
-            </div>
-            
-            <div>
-              <code style={{ 
-                fontFamily: theme.typography.fontFamilyMonospace,
-                color: theme.colors.primary.text 
-              }}>
-                error*
-              </code>
-              <span style={{ 
-                marginLeft: theme.spacing(1),
-                fontSize: theme.typography.bodySmall.fontSize,
-                color: theme.colors.text.secondary
-              }}>
-                - Wildcard pattern matching
-              </span>
-            </div>
-          </Stack>
-        </div>
+        <LogsQueryEditorHelp onClickExample={handleExampleClick} />
       )}
     </Stack>
   );
