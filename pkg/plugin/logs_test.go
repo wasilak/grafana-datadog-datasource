@@ -22,7 +22,7 @@ func TestCreateLogsDataFrames(t *testing.T) {
 		require.NotEmpty(t, sampleEntries, "Sample entries should not be empty")
 
 		// Create data frames
-		frames := datasource.createLogsDataFrames(sampleEntries, "test-query")
+		frames := datasource.createLogsDataFrames(sampleEntries, "test-query", "error service:web-app")
 		
 		// Validate frame structure
 		require.Len(t, frames, 1, "Should create exactly one frame")
@@ -43,10 +43,10 @@ func TestCreateLogsDataFrames(t *testing.T) {
 			dataType data.FieldType
 		}{
 			{"timestamp", data.FieldTypeTime},
-			{"message", data.FieldTypeString},
-			{"level", data.FieldTypeString},
-			{"service", data.FieldTypeString},
-			{"source", data.FieldTypeString},
+			{"body", data.FieldTypeString},
+			{"severity", data.FieldTypeString},
+			{"id", data.FieldTypeString},
+			{"labels", data.FieldTypeJSON},
 		}
 		
 		for i, expected := range coreFields {
@@ -84,15 +84,11 @@ func TestCreateLogsDataFrames(t *testing.T) {
 
 	t.Run("validates and sanitizes log entries", func(t *testing.T) {
 		// Create test entry with various issues
-		testEntry := LogEntry{
-			ID:        "test-1",
-			Timestamp: time.Now(),
-			Message:   "  Test message with whitespace  ",
-			Level:     "info", // lowercase - should be normalized
-			Service:   "  test-service  ",
-			Source:    "test-source",
-			Host:      "test-host",
-			Env:       "test-env",
+		labels := LogLabels{
+			Service: "  test-service  ",
+			Source:  "test-source",
+			Host:    "test-host",
+			Env:     "test-env",
 			Tags: map[string]string{
 				"invalid-tag!": "value1", // Invalid characters
 				"valid_tag":    "value2",
@@ -105,6 +101,15 @@ func TestCreateLogsDataFrames(t *testing.T) {
 				"bool_attr":     true,
 			},
 		}
+		labelsJSON, _ := json.Marshal(labels)
+		
+		testEntry := LogEntry{
+			ID:        "test-1",
+			Timestamp: time.Now(),
+			Body:      "  Test message with whitespace  ",
+			Severity:  "info", // lowercase - should be normalized
+			Labels:    labelsJSON,
+		}
 
 		// Validate entry
 		errors := datasource.validateLogEntry(testEntry, 0)
@@ -114,40 +119,46 @@ func TestCreateLogsDataFrames(t *testing.T) {
 		sanitized := datasource.sanitizeLogEntry(testEntry)
 		
 		// Check sanitization results
-		assert.Equal(t, "INFO", sanitized.Level, "Level should be normalized to uppercase")
-		assert.Equal(t, "Test message with whitespace", sanitized.Message, "Message should be trimmed")
-		assert.Equal(t, "test-service", sanitized.Service, "Service should be trimmed")
+		assert.Equal(t, "INFO", sanitized.Severity, "Severity should be normalized to uppercase")
+		assert.Equal(t, "Test message with whitespace", sanitized.Body, "Body should be trimmed")
+		
+		// Check that labels were sanitized
+		var sanitizedLabels LogLabels
+		err := json.Unmarshal(sanitized.Labels, &sanitizedLabels)
+		assert.NoError(t, err, "Labels should be valid JSON")
+		assert.Equal(t, "test-service", sanitizedLabels.Service, "Service should be trimmed")
 
 		// Create data frame with sanitized entry
-		frames := datasource.createLogsDataFrames([]LogEntry{sanitized}, "sanitize-test")
+		frames := datasource.createLogsDataFrames([]LogEntry{sanitized}, "sanitize-test", "test query")
 		require.Len(t, frames, 1)
 		frame := frames[0]
 		
-		// Check that additional fields were created and sanitized
+		// Check that we have exactly 5 core fields (no additional fields created)
 		fieldNames := make([]string, len(frame.Fields))
 		for i, field := range frame.Fields {
 			fieldNames[i] = field.Name
 		}
 		
-		// Should have core fields plus additional fields from attributes and tags
-		assert.Contains(t, fieldNames, "valid_attr")
-		assert.Contains(t, fieldNames, "tag_valid_tag")
+		// Should have exactly 5 core fields, additional data is stored in labels JSON
+		expectedFields := []string{"timestamp", "body", "severity", "id", "labels"}
+		assert.Equal(t, expectedFields, fieldNames, "Should have exactly 5 core fields")
 		
-
+		// Verify that labels field contains the structured data as JSON
+		labelsField := frame.Fields[4] // labels is the 5th field (index 4)
+		assert.Equal(t, "labels", labelsField.Name)
 		
-		// Invalid field names should be sanitized
-		foundInvalidAttr := false
-		foundInvalidTag := false
-		for _, name := range fieldNames {
-			if name == "invalid_attr_" {
-				foundInvalidAttr = true
-			}
-			if name == "tag_invalid-tag_" { // The hyphen is preserved, exclamation becomes underscore
-				foundInvalidTag = true
+		// Check that labels field contains valid JSON with the test data
+		if labelsField.Len() > 0 {
+			labelsValue := labelsField.At(0)
+			if jsonBytes, ok := labelsValue.(json.RawMessage); ok {
+				var parsedLabels LogLabels
+				err := json.Unmarshal(jsonBytes, &parsedLabels)
+				assert.NoError(t, err, "Labels should contain valid JSON")
+				assert.Equal(t, "test-service", parsedLabels.Service, "Service should be in labels")
+				assert.Contains(t, parsedLabels.Attributes, "valid_attr", "Valid attribute should be in labels")
+				assert.Contains(t, parsedLabels.Tags, "valid_tag", "Valid tag should be in labels")
 			}
 		}
-		assert.True(t, foundInvalidAttr, "Invalid attribute name should be sanitized")
-		assert.True(t, foundInvalidTag, "Invalid tag name should be sanitized")
 	})
 }
 
@@ -204,12 +215,14 @@ func TestValidateLogEntry(t *testing.T) {
 	datasource := &Datasource{}
 
 	t.Run("valid entry has no errors", func(t *testing.T) {
+		labels := LogLabels{Service: "test-service"}
+		labelsJSON, _ := json.Marshal(labels)
 		entry := LogEntry{
 			ID:        "test-1",
 			Timestamp: time.Now(),
-			Message:   "Test message",
-			Level:     "INFO",
-			Service:   "test-service",
+			Body:      "Test message",
+			Severity:  "INFO",
+			Labels:    labelsJSON,
 		}
 
 		errors := datasource.validateLogEntry(entry, 0)
@@ -217,11 +230,13 @@ func TestValidateLogEntry(t *testing.T) {
 	})
 
 	t.Run("invalid timestamp generates error", func(t *testing.T) {
+		labels := LogLabels{Service: "test-service"}
+		labelsJSON, _ := json.Marshal(labels)
 		entry := LogEntry{
-			ID:      "test-1",
-			Message: "Test message",
-			Level:   "INFO",
-			Service: "test-service",
+			ID:       "test-1",
+			Body:     "Test message",
+			Severity: "INFO",
+			Labels:   labelsJSON,
 		}
 
 		errors := datasource.validateLogEntry(entry, 0)
@@ -230,17 +245,19 @@ func TestValidateLogEntry(t *testing.T) {
 	})
 
 	t.Run("invalid log level generates error", func(t *testing.T) {
+		labels := LogLabels{Service: "test-service"}
+		labelsJSON, _ := json.Marshal(labels)
 		entry := LogEntry{
 			ID:        "test-1",
 			Timestamp: time.Now(),
-			Message:   "Test message",
-			Level:     "INVALID_LEVEL",
-			Service:   "test-service",
+			Body:      "Test message",
+			Severity:  "INVALID_LEVEL",
+			Labels:    labelsJSON,
 		}
 
 		errors := datasource.validateLogEntry(entry, 0)
 		assert.NotEmpty(t, errors)
-		assert.Contains(t, errors[0], "invalid log level")
+		assert.Contains(t, errors[0], "invalid log severity")
 	})
 }
 
@@ -520,7 +537,7 @@ func TestLogsAPIIntegrationConsistency(t *testing.T) {
 			assert.NoError(t, err, "Valid response should parse without error")
 			assert.Len(t, entries, 1, "Should parse one log entry")
 			assert.Equal(t, "log-1", entries[0].ID, "Should parse log ID correctly")
-			assert.Equal(t, "Test log message", entries[0].Message, "Should parse message correctly")
+			assert.Equal(t, "Test log message", entries[0].Body, "Should parse body correctly")
 			
 			// Test empty response
 			emptyResponse := map[string]interface{}{
@@ -557,20 +574,22 @@ func TestLogsPaginationAndCaching(t *testing.T) {
 			}
 			
 			// Create test log entries
+			labels := LogLabels{Service: "test-service"}
+			labelsJSON, _ := json.Marshal(labels)
 			testEntries := []LogEntry{
 				{
 					ID:        "test-1",
 					Timestamp: time.Now(),
-					Message:   "Test message 1",
-					Level:     "INFO",
-					Service:   "test-service",
+					Body:      "Test message 1",
+					Severity:  "INFO",
+					Labels:    labelsJSON,
 				},
 				{
 					ID:        "test-2",
 					Timestamp: time.Now(),
-					Message:   "Test message 2",
-					Level:     "ERROR",
-					Service:   "test-service",
+					Body:      "Test message 2",
+					Severity:  "ERROR",
+					Labels:    labelsJSON,
 				},
 			}
 			
@@ -790,11 +809,11 @@ func TestLogsPaginationAndCaching(t *testing.T) {
 			}
 			
 			// Add fresh entry
-			freshEntries := []LogEntry{{ID: "fresh", Message: "Fresh entry"}}
+			freshEntries := []LogEntry{{ID: "fresh", Body: "Fresh entry"}}
 			datasource.SetCachedLogsEntry("fresh-key", freshEntries, "")
 			
 			// Add old entry by manually setting timestamp
-			oldEntries := []LogEntry{{ID: "old", Message: "Old entry"}}
+			oldEntries := []LogEntry{{ID: "old", Body: "Old entry"}}
 			datasource.logsCache["old-key"] = &LogsCacheEntry{
 				LogEntries: oldEntries,
 				Timestamp:  time.Now().Add(-1 * time.Hour), // 1 hour ago
@@ -841,7 +860,7 @@ func TestLogsPaginationAndCaching(t *testing.T) {
 					
 					for j := 0; j < numOperations; j++ {
 						cacheKey := fmt.Sprintf("key-%d-%d", goroutineID, j)
-						entries := []LogEntry{{ID: cacheKey, Message: "Test message"}}
+						entries := []LogEntry{{ID: cacheKey, Body: "Test message"}}
 						
 						// Set cache entry
 						datasource.SetCachedLogsEntry(cacheKey, entries, "")
