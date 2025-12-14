@@ -68,6 +68,38 @@ type LogEntry struct {
 	Attributes map[string]interface{} `json:"attributes,omitempty"` // Additional structured data
 }
 
+// LogsCacheEntry stores cached logs data with timestamp for TTL validation
+type LogsCacheEntry struct {
+	LogEntries []LogEntry
+	Timestamp  time.Time
+	NextCursor string // For pagination
+}
+
+// LogsPaginationState tracks pagination state for logs queries
+type LogsPaginationState struct {
+	Query      string
+	TimeRange  string
+	Cursor     string
+	HasMore    bool
+	TotalFetched int
+}
+
+// LogsResponse represents the response from Datadog Logs API v2
+type LogsResponse struct {
+	Data []map[string]interface{} `json:"data"`
+	Meta LogsResponseMeta         `json:"meta,omitempty"`
+}
+
+// LogsResponseMeta contains pagination information from Datadog Logs API
+type LogsResponseMeta struct {
+	Page LogsPageMeta `json:"page,omitempty"`
+}
+
+// LogsPageMeta contains pagination cursor information
+type LogsPageMeta struct {
+	After string `json:"after,omitempty"` // Cursor for next page
+}
+
 // queryLogs executes logs queries against Datadog's Logs API v2
 // This method reuses existing authentication patterns from the metrics implementation
 func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
@@ -144,7 +176,7 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
-// executeSingleLogsQuery executes a single logs query and returns Grafana DataFrames
+// executeSingleLogsQuery executes a single logs query with pagination and caching support
 func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel, q *backend.DataQuery) (data.Frames, error) {
 	logger := log.New()
 
@@ -158,15 +190,45 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	from := q.TimeRange.From.UnixMilli()
 	to := q.TimeRange.To.UnixMilli()
 
+	// Create cache key for this query (includes query, time range)
+	cacheKey := fmt.Sprintf("logs:%s:%d:%d", logsQuery, from, to)
+	
+	// Check cache first (30-second TTL as per requirements)
+	cacheTTL := 30 * time.Second
+	if cachedEntry := d.GetCachedLogsEntry(cacheKey, cacheTTL); cachedEntry != nil {
+		logger.Debug("Returning cached logs result", "query", logsQuery, "entriesCount", len(cachedEntry.LogEntries))
+		frames := d.createLogsDataFrames(cachedEntry.LogEntries, q.RefID)
+		return frames, nil
+	}
+
+	// Execute query with pagination support
+	allLogEntries, err := d.executeLogsQueryWithPagination(ctx, logsQuery, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs query with pagination: %w", err)
+	}
+
+	// Cache the results
+	d.SetCachedLogsEntry(cacheKey, allLogEntries, "")
+
+	// Create Grafana data frames from log entries
+	frames := d.createLogsDataFrames(allLogEntries, q.RefID)
+
+	logger.Info("Successfully executed logs query with pagination", 
+		"query", logsQuery, 
+		"entriesReturned", len(allLogEntries),
+		"framesCreated", len(frames))
+
+	return frames, nil
+}
+
+// executeLogsQueryWithPagination executes a logs query with automatic pagination
+// Implements Requirements 10.1, 10.4 for pagination and caching consistency
+func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQuery string, from, to int64) ([]LogEntry, error) {
+	logger := log.New()
+	
 	// Create context with timeout (reusing existing timeout patterns - 30 seconds)
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
-
-	logger.Info("Executing logs query", "query", logsQuery, "from", from, "to", to)
 
 	// Get API credentials and site configuration
 	apiKey, _ := d.SecureJSONData["apiKey"]
@@ -176,61 +238,150 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		site = "datadoghq.com"
 	}
 
-	// Try using GET method with query parameters instead of POST with JSON body
-	// This might be more compatible with the Datadog API
-	url := fmt.Sprintf("https://api.%s/api/v2/logs/events", site)
+	var allLogEntries []LogEntry
+	var nextCursor string
+	pageCount := 0
+	maxPages := 10 // Limit to prevent infinite loops
 	
-	// Build query parameters
-	params := fmt.Sprintf("?filter[query]=%s&filter[from]=%d&filter[to]=%d&page[limit]=1000&sort=timestamp",
-		strings.ReplaceAll(logsQuery, " ", "+"), from, to)
+	for pageCount < maxPages {
+		// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
+		d.concurrencyLimit <- struct{}{}
+		
+		// Execute single page request
+		logEntries, cursor, err := d.executeSingleLogsPage(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site)
+		
+		// Release semaphore slot
+		<-d.concurrencyLimit
+		
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute logs page %d: %w", pageCount+1, err)
+		}
+
+		// Add entries to result
+		allLogEntries = append(allLogEntries, logEntries...)
+		
+		logger.Debug("Fetched logs page", 
+			"pageNumber", pageCount+1, 
+			"entriesInPage", len(logEntries),
+			"totalEntries", len(allLogEntries),
+			"nextCursor", cursor)
+
+		// Check if we have more pages
+		if cursor == "" || len(logEntries) == 0 {
+			break // No more pages
+		}
+		
+		// Check if we've reached a reasonable limit (prevent excessive pagination)
+		if len(allLogEntries) >= 10000 {
+			logger.Warn("Reached maximum log entries limit", "totalEntries", len(allLogEntries))
+			break
+		}
+
+		nextCursor = cursor
+		pageCount++
+	}
+
+	if pageCount >= maxPages {
+		logger.Warn("Reached maximum page limit", "maxPages", maxPages, "totalEntries", len(allLogEntries))
+	}
+
+	logger.Info("Completed paginated logs query", 
+		"totalPages", pageCount+1, 
+		"totalEntries", len(allLogEntries))
+
+	return allLogEntries, nil
+}
+
+// executeSingleLogsPage executes a single page of logs query
+func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string) ([]LogEntry, string, error) {
+	logger := log.New()
+
+	// Use POST method with JSON body for proper Datadog Logs API v2 integration
+	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 	
-	fullURL := url + params
-	
-	req, err := http.NewRequestWithContext(queryCtx, "GET", fullURL, nil)
+	// Create request body matching Datadog's exact API format
+	requestBody := LogsSearchRequest{
+		Data: LogsSearchData{
+			Type: "search_request",
+			Attributes: LogsSearchAttributes{
+				Query: logsQuery,
+				Time: LogsTime{
+					From: fmt.Sprintf("%d", from),
+					To:   fmt.Sprintf("%d", to),
+				},
+				Sort:  "timestamp",
+				Limit: 1000, // Max results per page
+			},
+		},
+	}
+
+	// Add pagination cursor if provided
+	if cursor != "" {
+		requestBody.Data.Relationships = &LogsRelationships{
+			Page: LogsPageRelation{
+				Data: LogsPageData{
+					Type: "page_data",
+					ID:   cursor,
+				},
+			},
+		}
+	}
+
+	// Marshal request body
+	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logs API request: %w", err)
+		return nil, "", fmt.Errorf("failed to marshal logs request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create logs API request: %w", err)
 	}
 
 	// Add authentication headers
 	req.Header.Set("DD-API-KEY", apiKey)
 	req.Header.Set("DD-APPLICATION-KEY", appKey)
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
 	// Execute the request
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute logs API request: %w", err)
+		return nil, "", fmt.Errorf("failed to execute logs API request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, "", fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	// Parse response
-	var apiResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode logs API response: %w", err)
+	var logsResponse LogsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&logsResponse); err != nil {
+		return nil, "", fmt.Errorf("failed to decode logs API response: %w", err)
 	}
 
-	// Parse the response and convert to LogEntry structs
-	logEntries, err := d.parseDatadogLogsResponse(apiResponse)
+	// Parse log entries from response
+	logEntries, err := d.parseDatadogLogsResponseV2(logsResponse.Data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse logs response: %w", err)
+		return nil, "", fmt.Errorf("failed to parse logs response: %w", err)
 	}
 
-	// Create Grafana data frames from log entries
-	frames := d.createLogsDataFrames(logEntries, q.RefID)
+	// Extract next cursor for pagination
+	nextCursor := ""
+	if logsResponse.Meta.Page.After != "" {
+		nextCursor = logsResponse.Meta.Page.After
+	}
 
-	logger.Info("Successfully executed logs query", 
-		"query", logsQuery, 
+	logger.Debug("Executed single logs page", 
 		"entriesReturned", len(logEntries),
-		"framesCreated", len(frames))
+		"nextCursor", nextCursor)
 
-	return frames, nil
+	return logEntries, nextCursor, nil
 }
 
 // translateLogsQuery translates Grafana query format to Datadog's logs search syntax
@@ -617,6 +768,73 @@ func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEnt
 	}
 	
 	logger.Debug("Successfully parsed Datadog logs response", "entriesReturned", len(logEntries))
+	
+	return logEntries, nil
+}
+
+// parseDatadogLogsResponseV2 parses structured Datadog Logs API v2 response and converts to LogEntry structs
+func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface{}) ([]LogEntry, error) {
+	logger := log.New()
+	
+	logger.Debug("Parsing Datadog logs response v2", "entryCount", len(dataArray))
+	
+	var logEntries []LogEntry
+	
+	for i, item := range dataArray {
+		// Extract log ID
+		logID := ""
+		if id, exists := item["id"]; exists {
+			if idStr, ok := id.(string); ok {
+				logID = idStr
+			}
+		}
+		
+		// Extract attributes
+		attributesInterface, exists := item["attributes"]
+		if !exists {
+			logger.Warn("Skipping log entry without attributes", "index", i, "id", logID)
+			continue
+		}
+		
+		attributes, ok := attributesInterface.(map[string]interface{})
+		if !ok {
+			logger.Warn("Skipping log entry with invalid attributes", "index", i, "id", logID)
+			continue
+		}
+		
+		// Parse timestamp
+		var timestamp time.Time
+		if timestampInterface, exists := attributes["timestamp"]; exists {
+			if timestampStr, ok := timestampInterface.(string); ok {
+				if parsedTime, err := time.Parse(time.RFC3339, timestampStr); err == nil {
+					timestamp = parsedTime
+				} else {
+					logger.Warn("Failed to parse timestamp", "timestamp", timestampStr, "error", err)
+					timestamp = time.Now() // Fallback to current time
+				}
+			}
+		}
+		
+		// Extract standard fields using the helper function
+		message, level, service, source, host, tags, remainingAttrs := d.extractLogAttributes(attributes)
+		
+		// Create log entry
+		entry := LogEntry{
+			ID:         logID,
+			Timestamp:  timestamp,
+			Message:    message,
+			Level:      level,
+			Service:    service,
+			Source:     source,
+			Host:       host,
+			Tags:       tags,
+			Attributes: remainingAttrs,
+		}
+		
+		logEntries = append(logEntries, entry)
+	}
+	
+	logger.Debug("Successfully parsed Datadog logs response v2", "entriesReturned", len(logEntries))
 	
 	return logEntries, nil
 }

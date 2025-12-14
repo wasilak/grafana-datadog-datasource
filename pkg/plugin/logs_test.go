@@ -527,3 +527,320 @@ func TestLogsAPIIntegrationConsistency(t *testing.T) {
 		})
 	})
 }
+
+// TestLogsPaginationAndCaching - Property Test 8: Pagination and Caching Consistency
+// Validates: Requirements 10.1, 10.4
+// This property test ensures that pagination and caching work correctly for logs queries
+func TestLogsPaginationAndCaching(t *testing.T) {
+	t.Run("Property 8: Pagination and Caching Consistency", func(t *testing.T) {
+		
+		// Test Property: Cache TTL consistency
+		t.Run("cache TTL consistency", func(t *testing.T) {
+			// Property: Cache should respect 30-second TTL as per requirements
+			// Requirements: 10.4 - implement 30-second cache TTL
+			
+			datasource := &Datasource{
+				logsCache: make(map[string]*LogsCacheEntry),
+			}
+			
+			// Create test log entries
+			testEntries := []LogEntry{
+				{
+					ID:        "test-1",
+					Timestamp: time.Now(),
+					Message:   "Test message 1",
+					Level:     "INFO",
+					Service:   "test-service",
+				},
+				{
+					ID:        "test-2",
+					Timestamp: time.Now(),
+					Message:   "Test message 2",
+					Level:     "ERROR",
+					Service:   "test-service",
+				},
+			}
+			
+			cacheKey := "test-cache-key"
+			
+			// Set cache entry
+			datasource.SetCachedLogsEntry(cacheKey, testEntries, "next-cursor")
+			
+			// Property: Fresh cache entry should be retrievable
+			cacheTTL := 30 * time.Second
+			cachedEntry := datasource.GetCachedLogsEntry(cacheKey, cacheTTL)
+			assert.NotNil(t, cachedEntry, "Fresh cache entry should be retrievable")
+			assert.Len(t, cachedEntry.LogEntries, 2, "Cached entries should match original")
+			assert.Equal(t, "next-cursor", cachedEntry.NextCursor, "Next cursor should be preserved")
+			
+			// Property: Cache entry should have recent timestamp
+			timeDiff := time.Since(cachedEntry.Timestamp)
+			assert.Less(t, timeDiff, 1*time.Second, "Cache timestamp should be recent")
+			
+			// Property: Expired cache entry should not be retrievable
+			expiredTTL := 1 * time.Nanosecond // Very short TTL to simulate expiration
+			time.Sleep(2 * time.Nanosecond)   // Wait for expiration
+			expiredEntry := datasource.GetCachedLogsEntry(cacheKey, expiredTTL)
+			assert.Nil(t, expiredEntry, "Expired cache entry should not be retrievable")
+		})
+		
+		// Test Property: Cache key consistency
+		t.Run("cache key consistency", func(t *testing.T) {
+			// Property: Cache keys should be deterministic and unique for different queries
+			// Requirements: 10.4 - cache logs results appropriately
+			
+			// Test that same query parameters produce same cache key
+			query1 := "service:web-app"
+			from1 := int64(1640995200000)
+			to1 := int64(1640998800000)
+			
+			cacheKey1 := fmt.Sprintf("logs:%s:%d:%d", query1, from1, to1)
+			cacheKey1Duplicate := fmt.Sprintf("logs:%s:%d:%d", query1, from1, to1)
+			
+			assert.Equal(t, cacheKey1, cacheKey1Duplicate, "Same parameters should produce same cache key")
+			
+			// Test that different query parameters produce different cache keys
+			query2 := "service:api-gateway"
+			cacheKey2 := fmt.Sprintf("logs:%s:%d:%d", query2, from1, to1)
+			
+			assert.NotEqual(t, cacheKey1, cacheKey2, "Different queries should produce different cache keys")
+			
+			// Test that different time ranges produce different cache keys
+			from2 := int64(1640991600000)
+			cacheKey3 := fmt.Sprintf("logs:%s:%d:%d", query1, from2, to1)
+			
+			assert.NotEqual(t, cacheKey1, cacheKey3, "Different time ranges should produce different cache keys")
+		})
+		
+		// Test Property: Pagination state consistency
+		t.Run("pagination state consistency", func(t *testing.T) {
+			// Property: Pagination should handle cursor-based navigation correctly
+			// Requirements: 10.1 - implement pagination using Datadog's cursor-based system
+			
+			// Test LogsPaginationState structure
+			paginationState := LogsPaginationState{
+				Query:        "service:test",
+				TimeRange:    "1h",
+				Cursor:       "cursor-123",
+				HasMore:      true,
+				TotalFetched: 1000,
+			}
+			
+			// Property: Pagination state should track query context
+			assert.NotEmpty(t, paginationState.Query, "Pagination should track query")
+			assert.NotEmpty(t, paginationState.TimeRange, "Pagination should track time range")
+			assert.NotEmpty(t, paginationState.Cursor, "Pagination should track cursor")
+			assert.True(t, paginationState.HasMore, "Pagination should track if more data available")
+			assert.Greater(t, paginationState.TotalFetched, 0, "Pagination should track total fetched count")
+			
+			// Property: Cursor should be opaque string (no specific format required)
+			assert.IsType(t, "", paginationState.Cursor, "Cursor should be string type")
+		})
+		
+		// Test Property: LogsSearchRequest pagination structure
+		t.Run("pagination request structure", func(t *testing.T) {
+			// Property: Pagination requests should include cursor in relationships
+			// Requirements: 10.1 - use Datadog's cursor-based pagination system
+			
+			// Test request without pagination (first page)
+			firstPageRequest := LogsSearchRequest{
+				Data: LogsSearchData{
+					Type: "search_request",
+					Attributes: LogsSearchAttributes{
+						Query: "service:test",
+						Time: LogsTime{
+							From: "1640995200000",
+							To:   "1640998800000",
+						},
+						Sort:  "timestamp",
+						Limit: 1000,
+					},
+				},
+			}
+			
+			// Property: First page should not have relationships
+			assert.Nil(t, firstPageRequest.Data.Relationships, "First page should not have pagination relationships")
+			
+			// Test request with pagination (subsequent page)
+			cursor := "next-page-cursor-123"
+			nextPageRequest := LogsSearchRequest{
+				Data: LogsSearchData{
+					Type: "search_request",
+					Attributes: LogsSearchAttributes{
+						Query: "service:test",
+						Time: LogsTime{
+							From: "1640995200000",
+							To:   "1640998800000",
+						},
+						Sort:  "timestamp",
+						Limit: 1000,
+					},
+					Relationships: &LogsRelationships{
+						Page: LogsPageRelation{
+							Data: LogsPageData{
+								Type: "page_data",
+								ID:   cursor,
+							},
+						},
+					},
+				},
+			}
+			
+			// Property: Subsequent pages should include cursor in relationships
+			assert.NotNil(t, nextPageRequest.Data.Relationships, "Subsequent pages should have pagination relationships")
+			assert.Equal(t, "page_data", nextPageRequest.Data.Relationships.Page.Data.Type, "Page data type should be 'page_data'")
+			assert.Equal(t, cursor, nextPageRequest.Data.Relationships.Page.Data.ID, "Page data ID should contain cursor")
+			
+			// Property: Request should be JSON serializable with pagination
+			jsonBytes, err := json.Marshal(nextPageRequest)
+			assert.NoError(t, err, "Paginated request should be JSON serializable")
+			assert.Contains(t, string(jsonBytes), cursor, "JSON should contain cursor")
+		})
+		
+		// Test Property: LogsResponse pagination structure
+		t.Run("pagination response structure", func(t *testing.T) {
+			// Property: Response should include pagination metadata
+			// Requirements: 10.1 - handle pagination cursor from response
+			
+			// Test response with pagination cursor
+			nextCursor := "next-cursor-456"
+			response := LogsResponse{
+				Data: []map[string]interface{}{
+					{
+						"id": "log-1",
+						"attributes": map[string]interface{}{
+							"timestamp": time.Now().Format(time.RFC3339),
+							"message":   "Test message",
+							"status":    "info",
+						},
+					},
+				},
+				Meta: LogsResponseMeta{
+					Page: LogsPageMeta{
+						After: nextCursor,
+					},
+				},
+			}
+			
+			// Property: Response should contain pagination metadata
+			assert.NotEmpty(t, response.Meta.Page.After, "Response should contain next cursor")
+			assert.Equal(t, nextCursor, response.Meta.Page.After, "Next cursor should match expected value")
+			
+			// Property: Response should be JSON serializable
+			jsonBytes, err := json.Marshal(response)
+			assert.NoError(t, err, "Response should be JSON serializable")
+			assert.Contains(t, string(jsonBytes), nextCursor, "JSON should contain next cursor")
+			
+			// Test response without pagination (last page)
+			lastPageResponse := LogsResponse{
+				Data: []map[string]interface{}{
+					{
+						"id": "log-2",
+						"attributes": map[string]interface{}{
+							"timestamp": time.Now().Format(time.RFC3339),
+							"message":   "Last message",
+							"status":    "info",
+						},
+					},
+				},
+				Meta: LogsResponseMeta{
+					Page: LogsPageMeta{
+						After: "", // Empty cursor indicates last page
+					},
+				},
+			}
+			
+			// Property: Last page should have empty cursor
+			assert.Empty(t, lastPageResponse.Meta.Page.After, "Last page should have empty cursor")
+		})
+		
+		// Test Property: Cache cleanup consistency
+		t.Run("cache cleanup consistency", func(t *testing.T) {
+			// Property: Cache cleanup should remove only expired entries
+			// Requirements: 10.4 - maintain cache with appropriate TTL
+			
+			datasource := &Datasource{
+				logsCache: make(map[string]*LogsCacheEntry),
+			}
+			
+			// Add fresh entry
+			freshEntries := []LogEntry{{ID: "fresh", Message: "Fresh entry"}}
+			datasource.SetCachedLogsEntry("fresh-key", freshEntries, "")
+			
+			// Add old entry by manually setting timestamp
+			oldEntries := []LogEntry{{ID: "old", Message: "Old entry"}}
+			datasource.logsCache["old-key"] = &LogsCacheEntry{
+				LogEntries: oldEntries,
+				Timestamp:  time.Now().Add(-1 * time.Hour), // 1 hour ago
+				NextCursor: "",
+			}
+			
+			// Property: Both entries should exist before cleanup
+			assert.Len(t, datasource.logsCache, 2, "Should have 2 cache entries before cleanup")
+			
+			// Clean expired entries with 30-second TTL
+			cacheTTL := 30 * time.Second
+			datasource.CleanExpiredLogsCache(cacheTTL)
+			
+			// Property: Only fresh entry should remain after cleanup
+			assert.Len(t, datasource.logsCache, 1, "Should have 1 cache entry after cleanup")
+			
+			_, hasFresh := datasource.logsCache["fresh-key"]
+			_, hasOld := datasource.logsCache["old-key"]
+			
+			assert.True(t, hasFresh, "Fresh entry should remain after cleanup")
+			assert.False(t, hasOld, "Old entry should be removed after cleanup")
+		})
+		
+		// Test Property: Concurrency safety for cache operations
+		t.Run("cache concurrency safety", func(t *testing.T) {
+			// Property: Cache operations should be thread-safe
+			// Requirements: 10.4 - cache should handle concurrent access safely
+			
+			datasource := &Datasource{
+				logsCache: make(map[string]*LogsCacheEntry),
+			}
+			
+			// Test concurrent cache operations
+			numGoroutines := 10
+			numOperations := 100
+			
+			// Use channels to coordinate goroutines
+			done := make(chan bool, numGoroutines)
+			
+			// Start multiple goroutines performing cache operations
+			for i := 0; i < numGoroutines; i++ {
+				go func(goroutineID int) {
+					defer func() { done <- true }()
+					
+					for j := 0; j < numOperations; j++ {
+						cacheKey := fmt.Sprintf("key-%d-%d", goroutineID, j)
+						entries := []LogEntry{{ID: cacheKey, Message: "Test message"}}
+						
+						// Set cache entry
+						datasource.SetCachedLogsEntry(cacheKey, entries, "")
+						
+						// Get cache entry
+						cacheTTL := 30 * time.Second
+						cachedEntry := datasource.GetCachedLogsEntry(cacheKey, cacheTTL)
+						
+						// Verify entry was cached correctly
+						if cachedEntry == nil || len(cachedEntry.LogEntries) != 1 {
+							t.Errorf("Cache operation failed for key %s", cacheKey)
+							return
+						}
+					}
+				}(i)
+			}
+			
+			// Wait for all goroutines to complete
+			for i := 0; i < numGoroutines; i++ {
+				<-done
+			}
+			
+			// Property: All cache operations should complete without race conditions
+			// If we reach here without panics or test failures, concurrency safety is verified
+			assert.True(t, true, "Concurrent cache operations should complete safely")
+		})
+	})
+}

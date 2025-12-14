@@ -33,7 +33,9 @@ type Datasource struct {
 	JSONData         *MyDataSourceOptions
 	SecureJSONData   map[string]string
 	cache            *AutocompleteCache
-	concurrencyLimit chan struct{} // Semaphore for max 5 concurrent requests
+	logsCache        map[string]*LogsCacheEntry // Separate cache for logs data
+	logsCacheMu      sync.Mutex                 // Mutex for logs cache
+	concurrencyLimit chan struct{}              // Semaphore for max 5 concurrent requests
 }
 
 // MyDataSourceOptions defines the JSON options for the datasource
@@ -82,7 +84,8 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 		cache: &AutocompleteCache{
 			entries: make(map[string]*CacheEntry),
 		},
-		concurrencyLimit: make(chan struct{}, 5), // Max 5 concurrent requests to Datadog
+		logsCache:        make(map[string]*LogsCacheEntry), // Initialize logs cache
+		concurrencyLimit: make(chan struct{}, 5),           // Max 5 concurrent requests to Datadog
 	}
 
 	// Parse JSON options
@@ -1626,6 +1629,50 @@ func (d *Datasource) CleanExpiredCache(ttl time.Duration) {
 	for key, entry := range d.cache.entries {
 		if now.Sub(entry.Timestamp) > ttl {
 			delete(d.cache.entries, key)
+		}
+	}
+}
+
+// GetCachedLogsEntry retrieves a cached logs entry if valid (not expired)
+func (d *Datasource) GetCachedLogsEntry(key string, ttl time.Duration) *LogsCacheEntry {
+	d.logsCacheMu.Lock()
+	defer d.logsCacheMu.Unlock()
+
+	entry, ok := d.logsCache[key]
+	if !ok {
+		return nil
+	}
+
+	// Check if expired
+	if time.Since(entry.Timestamp) > ttl {
+		delete(d.logsCache, key)
+		return nil
+	}
+
+	return entry
+}
+
+// SetCachedLogsEntry stores logs data in cache with current timestamp
+func (d *Datasource) SetCachedLogsEntry(key string, logEntries []LogEntry, nextCursor string) {
+	d.logsCacheMu.Lock()
+	defer d.logsCacheMu.Unlock()
+
+	d.logsCache[key] = &LogsCacheEntry{
+		LogEntries: logEntries,
+		Timestamp:  time.Now(),
+		NextCursor: nextCursor,
+	}
+}
+
+// CleanExpiredLogsCache removes expired entries from logs cache
+func (d *Datasource) CleanExpiredLogsCache(ttl time.Duration) {
+	d.logsCacheMu.Lock()
+	defer d.logsCacheMu.Unlock()
+
+	now := time.Now()
+	for key, entry := range d.logsCache {
+		if now.Sub(entry.Timestamp) > ttl {
+			delete(d.logsCache, key)
 		}
 	}
 }
