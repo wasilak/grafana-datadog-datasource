@@ -30,9 +30,51 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [currentPage, setCurrentPage] = useState(query.currentPage || 1);
   const [isLoading, setIsLoading] = useState(false);
   const [pageHistory, setPageHistory] = useState<{[page: number]: string}>({1: ''}); // Track cursors for each page
+  
+  // Frontend cache for pages - this will prevent unnecessary XHR requests
+  const [pageCache, setPageCache] = useState<{[cacheKey: string]: {[page: number]: any}}>({});
+  const [lastCacheKey, setLastCacheKey] = useState<string>('');
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
+
+  // Frontend cache management functions
+  const createCacheKey = (logQuery: string, pageSize: number) => {
+    // Create a cache key based on query and page size
+    // Time range is handled by Grafana, so we don't include it here
+    return `${logQuery || '*'}-${pageSize}`;
+  };
+
+  const isPageCached = (cacheKey: string, page: number) => {
+    return pageCache[cacheKey] && pageCache[cacheKey][page] !== undefined;
+  };
+
+  const getCachedPage = (cacheKey: string, page: number) => {
+    return pageCache[cacheKey]?.[page];
+  };
+
+  const setCachedPage = (cacheKey: string, page: number, data: any) => {
+    setPageCache(prev => ({
+      ...prev,
+      [cacheKey]: {
+        ...prev[cacheKey],
+        [page]: data
+      }
+    }));
+  };
+
+  const clearCache = () => {
+    setPageCache({});
+    setPageHistory({1: ''});
+    console.log('Frontend page cache cleared');
+  };
+
+  const shouldMakeXHRRequest = (cacheKey: string, page: number) => {
+    // Make XHR request if:
+    // 1. Page is not cached
+    // 2. Cache key changed (different query or page size)
+    return !isPageCached(cacheKey, page) || cacheKey !== lastCacheKey;
+  };
 
   // Define handleItemSelect for logs-specific autocomplete
   const handleItemSelect = async (item: CompletionItem) => {
@@ -198,11 +240,24 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     }
   }, [isLoading]);
 
+  // Cache management when data changes
+  useEffect(() => {
+    // When the query execution completes (loading stops), cache the current page
+    if (!isLoading && lastQueryTime > 0) {
+      const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+      // Mark this page as cached (we don't have access to actual data, but we know it loaded)
+      setCachedPage(cacheKey, currentPage, { cached: true, timestamp: Date.now() });
+      console.log(`💾 Cached page ${currentPage} for key: ${cacheKey}`);
+    }
+  }, [isLoading, currentPage, pageSize, query.logQuery, lastQueryTime]);
+
   // Reset pagination state when query changes
   useEffect(() => {
     if (query.logQuery !== logQuery) {
+      console.log('🗑️ Query changed, clearing cache and resetting pagination');
       setCurrentPage(1);
       setPageHistory({1: ''});
+      clearCache(); // Clear frontend cache when query changes
       onChange({
         ...query,
         currentPage: 1,
@@ -631,6 +686,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               setPageSize(newPageSize);
               setCurrentPage(1); // Reset to first page when page size changes
               setPageHistory({1: ''}); // Reset page history
+              clearCache(); // Clear frontend cache when page size changes
               onChange({ 
                 ...query, 
                 pageSize: newPageSize,
@@ -663,17 +719,33 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               onClick={() => {
                 const newPage = Math.max(1, currentPage - 1);
                 const cursor = pageHistory[newPage] || '';
-                setCurrentPage(newPage);
-                setIsLoading(true);
+                const cacheKey = createCacheKey(query.logQuery || '', pageSize);
                 
-                onChange({ 
-                  ...query, 
-                  currentPage: newPage,
-                  nextCursor: cursor, // Use the stored cursor for this page
-                  queryType: 'logs'
-                });
-                setLastQueryTime(Date.now());
-                onRunQuery();
+                setCurrentPage(newPage);
+                
+                // Check if we need to make an XHR request
+                if (shouldMakeXHRRequest(cacheKey, newPage)) {
+                  console.log(`📡 XHR request for page ${newPage} (not cached)`);
+                  setIsLoading(true);
+                  setLastQueryTime(Date.now());
+                  onChange({ 
+                    ...query, 
+                    currentPage: newPage,
+                    nextCursor: cursor,
+                    queryType: 'logs'
+                  });
+                  onRunQuery();
+                } else {
+                  console.log(`💾 Using cached data for page ${newPage}`);
+                  // Just update the query state without triggering XHR
+                  onChange({ 
+                    ...query, 
+                    currentPage: newPage,
+                    nextCursor: cursor,
+                    queryType: 'logs'
+                  });
+                }
+                setLastCacheKey(cacheKey);
               }}
             />
             
@@ -697,15 +769,29 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               }}
               onBlur={() => {
                 // Trigger query execution when page number changes
-                setIsLoading(true);
-                setLastQueryTime(Date.now());
-                onRunQuery();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                if (shouldMakeXHRRequest(cacheKey, currentPage)) {
+                  console.log(`📡 XHR request for page ${currentPage} (manual input)`);
                   setIsLoading(true);
                   setLastQueryTime(Date.now());
                   onRunQuery();
+                } else {
+                  console.log(`💾 Using cached data for page ${currentPage} (manual input)`);
+                }
+                setLastCacheKey(cacheKey);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                  if (shouldMakeXHRRequest(cacheKey, currentPage)) {
+                    console.log(`📡 XHR request for page ${currentPage} (Enter key)`);
+                    setIsLoading(true);
+                    setLastQueryTime(Date.now());
+                    onRunQuery();
+                  } else {
+                    console.log(`💾 Using cached data for page ${currentPage} (Enter key)`);
+                  }
+                  setLastCacheKey(cacheKey);
                 }
               }}
             />
@@ -750,17 +836,33 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               disabled={isLoading}
               onClick={() => {
                 const newPage = currentPage + 1;
-                setCurrentPage(newPage);
-                setIsLoading(true);
+                const cacheKey = createCacheKey(query.logQuery || '', pageSize);
                 
-                onChange({ 
-                  ...query, 
-                  currentPage: newPage,
-                  nextCursor: pageHistory[newPage] || '', // Use stored cursor or empty for new pages
-                  queryType: 'logs'
-                });
-                setLastQueryTime(Date.now());
-                onRunQuery();
+                setCurrentPage(newPage);
+                
+                // Check if we need to make an XHR request
+                if (shouldMakeXHRRequest(cacheKey, newPage)) {
+                  console.log(`📡 XHR request for page ${newPage} (not cached)`);
+                  setIsLoading(true);
+                  setLastQueryTime(Date.now());
+                  onChange({ 
+                    ...query, 
+                    currentPage: newPage,
+                    nextCursor: pageHistory[newPage] || '',
+                    queryType: 'logs'
+                  });
+                  onRunQuery();
+                } else {
+                  console.log(`💾 Using cached data for page ${newPage}`);
+                  // Just update the query state without triggering XHR
+                  onChange({ 
+                    ...query, 
+                    currentPage: newPage,
+                    nextCursor: pageHistory[newPage] || '',
+                    queryType: 'logs'
+                  });
+                }
+                setLastCacheKey(cacheKey);
               }}
             />
           </div>
