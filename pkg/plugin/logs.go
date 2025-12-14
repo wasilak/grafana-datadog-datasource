@@ -16,41 +16,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
-// LogsSearchRequest matches Datadog's exact API structure for POST /api/v2/logs/events/search
-type LogsSearchRequest struct {
-	Data LogsSearchData `json:"data"`
-}
-
-type LogsSearchData struct {
-	Type          string                `json:"type"`       // Must be "search_request"
-	Attributes    LogsSearchAttributes  `json:"attributes"`
-	Relationships *LogsRelationships    `json:"relationships,omitempty"` // For pagination
-}
-
-type LogsSearchAttributes struct {
-	Query string    `json:"query"`           // Search query (e.g., "service:web-app-production status:error")
-	Time  LogsTime  `json:"time"`            // Time range
-	Sort  string    `json:"sort,omitempty"`  // Sort field (usually "timestamp")
-	Limit int       `json:"limit,omitempty"` // Max results per page (max 1000)
-}
-
-type LogsTime struct {
-	From string `json:"from"` // Start time (e.g., "now-1h" or timestamp)
-	To   string `json:"to"`   // End time (e.g., "now" or timestamp)
-}
-
-type LogsRelationships struct {
-	Page LogsPageRelation `json:"page"`
-}
-
-type LogsPageRelation struct {
-	Data LogsPageData `json:"data"`
-}
-
-type LogsPageData struct {
-	Type string `json:"type"` // "page_data"
-	ID   string `json:"id"`   // Cursor from previous response
-}
+// LogsSearchRequest represents the simplified request structure for Datadog Logs API v2
+// Based on actual API behavior, using a simpler structure without nested data wrapper
 
 // LogEntry represents a single log entry from Datadog
 // This structure matches the expected format from Datadog Logs API v2 response
@@ -307,32 +274,23 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	// Use POST method with JSON body for proper Datadog Logs API v2 integration
 	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 	
-	// Create request body matching Datadog's exact API format
-	requestBody := LogsSearchRequest{
-		Data: LogsSearchData{
-			Type: "search_request",
-			Attributes: LogsSearchAttributes{
-				Query: logsQuery,
-				Time: LogsTime{
-					From: fmt.Sprintf("%d", from),
-					To:   fmt.Sprintf("%d", to),
-				},
-				Sort:  "timestamp",
-				Limit: 1000, // Max results per page
-			},
+	// Create request body matching Datadog's actual API format
+	// Based on the API error, it seems Datadog expects a simpler structure
+	requestBody := map[string]interface{}{
+		"filter": map[string]interface{}{
+			"query": logsQuery,
+			"from":  fmt.Sprintf("%d", from),
+			"to":    fmt.Sprintf("%d", to),
+		},
+		"sort": "timestamp",
+		"page": map[string]interface{}{
+			"limit": 1000,
 		},
 	}
 
 	// Add pagination cursor if provided
 	if cursor != "" {
-		requestBody.Data.Relationships = &LogsRelationships{
-			Page: LogsPageRelation{
-				Data: LogsPageData{
-					Type: "page_data",
-					ID:   cursor,
-				},
-			},
-		}
+		requestBody["page"].(map[string]interface{})["cursor"] = cursor
 	}
 
 	// Marshal request body
