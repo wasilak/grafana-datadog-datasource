@@ -262,6 +262,142 @@ describe('VariableInterpolationService', () => {
     });
   });
 
+  describe('logs query interpolation', () => {
+    beforeEach(() => {
+      mockTemplateSrv.getVariables.mockReturnValue([
+        {
+          name: 'service',
+          current: { value: ['web-app', 'api-service', 'worker'] },
+        },
+        {
+          name: 'level',
+          current: { value: 'ERROR' },
+        },
+        {
+          name: 'source',
+          current: { value: ['nginx', 'app'] },
+        },
+      ]);
+    });
+
+    it('should interpolate logs queries with safety measures', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:$service status:$level',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      expect(result.logQuery).toBe('service:(web-app OR api-service OR worker) status:ERROR');
+    });
+
+    it('should handle single-value variables in logs queries', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'status:$level source:nginx',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      expect(result.logQuery).toBe('status:ERROR source:nginx');
+    });
+
+    it('should handle custom format specifiers in logs queries', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:${service:lucene} source:${source:csv}',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      expect(result.logQuery).toBe('service:("web\\-app" OR "api\\-service" OR "worker") source:nginx,app');
+    });
+
+    it('should sanitize dangerous characters in logs queries', () => {
+      mockTemplateSrv.getVariables.mockReturnValue([
+        {
+          name: 'malicious',
+          current: { value: 'test+value OR malicious:true' },
+        },
+      ]);
+
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:$malicious',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      // Should escape special characters (+ and :) and wrap in quotes due to spaces
+      expect(result.logQuery).toBe('service:"test\\+value OR malicious\\:true"');
+    });
+
+    it('should handle empty logs query gracefully', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: '',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      expect(result.logQuery).toBe('');
+    });
+
+    it('should preserve original logs query on interpolation error', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:$service',
+        queryType: 'logs',
+      };
+
+      mockTemplateSrv.getVariables.mockImplementation(() => {
+        throw new Error('Template service error');
+      });
+
+      const result = service.interpolateQuery(query, {});
+
+      expect(result.logQuery).toBe('service:$service');
+    });
+
+    it('should handle variables with spaces in logs queries', () => {
+      mockTemplateSrv.getVariables.mockReturnValue([
+        {
+          name: 'service',
+          current: { value: 'web app service' },
+        },
+      ]);
+
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:$service',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      // Should wrap values with spaces in quotes
+      expect(result.logQuery).toBe('service:"web app service"');
+    });
+
+    it('should handle unknown variables gracefully in logs queries', () => {
+      const query: MyQuery = {
+        refId: 'A',
+        logQuery: 'service:$unknown status:$level',
+        queryType: 'logs',
+      };
+
+      const result = service.interpolateQuery(query, {});
+
+      // Should preserve unknown variables and interpolate known ones
+      expect(result.logQuery).toBe('service:$unknown status:ERROR');
+    });
+  });
+
   describe('custom format interpolation', () => {
     beforeEach(() => {
       mockTemplateSrv.getVariables.mockReturnValue([

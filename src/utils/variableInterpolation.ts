@@ -22,7 +22,7 @@ export class VariableInterpolationService {
         ? query.legendTemplate 
         : '';
 
-      return {
+      const result: MyQuery = {
         ...query,
         queryText: this.interpolateString(query.queryText || '', scopedVars),
         legendTemplate: query.legendMode === 'custom' 
@@ -31,6 +31,13 @@ export class VariableInterpolationService {
         interpolatedQueryText: this.interpolateString(query.queryText || '', scopedVars),
         interpolatedLabel: this.interpolateString(effectiveLegendTemplate, scopedVars),
       };
+
+      // Handle logs query interpolation with safety measures
+      if (query.logQuery) {
+        result.logQuery = this.interpolateLogsQuery(query.logQuery, scopedVars);
+      }
+
+      return result;
     } catch (error) {
       console.error('Variable interpolation failed:', error);
       // Return original query as fallback
@@ -40,8 +47,141 @@ export class VariableInterpolationService {
         interpolatedLabel: query.legendMode === 'custom' && query.legendTemplate 
           ? query.legendTemplate 
           : '',
+        // Preserve original logQuery on error to prevent injection
+        logQuery: query.logQuery,
       };
     }
+  }
+
+  /**
+   * Interpolates variables in logs queries with safety measures to prevent injection
+   * Extends existing variable interpolation patterns for Datadog logs search syntax
+   */
+  private interpolateLogsQuery(logQuery: string, scopedVars: ScopedVars): string {
+    if (!logQuery) {
+      return '';
+    }
+
+    try {
+      // Handle custom format specifiers like ${variable:format} with logs-specific formatting
+      let interpolated = logQuery.replace(/\$\{([^}:]+):([^}]+)\}/g, (match, varName, format) => {
+        const variable = scopedVars[varName] || this.templateSrv.getVariables().find(v => v.name === varName);
+        
+        if (!variable) {
+          return match; // Return original if variable not found
+        }
+
+        const context = this.createInterpolationContext(variable, format as VariableFormat);
+        
+        // Use logs-specific formatting for multi-value variables
+        return this.formatMultiValueForLogs(context.values, context.format || 'logs');
+      });
+
+      // Handle simple variables like $variable with logs-safe interpolation
+      interpolated = interpolated.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, varName) => {
+        const variable = scopedVars[varName] || this.templateSrv.getVariables().find(v => v.name === varName);
+        
+        if (!variable) {
+          return match; // Return original if variable not found
+        }
+
+        // Get variable values and apply logs-safe formatting
+        const values = Array.isArray(variable.current?.value) 
+          ? variable.current.value 
+          : [variable.current?.value].filter(Boolean);
+        
+        return this.formatMultiValueForLogs(values, 'logs');
+      });
+
+      return interpolated;
+    } catch (error) {
+      console.error('Logs query interpolation failed:', error);
+      return logQuery; // Return original query on error to prevent injection
+    }
+  }
+
+  /**
+   * Formats multi-value variables for Datadog logs search syntax with safety measures
+   * Extends existing formatMultiValue method with logs-specific patterns
+   */
+  private formatMultiValueForLogs(values: string[], format: VariableFormat | 'logs' = 'logs'): string {
+    // Handle empty or undefined values
+    if (!values || values.length === 0) {
+      return '';
+    }
+
+    // Filter out null, undefined, and empty string values, and sanitize for logs
+    const filteredValues = values
+      .filter(value => 
+        value !== null && 
+        value !== undefined && 
+        value !== ''
+      )
+      .map(value => this.sanitizeLogsValue(String(value)));
+
+    if (filteredValues.length === 0) {
+      return '';
+    }
+
+    switch (format) {
+      case 'logs':
+        // Default logs format: use OR syntax for multiple values
+        if (filteredValues.length === 1) {
+          return filteredValues[0];
+        }
+        return `(${filteredValues.join(' OR ')})`;
+      
+      case 'lucene':
+        // Use existing Lucene formatting with proper escaping
+        return `(${filteredValues.map(v => `"${this.escapeLuceneValue(v)}"`).join(' OR ')})`;
+      
+      case 'csv':
+        return filteredValues.join(',');
+      
+      case 'pipe':
+        return filteredValues.join('|');
+      
+      case 'json':
+        return JSON.stringify(filteredValues);
+      
+      case 'raw':
+        // Return the first value for raw format
+        return filteredValues[0];
+      
+      default:
+        // Default to logs format for unknown formats
+        if (filteredValues.length === 1) {
+          return filteredValues[0];
+        }
+        return `(${filteredValues.join(' OR ')})`;
+    }
+  }
+
+  /**
+   * Sanitizes values for use in Datadog logs queries to prevent injection
+   * Applies safety measures specific to logs search syntax
+   */
+  private sanitizeLogsValue(value: string): string {
+    // Remove or escape potentially dangerous characters for logs queries
+    // Datadog logs search uses Lucene-like syntax, so we need to escape special characters
+    
+    // First, trim whitespace
+    let sanitized = value.trim();
+    
+    // Prevent injection of boolean operators at the start/end
+    sanitized = sanitized.replace(/^(AND|OR|NOT)\s+/i, '');
+    sanitized = sanitized.replace(/\s+(AND|OR|NOT)$/i, '');
+    
+    // Escape special Datadog logs search characters, but be more selective
+    // Only escape characters that are truly problematic in logs search context
+    sanitized = sanitized.replace(/[+&|!(){}[\]^"~*?:\\]/g, '\\$&');
+    
+    // Handle quotes - if the value contains spaces, wrap in quotes
+    if (sanitized.includes(' ') && !sanitized.startsWith('"') && !sanitized.endsWith('"')) {
+      sanitized = `"${sanitized}"`;
+    }
+    
+    return sanitized;
   }
 
   /**

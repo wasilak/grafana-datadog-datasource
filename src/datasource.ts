@@ -20,15 +20,16 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars) {
     // Detect query type and set it on the query
     const queryType = this.detectQueryType(query);
+    
+    // Use the enhanced variable interpolation service that handles both metrics and logs
     const interpolatedQuery = variableInterpolationService.interpolateQuery(query, scopedVars);
     
     // Set the detected query type
     interpolatedQuery.queryType = queryType;
     
-    // For logs queries, also interpolate the logQuery field if present
-    if (queryType === 'logs' && query.logQuery) {
-      // Use getTemplateSrv for interpolating the logQuery field
-      interpolatedQuery.logQuery = this.templateSrv.replace(query.logQuery, scopedVars);
+    // For logs queries, ensure indexes array is preserved if present
+    if (queryType === 'logs' && query.indexes) {
+      interpolatedQuery.indexes = query.indexes;
     }
     
     return interpolatedQuery;
