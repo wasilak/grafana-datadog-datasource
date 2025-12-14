@@ -1,14 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { CodeEditor, Stack, Alert, useTheme2, Button, Icon, InlineField, InlineFieldRow, Input } from '@grafana/ui';
+import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow, Input } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
-import { QueryEditorHelp } from './QueryEditorHelp';
 import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
-import { validateLogsQuery, getQuerySuggestions } from './utils/logsQueryValidator';
+import { validateLogsQuery } from './utils/logsQueryValidator';
 
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -567,6 +566,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               variant="secondary"
               size="sm"
               icon="angle-left"
+              aria-label="Previous page"
               disabled={currentPage <= 1}
               onClick={() => {
                 const newPage = Math.max(1, currentPage - 1);
@@ -584,7 +584,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               type="number"
               value={currentPage}
               min={1}
-              max={query.totalPages || 999}
+              max={999}
               width={8}
               onChange={(e) => {
                 const newPage = Math.max(1, parseInt(e.currentTarget.value) || 1);
@@ -611,14 +611,15 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               color: theme.colors.text.secondary,
               whiteSpace: 'nowrap'
             }}>
-              of {query.totalPages || '?'}
+              of {currentPage}+
             </span>
             
             <Button
               variant="secondary"
               size="sm"
               icon="angle-right"
-              disabled={!query.nextCursor && currentPage >= (query.totalPages || 1)}
+              aria-label="Next page"
+              disabled={false}
               onClick={() => {
                 const newPage = currentPage + 1;
                 setCurrentPage(newPage);
