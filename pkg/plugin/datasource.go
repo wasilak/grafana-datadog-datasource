@@ -168,22 +168,13 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	client := datadog.NewAPIClient(configuration)
 	metricsApi := datadogV2.NewMetricsApi(client)
 
-	// Datadog time range in milliseconds - Get from first query if available
-	var from, to int64
-	if len(req.Queries) > 0 {
-		from = req.Queries[0].TimeRange.From.UnixMilli()
-		to = req.Queries[0].TimeRange.To.UnixMilli()
-	}
+	// Use Query Handler Architecture Pattern
+	// Create handlers for different query types
+	handlers := make(map[QueryType]QueryHandler)
+	handlers[MetricsQueryType] = NewMetricsHandler(d, req.Queries, ddCtx, metricsApi)
+	handlers[LogsQueryType] = NewLogsHandler(d, req.Queries, ddCtx)
 
-	// Parse all queries and separate logs queries from metrics queries
-	var metricsQueries []datadogV2.TimeseriesQuery
-	var formulas []datadogV2.QueryFormula
-	var queryModels = make(map[string]QueryModel)
-	var logsQueryModels = make(map[string]QueryModel)
-	var hasFormulas bool
-	var hasLogsQueries bool
-
-	// First pass: parse all queries and separate logs from metrics
+	// Parse all queries and route to appropriate handlers
 	for _, q := range req.Queries {
 		var qm QueryModel
 		if err := json.Unmarshal(q.JSON, &qm); err != nil {
@@ -198,169 +189,43 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 
-		// Detect query type - check explicit queryType field or infer from context
-		isLogsQuery := qm.QueryType == "logs" || (qm.QueryType == "" && qm.LogQuery != "")
-		
-		if isLogsQuery {
-			// This is a logs query
-			hasLogsQueries = true
-			logsQueryModels[q.RefID] = qm
-			logger.Debug("Detected logs query", "refID", q.RefID, "logQuery", qm.LogQuery)
-		} else {
-			// This is a metrics query
-			queryModels[q.RefID] = qm
+		// Detect query type and route to appropriate handler
+		queryType := detectQueryType(&qm)
+		handler, exists := handlers[queryType]
+		if !exists {
+			logger.Error("unsupported query type", "queryType", queryType)
+			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("unsupported query type: %s", queryType))
+			continue
 		}
 
-		// Only process metrics queries in this loop
-		if !isLogsQuery {
-			if qm.Type == "math" && qm.Expression != "" {
-				// This is a formula query - convert Grafana format ($A) to Datadog format (A)
-				hasFormulas = true
-				datadogFormula := convertGrafanaFormulaToDatadog(qm.Expression)
-				formulas = append(formulas, datadogV2.QueryFormula{
-					Formula: datadogFormula,
-				})
-			} else if qm.QueryText != "" {
-				// This is a regular metrics query - add it to the queries list
-				queryText := qm.QueryText
-				lowerQuery := strings.ToLower(queryText)
-				
-				hasGroupByClause := strings.Contains(lowerQuery, " by ")
-				hasBooleanOperators := strings.Contains(lowerQuery, " in ") || 
-									  strings.Contains(lowerQuery, " or ") || 
-									  strings.Contains(lowerQuery, " and ") ||
-									  strings.Contains(lowerQuery, " not in ")
-				
-				if !hasGroupByClause && !hasBooleanOperators {
-					queryText = queryText + " by {*}"
-					logger.Debug("Added 'by {*}' to query", "original", qm.QueryText, "modified", queryText)
-				}
-
-				// Create query with name set to refID for formula referencing
-				queryName := q.RefID
-				metricsQueries = append(metricsQueries, datadogV2.TimeseriesQuery{
-					MetricsTimeseriesQuery: &datadogV2.MetricsTimeseriesQuery{
-						DataSource: datadogV2.METRICSDATASOURCE_METRICS,
-						Query:      queryText,
-						Name:       &queryName,
-					},
-				})
-			} else {
-				response.Responses[q.RefID] = backend.DataResponse{}
-			}
+		// Process query with the appropriate handler
+		if err := handler.processQuery(&qm); err != nil {
+			logger.Error("failed to process query", "queryType", queryType, "error", err)
+			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("failed to process query: %v", err))
+			continue
 		}
 	}
 
-	// Handle logs queries separately
-	if hasLogsQueries {
-		logger.Info("Processing logs queries", "logsQueryCount", len(logsQueryModels))
-		
-		// Create a new request containing only logs queries
-		logsReq := &backend.QueryDataRequest{
-			PluginContext: req.PluginContext,
-			Headers:       req.Headers,
-			Queries:       []backend.DataQuery{},
-		}
-		
-		// Add logs queries to the new request
-		for _, q := range req.Queries {
-			var qm QueryModel
-			if err := json.Unmarshal(q.JSON, &qm); err != nil {
-				continue
-			}
-			
-			// Check if this is a logs query
-			isLogsQuery := qm.QueryType == "logs" || (qm.QueryType == "" && qm.LogQuery != "")
-			if isLogsQuery {
-				logsReq.Queries = append(logsReq.Queries, q)
-			}
-		}
-		
-		// Execute logs queries using the dedicated logs handler
-		logsResponse, err := d.queryLogs(ddCtx, logsReq)
+	// Execute queries for each handler and merge responses
+	responses := make([]*backend.QueryDataResponse, 0)
+	for queryType, handler := range handlers {
+		handlerResponse, err := handler.executeQueries(ctx)
 		if err != nil {
-			logger.Error("Failed to execute logs queries", "error", err)
-			// Set error responses for all logs queries
-			for refID := range logsQueryModels {
-				response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("logs query failed: %v", err))
-			}
-		} else {
-			// Merge logs responses into main response
-			for refID, logsResp := range logsResponse.Responses {
-				response.Responses[refID] = logsResp
-			}
+			logger.Error("handler execution failed", "queryType", queryType, "error", err)
+			// Continue with other handlers even if one fails
+			continue
+		}
+		if handlerResponse != nil && len(handlerResponse.Responses) > 0 {
+			responses = append(responses, handlerResponse)
 		}
 	}
 
-	// Only proceed with metrics API call if we have metrics queries or formulas
-	if len(metricsQueries) == 0 && len(formulas) == 0 {
-		// If we only have logs queries, we've already handled them above
-		return response, nil
-	}
-
-	// Create the request body for metrics queries
-	body := datadogV2.TimeseriesFormulaQueryRequest{
-		Data: datadogV2.TimeseriesFormulaRequest{
-			Type: datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
-			Attributes: datadogV2.TimeseriesFormulaRequestAttributes{
-				From:    from,
-				To:      to,
-				Queries: metricsQueries,
-			},
-		},
-	}
-
-	// Add formulas if we have any
-	if hasFormulas {
-		body.Data.Attributes.Formulas = formulas
-	}
-
-	// Set interval - use override from any query that has it, otherwise let Datadog auto-calculate
-	for _, qm := range queryModels {
-		if qm.Interval != nil && *qm.Interval > 0 {
-			body.Data.Attributes.Interval = qm.Interval
-			break // Use the first interval override found
+	// Merge all handler responses into the main response
+	for _, handlerResponse := range responses {
+		for refID, dataResponse := range handlerResponse.Responses {
+			response.Responses[refID] = dataResponse
 		}
 	}
-
-	// Create context with timeout
-	queryCtx, cancel := context.WithTimeout(ddCtx, 30*time.Second)
-	defer cancel()
-
-	// Call Datadog API
-	resp, r, err := metricsApi.QueryTimeseriesData(queryCtx, body)
-	if err != nil {
-		// Log request body for debugging
-		requestBody, _ := json.MarshalIndent(body, "", "  ")
-		logger.Error("QueryTimeseriesData request body", "request", string(requestBody))
-
-		// Log HTTP response details
-		httpStatus := 0
-		var responseBody string
-		if r != nil {
-			httpStatus = r.StatusCode
-			if r.Body != nil {
-				bodyBytes, _ := io.ReadAll(r.Body)
-				responseBody = string(bodyBytes)
-				r.Body = io.NopCloser(strings.NewReader(responseBody))
-			}
-		}
-
-		logger.Error("QueryTimeseriesData API call failed",
-			"error", err,
-			"httpStatus", httpStatus,
-			"responseBody", responseBody)
-
-		// Return error for all queries
-		errorMsg := d.parseDatadogError(err, httpStatus, responseBody)
-		for refID := range queryModels {
-			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, errorMsg)
-		}
-		return response, nil
-	}
-
-	// Process the response and create frames for each query/formula
-	d.processTimeseriesResponse(&resp, queryModels, response)
 
 	return response, nil
 }
