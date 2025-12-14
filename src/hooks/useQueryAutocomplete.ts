@@ -3,6 +3,7 @@ import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery, parseLogsQuery } from '../utils/autocomplete/parser';
 import { generateSuggestions, generateLogsSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
+import { validateLogsQuery } from '../utils/logsQueryValidator';
 import { getBackendSrv } from '@grafana/runtime';
 import { variableInterpolationService } from '../utils/variableInterpolation';
 import { LogsCompletionItemProvider } from '../utils/autocomplete/logsCompletionProvider';
@@ -86,8 +87,10 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
       }, 2000); // 2-second timeout
 
       try {
-        // Validate query
-        const validationResult = validateQuery(queryText);
+        // Validate query based on query type
+        const validationResult = queryType === 'logs' 
+          ? validateLogsQuery(queryText)
+          : validateQuery(queryText);
 
         // Fetch data based on query type - metrics for metrics queries, logs data for logs queries
         let metrics: string[] = [];
@@ -223,6 +226,68 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           }
         }
 
+        // Fetch specific field values for logs contexts (service values, source values, etc.)
+        let logsFieldValues: string[] = [];
+        if (queryType === 'logs' && ['logs_service', 'logs_source', 'logs_level'].includes(context.contextType)) {
+          try {
+            let fieldName = '';
+            switch (context.contextType) {
+              case 'logs_service':
+                fieldName = 'service';
+                break;
+              case 'logs_source':
+                fieldName = 'source';
+                break;
+              case 'logs_level':
+                fieldName = 'status'; // Datadog uses 'status' for log levels
+                break;
+            }
+            
+            if (fieldName) {
+              const fieldValuesResponse = await getBackendSrv()
+                .fetch({
+                  url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/field-values/${fieldName}`,
+                  method: 'GET',
+                })
+                .toPromise();
+              logsFieldValues = (fieldValuesResponse as any).data as string[];
+            }
+          } catch (fieldValuesError) {
+            const err = fieldValuesError as any;
+            if (err.status === 401) {
+              throw new Error('Datadog credentials invalid');
+            } else if (err.status === 404) {
+              console.warn('Logs field values endpoint not found, using cached data');
+              // Fall back to using the general lists we already fetched
+              switch (context.contextType) {
+                case 'logs_service':
+                  logsFieldValues = logsServices;
+                  break;
+                case 'logs_source':
+                  logsFieldValues = logsSources;
+                  break;
+                case 'logs_level':
+                  logsFieldValues = logsLevels;
+                  break;
+              }
+            } else {
+              console.warn('Failed to fetch logs field values:', fieldValuesError);
+              // Fall back to using the general lists we already fetched
+              switch (context.contextType) {
+                case 'logs_service':
+                  logsFieldValues = logsServices;
+                  break;
+                case 'logs_source':
+                  logsFieldValues = logsSources;
+                  break;
+                case 'logs_level':
+                  logsFieldValues = logsLevels;
+                  break;
+              }
+            }
+          }
+        }
+
         clearTimeout(timeoutHandle);
 
         // Generate suggestions based on context and query type
@@ -236,6 +301,21 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           logsProvider.updateSources(logsSources);
           logsProvider.updateLevels(logsLevels);
           logsProvider.updateFields(logsFields);
+          
+          // If we have specific field values for the current context, use them
+          if (logsFieldValues.length > 0) {
+            switch (context.contextType) {
+              case 'logs_service':
+                logsProvider.updateServices(logsFieldValues);
+                break;
+              case 'logs_source':
+                logsProvider.updateSources(logsFieldValues);
+                break;
+              case 'logs_level':
+                logsProvider.updateLevels(logsFieldValues);
+                break;
+            }
+          }
           
           // Use context-aware completion provider for enhanced suggestions
           suggestions = logsProvider.getContextSpecificSuggestions(queryText, context.cursorPosition, context);

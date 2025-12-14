@@ -865,6 +865,8 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return d.LogsLevelsHandler(ctx, req, sender)
 	case req.Method == "GET" && req.Path == "autocomplete/logs/fields":
 		return d.LogsFieldsHandler(ctx, req, sender)
+	case req.Method == "GET" && strings.HasPrefix(req.Path, "autocomplete/logs/field-values/"):
+		return d.LogsFieldValuesHandler(ctx, req, sender)
 	// Variable resource handlers - Grafana strips "resources/" prefix
 	case req.Method == "POST" && req.Path == "metrics":
 		return d.VariableMetricsHandler(ctx, req, sender)
@@ -3641,6 +3643,105 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 	respData, err := json.Marshal(fields)
 	if err != nil {
 		logger.Error("failed to marshal fields response", "error", err, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(`{"error": "failed to marshal response"}`),
+		})
+	}
+
+	return sender.Send(&backend.CallResourceResponse{
+		Status: 200,
+		Body:   respData,
+	})
+}
+
+// LogsFieldValuesHandler handles GET /autocomplete/logs/field-values/{fieldName} requests
+// Provides specific field values for autocomplete suggestions (e.g., actual service names)
+// Reuses existing concurrency limiting and timeout patterns from metrics implementation
+func (d *Datasource) LogsFieldValuesHandler(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	logger := log.New()
+	traceID := generateTraceID()
+	startTime := time.Now()
+
+	// Extract field name from path
+	pathParts := strings.Split(req.Path, "/")
+	if len(pathParts) < 4 {
+		logger.Error("Invalid field values path", "path", req.Path, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(`{"error": "field name is required"}`),
+		})
+	}
+	fieldName := pathParts[3]
+
+	// Validate field name
+	validFields := map[string]bool{
+		"service": true,
+		"source":  true,
+		"status":  true,
+		"host":    true,
+		"env":     true,
+	}
+	if !validFields[fieldName] {
+		logger.Error("Invalid field name", "fieldName", fieldName, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 400,
+			Body:   []byte(fmt.Sprintf(`{"error": "invalid field name: %s"}`, fieldName)),
+		})
+	}
+
+	// Get API credentials from secure JSON data (reusing existing pattern)
+	apiKey, ok := d.SecureJSONData["apiKey"]
+	if !ok {
+		logger.Error("Missing apiKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	appKey, ok := d.SecureJSONData["appKey"]
+	if !ok {
+		logger.Error("Missing appKey", "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 401,
+			Body:   []byte(`{"error": "Invalid Datadog API credentials"}`),
+		})
+	}
+
+	// Get Datadog site configuration (reusing existing pattern)
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Apply concurrency limiting (reusing existing pattern from metrics implementation)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case d.concurrencyLimit <- struct{}{}:
+		defer func() { <-d.concurrencyLimit }()
+	}
+
+	// Call Datadog Logs API to get unique field values from recent log data
+	fieldValues, err := d.fetchLogsFieldValues(ctx, fieldName, apiKey, appKey, site)
+	if err != nil {
+		logger.Error("Failed to fetch field values from Datadog Logs API", "error", err, "fieldName", fieldName, "traceID", traceID)
+		return sender.Send(&backend.CallResourceResponse{
+			Status: 500,
+			Body:   []byte(fmt.Sprintf(`{"error": "failed to fetch %s values: %s"}`, fieldName, err.Error())),
+		})
+	}
+
+	duration := time.Since(startTime)
+
+	// Log the response for debugging (reusing existing logging pattern)
+	logVariableResponse(logger, traceID, fmt.Sprintf("/autocomplete/logs/field-values/%s", fieldName), 200, duration, len(fieldValues), nil)
+
+	// Return field values as JSON array (same format as other autocomplete endpoints)
+	respData, err := json.Marshal(fieldValues)
+	if err != nil {
+		logger.Error("failed to marshal field values response", "error", err, "fieldName", fieldName, "traceID", traceID)
 		return sender.Send(&backend.CallResourceResponse{
 			Status: 500,
 			Body:   []byte(`{"error": "failed to marshal response"}`),
