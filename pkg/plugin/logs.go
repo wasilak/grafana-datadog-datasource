@@ -210,22 +210,71 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		return frames, nil
 	}
 
-	// Execute query with pagination support
-	allLogEntries, err := d.executeLogsQueryWithPagination(ctx, logsQuery, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute logs query with pagination: %w", err)
+	// Get pagination parameters
+	pageSize := 100 // Default page size
+	if qm.PageSize != nil && *qm.PageSize > 0 {
+		pageSize = *qm.PageSize
+		if pageSize > 1000 {
+			pageSize = 1000 // Cap at 1000 for API limits
+		}
+	}
+	
+	currentPage := 1 // Default to first page
+	if qm.CurrentPage != nil && *qm.CurrentPage > 0 {
+		currentPage = *qm.CurrentPage
 	}
 
-	// Cache the results
-	d.SetCachedLogsEntry(cacheKey, allLogEntries, "")
+	// Execute single page query (no automatic pagination)
+	logEntries, nextCursor, err := d.executeSingleLogsPageQuery(ctx, logsQuery, from, to, qm.NextCursor, pageSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute logs query: %w", err)
+	}
+
+	// Cache the results for this specific page
+	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
 	// Create Grafana data frames from log entries
-	frames := d.createLogsDataFrames(allLogEntries, q.RefID)
+	frames := d.createLogsDataFrames(logEntries, q.RefID)
+	
+	// Add pagination metadata to the response
+	if len(frames) > 0 {
+		frame := frames[0]
+		if frame.Meta == nil {
+			frame.Meta = &data.FrameMeta{}
+		}
+		if frame.Meta.Custom == nil {
+			frame.Meta.Custom = make(map[string]interface{})
+		}
+		
+		// Add pagination info to frame metadata
+		if customMap, ok := frame.Meta.Custom.(map[string]interface{}); ok {
+			customMap["pagination"] = map[string]interface{}{
+				"currentPage": currentPage,
+				"pageSize":    pageSize,
+				"hasNextPage": nextCursor != "",
+				"nextCursor":  nextCursor,
+				"totalEntries": len(logEntries),
+			}
+		} else {
+			frame.Meta.Custom = map[string]interface{}{
+				"pagination": map[string]interface{}{
+					"currentPage": currentPage,
+					"pageSize":    pageSize,
+					"hasNextPage": nextCursor != "",
+					"nextCursor":  nextCursor,
+					"totalEntries": len(logEntries),
+				},
+			}
+		}
+	}
 
-	logger.Info("Successfully executed logs query with pagination", 
+	logger.Info("Successfully executed logs query", 
 		"query", logsQuery, 
-		"entriesReturned", len(allLogEntries),
-		"framesCreated", len(frames))
+		"entriesReturned", len(logEntries),
+		"framesCreated", len(frames),
+		"currentPage", currentPage,
+		"pageSize", pageSize,
+		"hasNextPage", nextCursor != "")
 
 	return frames, nil
 }
@@ -274,7 +323,7 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		}
 		
 		// Execute single page request with retry logic for rate limits
-		logEntries, cursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site, pageCount+1)
+		logEntries, cursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site, 500, pageCount+1)
 		
 		// Release semaphore slot
 		<-d.concurrencyLimit
@@ -329,8 +378,44 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 	return allLogEntries, nil
 }
 
+// executeSingleLogsPageQuery executes a single page logs query with user-controlled pagination
+// This replaces the automatic pagination to prevent rate limiting issues
+func (d *Datasource) executeSingleLogsPageQuery(ctx context.Context, logsQuery string, from, to int64, cursor string, pageSize int) ([]LogEntry, string, error) {
+	logger := log.New()
+	
+	// Create context with timeout (30 seconds)
+	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Get API credentials and site configuration
+	apiKey, _ := d.SecureJSONData["apiKey"]
+	appKey, _ := d.SecureJSONData["appKey"]
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com"
+	}
+
+	// Acquire semaphore slot to limit concurrent requests
+	d.concurrencyLimit <- struct{}{}
+	defer func() { <-d.concurrencyLimit }()
+
+	// Execute single page request with retry logic
+	logEntries, nextCursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, cursor, apiKey, appKey, site, pageSize, 1)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to execute logs page: %w", err)
+	}
+
+	logger.Info("Executed single logs page query", 
+		"query", logsQuery,
+		"pageSize", pageSize,
+		"entriesReturned", len(logEntries),
+		"nextCursor", nextCursor != "")
+
+	return logEntries, nextCursor, nil
+}
+
 // executeSingleLogsPage executes a single page of logs query
-func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string) ([]LogEntry, string, error) {
+func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageSize int) ([]LogEntry, string, error) {
 	logger := log.New()
 
 	// Use POST method with JSON body for proper Datadog Logs API v2 integration
@@ -350,7 +435,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		},
 		"sort": "timestamp",
 		"page": map[string]interface{}{
-			"limit": 500, // Reduced from 1000 to 500 to be more conservative with rate limits
+			"limit": pageSize, // Use user-specified page size
 		},
 	}
 
@@ -430,14 +515,14 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 }
 
 // executeSingleLogsPageWithRetry executes a single page with retry logic for rate limits
-func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageNumber int) ([]LogEntry, string, error) {
+func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageSize, pageNumber int) ([]LogEntry, string, error) {
 	logger := log.New()
 	
 	maxRetries := 2 // Reduced from 3 to 2 to avoid excessive retries
 	baseDelay := 3 * time.Second // Increased from 1s to 3s for more conservative approach
 	
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		logEntries, nextCursor, err := d.executeSingleLogsPage(ctx, logsQuery, from, to, cursor, apiKey, appKey, site)
+		logEntries, nextCursor, err := d.executeSingleLogsPage(ctx, logsQuery, from, to, cursor, apiKey, appKey, site, pageSize)
 		
 		if err == nil {
 			return logEntries, nextCursor, nil

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { CodeEditor, Stack, Alert, useTheme2, Button, Icon, InlineField, InlineFieldRow } from '@grafana/ui';
+import { CodeEditor, Stack, Alert, useTheme2, Button, Icon, InlineField, InlineFieldRow, Input } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -25,6 +25,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [showHelp, setShowHelp] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  
+  // Pagination state
+  const [pageSize, setPageSize] = useState(query.pageSize || 100);
+  const [currentPage, setCurrentPage] = useState(query.currentPage || 1);
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -518,6 +522,114 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 Loading...
               </div>
             )}
+          </div>
+        </InlineField>
+      </InlineFieldRow>
+
+      {/* Pagination Controls */}
+      <InlineFieldRow>
+        <InlineField 
+          label="Page Size" 
+          labelWidth={14}
+          tooltip="Number of log entries to fetch per page (default: 100, max: 1000)"
+        >
+          <Input
+            type="number"
+            value={pageSize}
+            min={10}
+            max={1000}
+            step={10}
+            width={10}
+            onChange={(e) => {
+              const newPageSize = Math.max(10, Math.min(1000, parseInt(e.currentTarget.value) || 100));
+              setPageSize(newPageSize);
+              onChange({ 
+                ...query, 
+                pageSize: newPageSize,
+                currentPage: 1, // Reset to first page when page size changes
+                queryType: 'logs'
+              });
+            }}
+            onBlur={() => {
+              // Trigger query execution when page size changes
+              onRunQuery();
+            }}
+          />
+        </InlineField>
+        
+        <InlineField 
+          label="Page" 
+          labelWidth={8}
+          tooltip="Current page number"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="angle-left"
+              disabled={currentPage <= 1}
+              onClick={() => {
+                const newPage = Math.max(1, currentPage - 1);
+                setCurrentPage(newPage);
+                onChange({ 
+                  ...query, 
+                  currentPage: newPage,
+                  queryType: 'logs'
+                });
+                onRunQuery();
+              }}
+            />
+            
+            <Input
+              type="number"
+              value={currentPage}
+              min={1}
+              max={query.totalPages || 999}
+              width={8}
+              onChange={(e) => {
+                const newPage = Math.max(1, parseInt(e.currentTarget.value) || 1);
+                setCurrentPage(newPage);
+                onChange({ 
+                  ...query, 
+                  currentPage: newPage,
+                  queryType: 'logs'
+                });
+              }}
+              onBlur={() => {
+                // Trigger query execution when page number changes
+                onRunQuery();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onRunQuery();
+                }
+              }}
+            />
+            
+            <span style={{ 
+              fontSize: theme.typography.size.sm, 
+              color: theme.colors.text.secondary,
+              whiteSpace: 'nowrap'
+            }}>
+              of {query.totalPages || '?'}
+            </span>
+            
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="angle-right"
+              disabled={!query.nextCursor && currentPage >= (query.totalPages || 1)}
+              onClick={() => {
+                const newPage = currentPage + 1;
+                setCurrentPage(newPage);
+                onChange({ 
+                  ...query, 
+                  currentPage: newPage,
+                  queryType: 'logs'
+                });
+                onRunQuery();
+              }}
+            />
           </div>
         </InlineField>
       </InlineFieldRow>

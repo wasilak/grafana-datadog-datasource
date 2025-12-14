@@ -17,6 +17,11 @@ export interface MyQuery extends DataQuery {
   queryType?: 'logs' | 'metrics'; // Query type - defaults to 'metrics'
   logQuery?: string;   // Logs search query
   indexes?: string[];  // Target log indexes
+  // Pagination fields for logs
+  pageSize?: number;   // Number of log entries per page (default: 100)
+  currentPage?: number; // Current page number (1-based, default: 1)
+  totalPages?: number; // Total number of pages available
+  nextCursor?: string; // Cursor for next page (from Datadog API)
   // Explore mode metadata for visualization hints
   meta?: {
     preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';
@@ -32,6 +37,10 @@ export const DEFAULT_QUERY: Partial<MyQuery> = {
   queryType: 'metrics',
   logQuery: '',
   indexes: [],
+  pageSize: 100,
+  currentPage: 1,
+  totalPages: 1,
+  nextCursor: undefined,
 };
 
 /**
