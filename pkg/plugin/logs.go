@@ -216,16 +216,16 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	}
 	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%s:%d", logsQuery, from, to, cursorKey, pageSize)
 	
-	// Check cache first (10-second TTL for better pagination UX)
-	// Reduced from 30s to 10s to prevent stale data during pagination
-	cacheTTL := 10 * time.Second
+	// Check cache first (30-second TTL for better pagination UX)
+	// Increased back to 30s for better cache hit rates while still being responsive
+	cacheTTL := 30 * time.Second
 	
 	currentPage := 1 // Default to first page
 	if qm.CurrentPage != nil && *qm.CurrentPage > 0 {
 		currentPage = *qm.CurrentPage
 	}
 
-	logger.Debug("Logs cache lookup", 
+	logger.Info("Logs cache lookup", 
 		"cacheKey", cacheKey, 
 		"query", logsQuery, 
 		"currentPage", currentPage,
@@ -233,7 +233,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		"pageSize", pageSize)
 	
 	if cachedEntry := d.GetCachedLogsEntry(cacheKey, cacheTTL); cachedEntry != nil {
-		logger.Debug("Returning cached logs result", 
+		logger.Info("✅ Cache HIT - Returning cached logs result", 
 			"query", logsQuery, 
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
@@ -241,6 +241,10 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		frames := d.createLogsDataFrames(cachedEntry.LogEntries, q.RefID)
 		return frames, nil
 	}
+	
+	logger.Info("❌ Cache MISS - Fetching from Datadog API", 
+		"cacheKey", cacheKey,
+		"currentPage", currentPage)
 
 	// Execute single page query (no automatic pagination)
 	logEntries, nextCursor, err := d.executeSingleLogsPageQuery(ctx, logsQuery, from, to, qm.NextCursor, pageSize)
@@ -249,11 +253,12 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	}
 
 	// Cache the results for this specific page
-	logger.Debug("Caching logs result", 
+	logger.Info("💾 Caching logs result", 
 		"cacheKey", cacheKey, 
 		"entriesCount", len(logEntries),
 		"currentPage", currentPage,
-		"nextCursor", nextCursor != "")
+		"nextCursor", nextCursor != "",
+		"cacheTTL", cacheTTL)
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
 	// Create Grafana data frames from log entries

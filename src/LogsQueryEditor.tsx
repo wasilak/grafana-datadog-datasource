@@ -31,9 +31,9 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [isLoading, setIsLoading] = useState(false);
   const [pageHistory, setPageHistory] = useState<{[page: number]: string}>({1: ''}); // Track cursors for each page
   
-  // Frontend cache for pages - this will prevent unnecessary XHR requests
-  const [pageCache, setPageCache] = useState<{[cacheKey: string]: {[page: number]: any}}>({});
-  const [lastCacheKey, setLastCacheKey] = useState<string>('');
+  // Simple frontend cache for page results - stores actual query results
+  const [pageCache, setPageCache] = useState<{[cacheKey: string]: {[page: number]: {timestamp: number, queryId: string}}}>({});
+  const [requestInFlight, setRequestInFlight] = useState<string | null>(null);
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -46,34 +46,22 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   };
 
   const isPageCached = (cacheKey: string, page: number) => {
-    return pageCache[cacheKey] && pageCache[cacheKey][page] !== undefined;
-  };
-
-  const getCachedPage = (cacheKey: string, page: number) => {
-    return pageCache[cacheKey]?.[page];
-  };
-
-  const setCachedPage = (cacheKey: string, page: number, data: any) => {
-    setPageCache(prev => ({
-      ...prev,
-      [cacheKey]: {
-        ...prev[cacheKey],
-        [page]: data
-      }
-    }));
+    const cached = pageCache[cacheKey]?.[page];
+    if (!cached) return false;
+    
+    // Cache expires after 30 seconds
+    const isExpired = Date.now() - cached.timestamp > 30000;
+    return !isExpired;
   };
 
   const clearCache = () => {
     setPageCache({});
     setPageHistory({1: ''});
-    console.log('Frontend page cache cleared');
+    console.log('🗑️ Frontend page cache cleared');
   };
 
   const shouldMakeXHRRequest = (cacheKey: string, page: number) => {
-    // Make XHR request if:
-    // 1. Page is not cached
-    // 2. Cache key changed (different query or page size)
-    return !isPageCached(cacheKey, page) || cacheKey !== lastCacheKey;
+    return !isPageCached(cacheKey, page);
   };
 
   // Define handleItemSelect for logs-specific autocomplete
@@ -191,65 +179,55 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     };
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
 
-  // Handle query execution completion (clear loading state)
-  // Track when queries are executed to properly manage loading state
-  const [lastQueryTime, setLastQueryTime] = useState<number>(0);
+  // Enhanced loading state management with better feedback
   const [queryExecutionId, setQueryExecutionId] = useState<string>('');
   
+  // Clear loading state when query execution completes
   useEffect(() => {
-    // Clear loading state when query execution completes
-    // We use a combination of time-based and state-based detection
-    if (isLoading && lastQueryTime > 0) {
-      const timeSinceQuery = Date.now() - lastQueryTime;
-      
-      // Clear loading after a reasonable time (1.5 seconds)
-      // This is more reasonable than 5 seconds and provides better UX
+    if (isLoading) {
+      // Clear loading after a reasonable timeout (2 seconds)
       const timer = setTimeout(() => {
+        console.log('⏰ Loading timeout reached, clearing loading state');
         setIsLoading(false);
-      }, 1500);
+        setRequestInFlight(null);
+      }, 2000);
       
       return () => clearTimeout(timer);
     }
-  }, [isLoading, lastQueryTime]);
+  }, [isLoading]);
 
-  // Clear loading state when query parameters change (indicating new data)
+  // Track query changes to manage cache and loading state
   useEffect(() => {
-    // Create a unique ID for this query execution
     const currentQueryId = `${query.logQuery}-${query.currentPage}-${query.pageSize}-${query.nextCursor}`;
     
-    // If the query ID changed and we have a previous execution, clear loading
-    // This indicates that new data has arrived or the query has changed
+    // If query changed and we have a previous execution, clear loading
     if (queryExecutionId && queryExecutionId !== currentQueryId && isLoading) {
+      console.log('📝 Query changed, clearing loading state');
       setIsLoading(false);
+      setRequestInFlight(null);
+      
+      // Cache the completed request
+      if (queryExecutionId) {
+        const [prevQuery, prevPage, prevPageSize] = queryExecutionId.split('-');
+        const prevCacheKey = createCacheKey(prevQuery, parseInt(prevPageSize) || 100);
+        const prevPageNum = parseInt(prevPage) || 1;
+        
+        setPageCache(prev => ({
+          ...prev,
+          [prevCacheKey]: {
+            ...prev[prevCacheKey],
+            [prevPageNum]: {
+              timestamp: Date.now(),
+              queryId: queryExecutionId
+            }
+          }
+        }));
+        console.log(`💾 Cached page ${prevPageNum} for key: ${prevCacheKey}`);
+      }
     }
     
     setQueryExecutionId(currentQueryId);
   }, [query.logQuery, query.currentPage, query.pageSize, query.nextCursor, isLoading, queryExecutionId]);
-
-  // Also clear loading state when the component receives new props
-  // This is a fallback to ensure loading state doesn't get stuck
-  useEffect(() => {
-    if (isLoading) {
-      // If we've been loading for more than 3 seconds, something is wrong
-      const emergencyTimer = setTimeout(() => {
-        console.warn('Loading state cleared due to timeout - this may indicate an issue');
-        setIsLoading(false);
-      }, 3000);
-      
-      return () => clearTimeout(emergencyTimer);
-    }
-  }, [isLoading]);
-
-  // Cache management when data changes
-  useEffect(() => {
-    // When the query execution completes (loading stops), cache the current page
-    if (!isLoading && lastQueryTime > 0) {
-      const cacheKey = createCacheKey(query.logQuery || '', pageSize);
-      // Mark this page as cached (we don't have access to actual data, but we know it loaded)
-      setCachedPage(cacheKey, currentPage, { cached: true, timestamp: Date.now() });
-      console.log(`💾 Cached page ${currentPage} for key: ${cacheKey}`);
-    }
-  }, [isLoading, currentPage, pageSize, query.logQuery, lastQueryTime]);
 
   // Reset pagination state when query changes
   useEffect(() => {
@@ -258,6 +236,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       setCurrentPage(1);
       setPageHistory({1: ''});
       clearCache(); // Clear frontend cache when query changes
+      setIsLoading(false);
+      setRequestInFlight(null);
       onChange({
         ...query,
         currentPage: 1,
@@ -687,6 +667,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               setCurrentPage(1); // Reset to first page when page size changes
               setPageHistory({1: ''}); // Reset page history
               clearCache(); // Clear frontend cache when page size changes
+              setIsLoading(false);
+              setRequestInFlight(null);
               onChange({ 
                 ...query, 
                 pageSize: newPageSize,
@@ -697,8 +679,11 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             }}
             onBlur={() => {
               // Trigger query execution when page size changes
+              const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+              const requestId = `${cacheKey}-1`;
               setIsLoading(true);
-              setLastQueryTime(Date.now());
+              setRequestInFlight(requestId);
+              console.log(`📡 XHR request for page 1 (page size changed)`);
               onRunQuery();
             }}
           />
@@ -720,6 +705,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 const newPage = Math.max(1, currentPage - 1);
                 const cursor = pageHistory[newPage] || '';
                 const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                const requestId = `${cacheKey}-${newPage}`;
                 
                 setCurrentPage(newPage);
                 
@@ -727,7 +713,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 if (shouldMakeXHRRequest(cacheKey, newPage)) {
                   console.log(`📡 XHR request for page ${newPage} (not cached)`);
                   setIsLoading(true);
-                  setLastQueryTime(Date.now());
+                  setRequestInFlight(requestId);
                   onChange({ 
                     ...query, 
                     currentPage: newPage,
@@ -745,7 +731,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                     queryType: 'logs'
                   });
                 }
-                setLastCacheKey(cacheKey);
               }}
             />
             
@@ -770,28 +755,28 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               onBlur={() => {
                 // Trigger query execution when page number changes
                 const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                const requestId = `${cacheKey}-${currentPage}`;
                 if (shouldMakeXHRRequest(cacheKey, currentPage)) {
                   console.log(`📡 XHR request for page ${currentPage} (manual input)`);
                   setIsLoading(true);
-                  setLastQueryTime(Date.now());
+                  setRequestInFlight(requestId);
                   onRunQuery();
                 } else {
                   console.log(`💾 Using cached data for page ${currentPage} (manual input)`);
                 }
-                setLastCacheKey(cacheKey);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                  const requestId = `${cacheKey}-${currentPage}`;
                   if (shouldMakeXHRRequest(cacheKey, currentPage)) {
                     console.log(`📡 XHR request for page ${currentPage} (Enter key)`);
                     setIsLoading(true);
-                    setLastQueryTime(Date.now());
+                    setRequestInFlight(requestId);
                     onRunQuery();
                   } else {
                     console.log(`💾 Using cached data for page ${currentPage} (Enter key)`);
                   }
-                  setLastCacheKey(cacheKey);
                 }
               }}
             />
@@ -806,7 +791,9 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             }}>
               {isLoading ? (
                 <>
-                  <span style={{ opacity: 0.7 }}>Loading page {currentPage}...</span>
+                  <span style={{ opacity: 0.7 }}>
+                    {requestInFlight ? 'Fetching...' : `Loading page ${currentPage}...`}
+                  </span>
                   <div style={{
                     width: '10px',
                     height: '10px',
@@ -834,11 +821,22 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                         fontSize: '10px', 
                         color: theme.colors.success.main,
                         opacity: 0.7,
-                        marginLeft: '4px'
+                        marginLeft: '4px',
+                        title: 'Data loaded from cache'
                       }}>
                         💾
                       </span>
-                    ) : null;
+                    ) : (
+                      <span style={{ 
+                        fontSize: '10px', 
+                        color: theme.colors.text.secondary,
+                        opacity: 0.5,
+                        marginLeft: '4px',
+                        title: 'Data fetched from server'
+                      }}>
+                        📡
+                      </span>
+                    );
                   })()}
                 </>
               )}
@@ -853,6 +851,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               onClick={() => {
                 const newPage = currentPage + 1;
                 const cacheKey = createCacheKey(query.logQuery || '', pageSize);
+                const requestId = `${cacheKey}-${newPage}`;
                 
                 setCurrentPage(newPage);
                 
@@ -860,7 +859,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 if (shouldMakeXHRRequest(cacheKey, newPage)) {
                   console.log(`📡 XHR request for page ${newPage} (not cached)`);
                   setIsLoading(true);
-                  setLastQueryTime(Date.now());
+                  setRequestInFlight(requestId);
                   onChange({ 
                     ...query, 
                     currentPage: newPage,
@@ -878,7 +877,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                     queryType: 'logs'
                   });
                 }
-                setLastCacheKey(cacheKey);
               }}
             />
           </div>
