@@ -247,21 +247,27 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		site = "datadoghq.com"
 	}
 
+	// Add initial delay to prevent immediate rate limiting if we've been making many requests
+	initialDelay := 500 * time.Millisecond
+	logger.Debug("Adding initial delay to prevent rate limiting", "delay", initialDelay)
+	time.Sleep(initialDelay)
+
 	var allLogEntries []LogEntry
 	var nextCursor string
 	pageCount := 0
-	maxPages := 10 // Limit to prevent infinite loops
+	maxPages := 3 // Reduced from 10 to 3 to prevent rate limiting
+	maxEntries := 3000 // Reduced from 10000 to 3000 for better performance
 	
 	for pageCount < maxPages {
 		// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
 		d.concurrencyLimit <- struct{}{}
 		
-		// Add delay between requests to respect rate limits (especially for pagination)
+		// Add more conservative delay between requests to respect rate limits
 		if pageCount > 0 {
-			// Progressive delay: 100ms, 200ms, 400ms, etc. to avoid rate limits
-			delay := time.Duration(100*(1<<uint(pageCount-1))) * time.Millisecond
-			if delay > 2*time.Second {
-				delay = 2 * time.Second // Cap at 2 seconds
+			// More conservative delays: 2s, 4s, 8s to avoid rate limits
+			delay := time.Duration(2*(1<<uint(pageCount-1))) * time.Second
+			if delay > 10*time.Second {
+				delay = 10 * time.Second // Cap at 10 seconds
 			}
 			logger.Debug("Adding delay between paginated requests", "delay", delay, "pageNumber", pageCount+1)
 			time.Sleep(delay)
@@ -274,6 +280,13 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		<-d.concurrencyLimit
 		
 		if err != nil {
+			// If we get rate limited even with retries, return what we have so far
+			if strings.Contains(err.Error(), "rate limit") || strings.Contains(err.Error(), "429") {
+				logger.Warn("Rate limit exceeded, returning partial results", 
+					"totalEntries", len(allLogEntries), 
+					"pagesFetched", pageCount)
+				break
+			}
 			return nil, fmt.Errorf("failed to execute logs page %d: %w", pageCount+1, err)
 		}
 
@@ -292,8 +305,10 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		}
 		
 		// Check if we've reached a reasonable limit (prevent excessive pagination)
-		if len(allLogEntries) >= 10000 {
-			logger.Warn("Reached maximum log entries limit", "totalEntries", len(allLogEntries))
+		if len(allLogEntries) >= maxEntries {
+			logger.Info("Reached maximum log entries limit for rate limiting protection", 
+				"totalEntries", len(allLogEntries), 
+				"maxEntries", maxEntries)
 			break
 		}
 
@@ -302,7 +317,9 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 	}
 
 	if pageCount >= maxPages {
-		logger.Warn("Reached maximum page limit", "maxPages", maxPages, "totalEntries", len(allLogEntries))
+		logger.Info("Reached maximum page limit for rate limiting protection", 
+			"maxPages", maxPages, 
+			"totalEntries", len(allLogEntries))
 	}
 
 	logger.Info("Completed paginated logs query", 
@@ -333,7 +350,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		},
 		"sort": "timestamp",
 		"page": map[string]interface{}{
-			"limit": 1000,
+			"limit": 500, // Reduced from 1000 to 500 to be more conservative with rate limits
 		},
 	}
 
@@ -416,8 +433,8 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageNumber int) ([]LogEntry, string, error) {
 	logger := log.New()
 	
-	maxRetries := 3
-	baseDelay := 1 * time.Second
+	maxRetries := 2 // Reduced from 3 to 2 to avoid excessive retries
+	baseDelay := 3 * time.Second // Increased from 1s to 3s for more conservative approach
 	
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		logEntries, nextCursor, err := d.executeSingleLogsPage(ctx, logsQuery, from, to, cursor, apiKey, appKey, site)
@@ -429,9 +446,12 @@ func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQue
 		// Check if this is a rate limit error (HTTP 429)
 		if strings.Contains(err.Error(), "HTTP 429") || strings.Contains(err.Error(), "Too many requests") {
 			if attempt < maxRetries {
-				// Exponential backoff: 1s, 2s, 4s
+				// More conservative exponential backoff: 3s, 6s, 12s
 				delay := time.Duration(1<<uint(attempt)) * baseDelay
-				logger.Warn("Rate limited by Datadog API, retrying", 
+				if delay > 15*time.Second {
+					delay = 15 * time.Second // Cap at 15 seconds
+				}
+				logger.Warn("Rate limited by Datadog API, retrying with conservative backoff", 
 					"attempt", attempt+1, 
 					"maxRetries", maxRetries+1,
 					"delay", delay,
