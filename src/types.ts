@@ -124,7 +124,7 @@ export interface VariableQueryTypeOption {
  */
 export interface CompletionItem {
   label: string;
-  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'function' | 'logs_service' | 'logs_source' | 'logs_level' | 'logs_facet' | 'logs_operator';
+  kind?: 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'function' | 'logs_service' | 'logs_source' | 'logs_level' | 'logs_host' | 'logs_env' | 'logs_facet' | 'logs_operator';
   detail?: string;
   documentation?: string;
   insertText?: string;

@@ -3767,6 +3767,17 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	// This is more efficient than searching through individual log entries
 	url := fmt.Sprintf("https://api.%s/api/v2/logs/aggregate", site)
 	
+	// Map frontend field names to Datadog log attribute names
+	datadogFieldName := fieldName
+	switch fieldName {
+	case "host":
+		datadogFieldName = "@host" // Datadog uses @host for hostname
+	case "env":
+		datadogFieldName = "@env" // Datadog uses @env for environment
+	case "status":
+		datadogFieldName = "@status" // Datadog uses @status for log level
+	}
+
 	// Create aggregation request to get unique values for the field
 	// Query recent logs (last 24 hours) to get current field values
 	requestBody := map[string]interface{}{
@@ -3778,12 +3789,12 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 		"compute": []map[string]interface{}{
 			{
 				"aggregation": "cardinality",
-				"field":       fieldName,
+				"field":       datadogFieldName,
 			},
 		},
 		"group_by": []map[string]interface{}{
 			{
-				"facet": fieldName,
+				"facet": datadogFieldName,
 				"limit": 100, // Limit to top 100 values for autocomplete
 				"sort": map[string]interface{}{
 					"aggregation": "cardinality",
@@ -3847,7 +3858,7 @@ func (d *Datasource) fetchLogsFieldValues(ctx context.Context, fieldName, apiKey
 	// Extract field values from buckets
 	var fieldValues []string
 	for _, bucket := range aggregationResponse.Data.Buckets {
-		if value, exists := bucket.By[fieldName]; exists {
+		if value, exists := bucket.By[datadogFieldName]; exists {
 			if strValue, ok := value.(string); ok && strValue != "" {
 				fieldValues = append(fieldValues, strValue)
 			}
