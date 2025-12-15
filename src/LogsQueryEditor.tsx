@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow } from '@grafana/ui';
+import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow, Select } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -196,6 +196,39 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     setShowHelp(false);
   };
 
+  // JSON parsing configuration handlers
+  const handleJsonParsingToggle = (enabled: boolean) => {
+    const newJsonParsing = enabled 
+      ? { 
+          enabled: true, 
+          targetField: 'message' as const, // Default to message field
+          options: {
+            preserveOriginal: true,
+            flattenNested: true,
+            maxDepth: 10,
+            maxSize: 1024 * 1024 // 1MB
+          }
+        }
+      : { enabled: false, targetField: 'message' as const };
+
+    onChange({
+      ...query,
+      jsonParsing: newJsonParsing
+    });
+  };
+
+  const handleTargetFieldChange = (targetField: string) => {
+    if (!query.jsonParsing) return;
+    
+    onChange({
+      ...query,
+      jsonParsing: {
+        ...query.jsonParsing,
+        targetField: targetField as any
+      }
+    });
+  };
+
   // Helper function to calculate suggestions dropdown position
   const updateSuggestionsPositionFromEditor = (
     editor: monacoType.editor.IStandaloneCodeEditor,
@@ -293,6 +326,30 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   };
 
   const { logQuery = '' } = query;
+
+  // Field selector options with descriptions
+  const fieldOptions = [
+    { 
+      label: 'Message Field', 
+      value: 'message',
+      description: 'Parse JSON content from the log message field'
+    },
+    { 
+      label: 'Data Field', 
+      value: 'data',
+      description: 'Parse JSON content from the data field'
+    },
+    { 
+      label: 'Attributes Field', 
+      value: 'attributes',
+      description: 'Parse JSON content from the attributes field'
+    },
+    { 
+      label: 'Whole Log', 
+      value: 'whole_log',
+      description: 'Parse the entire log entry as JSON'
+    }
+  ];
 
   return (
     <Stack gap={2} direction="column">
@@ -518,6 +575,44 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               </div>
             )}
           </div>
+        </InlineField>
+      </InlineFieldRow>
+
+      {/* JSON Parsing Configuration Panel */}
+      <InlineFieldRow>
+        <InlineField 
+          label="JSON Parsing" 
+          labelWidth={14}
+          tooltip="Enable JSON parsing to extract structured data from log fields"
+        >
+          <Stack gap={1} direction="row" alignItems="center">
+            <Button
+              variant={query.jsonParsing?.enabled ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => handleJsonParsingToggle(!query.jsonParsing?.enabled)}
+              icon={query.jsonParsing?.enabled ? "check" : "plus"}
+            >
+              {query.jsonParsing?.enabled ? 'Enabled' : 'Enable JSON Parsing'}
+            </Button>
+            
+            {query.jsonParsing?.enabled && (
+              <>
+                <InlineField 
+                  label="Parse Field" 
+                  labelWidth={12}
+                  tooltip="Select which log field contains JSON data to parse"
+                >
+                  <Select
+                    width={20}
+                    value={query.jsonParsing.targetField}
+                    options={fieldOptions}
+                    onChange={(option) => handleTargetFieldChange(option.value!)}
+                    placeholder="Select field to parse"
+                  />
+                </InlineField>
+              </>
+            )}
+          </Stack>
         </InlineField>
       </InlineFieldRow>
 
