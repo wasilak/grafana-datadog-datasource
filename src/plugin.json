@@ -7,7 +7,7 @@
   "executable": "gpx_wasilak_datadog_datasource",
   "metrics": true,
   "logs": true,
-  "streaming": true,
+  "streaming": false,
   "annotations": true,
   "category": "tsdb",
   "info": {
