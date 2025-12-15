@@ -7,8 +7,8 @@ This guide will help you create your first Datadog queries and dashboards in Gra
 Before starting, ensure you have:
 - ✅ [Installed the plugin](installation.md)
 - ✅ [Configured your datasource](configuration.md)
-- ✅ Valid Datadog API credentials
-- ✅ Metrics data in your Datadog account
+- ✅ Valid Datadog API credentials with `logs_read_data` scope
+- ✅ Metrics and/or logs data in your Datadog account
 
 ## 🎯 Your First Query
 
@@ -18,7 +18,11 @@ Before starting, ensure you have:
 2. Click **Add visualization**
 3. Select your **Datadog** datasource from the dropdown
 
-### Step 2: Write a Basic Query
+### Step 2: Choose Query Type
+
+The plugin supports both **Metrics** and **Logs** queries:
+
+#### Metrics Query (Default)
 
 Start with a simple CPU usage query:
 
@@ -31,9 +35,19 @@ avg:system.cpu.user{*}
 - `system.cpu.user` - Metric name
 - `{*}` - Tag filter (all hosts)
 
-Click **Run query** or press `Cmd+Enter` (Mac) / `Ctrl+Enter` (Windows/Linux).
+#### Logs Query
 
-### Step 3: Add Grouping
+Switch to logs mode and search for errors:
+
+```
+status:ERROR
+```
+
+**What this does**:
+- `status:ERROR` - Find all logs with ERROR status
+- Results show in a logs panel with timestamps and messages
+
+### Step 3: Add Grouping (Metrics)
 
 Group by host to see individual servers:
 
@@ -42,6 +56,18 @@ avg:system.cpu.user{*} by {host}
 ```
 
 Now you'll see separate lines for each host.
+
+### Step 3: Add Filtering (Logs)
+
+Filter logs by service and level:
+
+```
+service:web-app AND (status:ERROR OR status:WARN)
+```
+
+Now you'll see only error and warning logs from the web-app service.
+
+Click **Run query** or press `Cmd+Enter` (Mac) / `Ctrl+Enter` (Windows/Linux).
 
 ## 🔍 Using Autocomplete
 
@@ -67,7 +93,7 @@ The plugin provides intelligent autocomplete to help you build queries:
 
 ## 📊 Query Examples by Use Case
 
-### System Monitoring
+### System Monitoring (Metrics)
 
 ```bash
 # CPU usage by host
@@ -83,7 +109,7 @@ avg:system.disk.used{*} by {host,device}
 avg:system.net.bytes_rcvd{*} by {host}
 ```
 
-### Container Monitoring
+### Container Monitoring (Metrics)
 
 ```bash
 # Container CPU usage
@@ -99,7 +125,7 @@ sum:docker.containers.running{*}
 sum:kubernetes.containers.restarts{*} by {pod_name}
 ```
 
-### Application Monitoring
+### Application Monitoring (Metrics)
 
 ```bash
 # Request rate
@@ -113,6 +139,34 @@ sum:trace.web.request.errors{*} by {service}
 
 # Database connections
 avg:postgresql.connections{*} by {db}
+```
+
+### Logs Monitoring
+
+```bash
+# Error logs across all services
+status:ERROR
+
+# Service-specific logs
+service:web-app
+
+# Application errors with context
+service:web-app AND status:ERROR
+
+# Database connection issues
+source:postgresql AND message:"connection"
+
+# High-severity issues
+status:(ERROR OR FATAL) AND NOT message:"test"
+
+# Performance issues
+message:"timeout" OR message:"slow query"
+
+# Security-related logs
+source:nginx AND (status:401 OR status:403)
+
+# Container logs
+source:kubernetes AND pod_name:web-*
 ```
 
 ## 🎨 Customizing Visualizations
@@ -198,6 +252,16 @@ Create panels for:
 - **Memory by Container**: `avg:container.memory.usage{*} by {container_name}`
 - **Container Restarts**: `sum:kubernetes.containers.restarts{*} by {pod_name}`
 
+### 4. Logs Monitoring Dashboard
+
+Create panels for:
+- **Error Logs**: `status:ERROR` (Logs panel)
+- **Service Logs**: `service:web-app` (Logs panel)
+- **Log Volume**: `*` (Logs panel with volume histogram)
+- **Critical Issues**: `status:(ERROR OR FATAL)` (Logs panel)
+
+**Pro Tip**: Use logs panels for detailed log inspection and combine with metrics panels for correlation.
+
 ## 🔍 Using Grafana Explore
 
 Explore mode is perfect for ad-hoc investigation:
@@ -248,57 +312,86 @@ tag_values(*, env)
 
 ## ⚡ Performance Tips
 
-### Query Optimization
+### Metrics Query Optimization
 
 1. **Use specific tags**: `{host:web-01}` instead of `{*}`
 2. **Limit time range**: Shorter ranges = faster queries
 3. **Use appropriate aggregation**: `avg` vs `sum` vs `max`
 4. **Group wisely**: Too many groups = slow queries
 
+### Logs Query Optimization
+
+1. **Use specific filters**: `service:web-app` instead of `*`
+2. **Limit time range**: Logs queries can be expensive over long periods
+3. **Use facet filters**: `status:ERROR` is faster than free-text search
+4. **Combine filters**: `service:web-app AND status:ERROR` is more efficient
+
 ### Dashboard Performance
 
 1. **Limit panels**: 10-15 panels per dashboard
 2. **Use variables**: Reduce duplicate queries
 3. **Set refresh intervals**: Don't auto-refresh too frequently
-4. **Cache queries**: Datadog API has built-in caching
+4. **Cache queries**: Both metrics and logs APIs have built-in caching
+5. **Mix panel types**: Use logs panels for detailed inspection, metrics for trends
 
 ## 🚨 Common Issues
 
-### Query Not Working
+### Metrics Query Not Working
 
-**Issue**: No data showing
+**Issue**: No metrics data showing
 **Solutions**:
 1. Check time range - ensure it covers when data exists
 2. Verify metric name spelling
 3. Check tag filters - ensure tags exist
 4. Test in Datadog UI first
 
+### Logs Query Not Working
+
+**Issue**: No logs data showing
+**Solutions**:
+1. Verify API key has `logs_read_data` scope
+2. Check time range - logs may not exist in selected period
+3. Verify log query syntax (use Datadog logs search syntax)
+4. Test query in Datadog Logs Explorer first
+
 ### Autocomplete Not Working
 
 **Issue**: No suggestions appearing
 **Solutions**:
 1. Check datasource configuration
-2. Verify API credentials
+2. Verify API credentials and scopes
 3. Check browser console for errors
 4. Ensure cursor is in correct position
+5. For logs: verify `logs_read_data` scope is enabled
 
 ### Performance Issues
 
 **Issue**: Queries taking too long
 **Solutions**:
 1. Reduce time range
-2. Add more specific tag filters
-3. Use fewer grouping tags
+2. Add more specific filters (metrics: tags, logs: facets)
+3. Use fewer grouping tags (metrics only)
 4. Check Datadog API limits
+5. For logs: use facet filters instead of free-text search
+
+### Permission Errors
+
+**Issue**: "API key missing required permissions"
+**Solutions**:
+1. For metrics: ensure API key is valid
+2. For logs: ensure API key has `logs_read_data` scope
+3. Check API key hasn't been rotated in Datadog
+4. Verify correct Datadog site (US vs EU)
 
 ## 📚 Next Steps
 
 Now that you've created your first queries:
 
-1. **[Explore advanced features](features/)** - Formulas, variables, legends
-2. **[See more examples](examples/)** - Real-world query patterns
-3. **[Performance tuning](advanced/performance.md)** - Optimize your queries
-4. **[Troubleshooting](advanced/troubleshooting.md)** - Solve common issues
+1. **[Explore metrics features](metrics/)** - Formulas, variables, legends
+2. **[Learn logs syntax](logs/)** - Complete logs search guide
+3. **[See more examples](examples/)** - Real-world query patterns
+4. **[Performance tuning](advanced/performance.md)** - Optimize your queries
+5. **[Troubleshooting](advanced/troubleshooting.md)** - Solve common issues
 
 ## 🆘 Need Help?
 

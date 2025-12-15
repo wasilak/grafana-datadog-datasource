@@ -52,6 +52,14 @@ curl -X POST http://localhost:3000/api/datasources \
 3. Copy your **API Key** and **App Key**
 4. Paste them into the Grafana datasource configuration
 
+**For Logs Support:** Ensure your API key has the `logs_read_data` scope enabled:
+1. In Datadog, go to [Organization Settings > API Keys](https://app.datadoghq.com/organization/settings/api_keys)
+2. Click on your API key
+3. Under "Scopes", ensure `logs_read_data` is checked
+4. Save the changes
+
+Without the `logs_read_data` scope, you'll only be able to query metrics.
+
 ### Testing the Connection
 
 After creating the datasource, click **Save & Test** to verify:
