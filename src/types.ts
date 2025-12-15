@@ -1,5 +1,16 @@
 import { DataQuery, DataSourceJsonData } from '@grafana/data';
 
+export interface JSONParsingConfig {
+  enabled: boolean;
+  targetField: 'whole_log' | 'message' | 'data' | 'attributes' | string;
+  options?: {
+    maxDepth?: number;
+    maxSize?: number;
+    preserveOriginal?: boolean;
+    flattenNested?: boolean;
+  };
+}
+
 export interface MyQuery extends DataQuery {
   queryText?: string;
   // Legend configuration
@@ -17,6 +28,8 @@ export interface MyQuery extends DataQuery {
   queryType?: 'logs' | 'metrics'; // Query type - defaults to 'metrics'
   logQuery?: string;   // Logs search query
   indexes?: string[];  // Target log indexes
+  // JSON parsing configuration
+  jsonParsing?: JSONParsingConfig;
   // Explore mode metadata for visualization hints
   meta?: {
     preferredVisualisationType?: 'graph' | 'table' | 'logs' | 'stat' | 'gauge';
@@ -32,7 +45,17 @@ export const DEFAULT_QUERY: Partial<MyQuery> = {
   queryType: 'metrics',
   logQuery: '',
   indexes: [],
-};
+  jsonParsing: {
+    enabled: false,
+    targetField: 'message',
+    options: {
+      maxDepth: 10,
+      maxSize: 1024 * 1024, // 1MB
+      preserveOriginal: true,
+      flattenNested: true,
+    },
+  },
+};;;
 
 /**
  * These are options configured for each DataSource instance
