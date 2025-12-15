@@ -15,6 +15,7 @@ import { DataSourceWithQueryModificationSupport } from '@grafana/data';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
+import { migrateJsonParsingConfiguration } from './utils/jsonParsingMigration';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery>, DataSourceWithSupplementaryQueriesSupport<MyQuery> {
   // Enable annotation support
@@ -33,8 +34,11 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     // Detect query type and set it on the query
     const queryType = this.detectQueryType(query);
     
+    // Migrate JSON parsing configuration for backward compatibility
+    const migratedQuery = migrateJsonParsingConfiguration(query);
+    
     // Use the enhanced variable interpolation service that handles both metrics and logs
-    const interpolatedQuery = variableInterpolationService.interpolateQuery(query, scopedVars);
+    const interpolatedQuery = variableInterpolationService.interpolateQuery(migratedQuery, scopedVars);
     
     // Set the detected query type
     interpolatedQuery.queryType = queryType;

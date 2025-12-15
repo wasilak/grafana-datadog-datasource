@@ -3,12 +3,17 @@ import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRo
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
-import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
+import { MyDataSourceOptions, MyQuery, CompletionItem, JSONParsingConfig } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
 import { validateLogsQuery } from './utils/logsQueryValidator';
 import { FieldSelector } from './components/FieldSelector';
+import { 
+  validateJsonParsingConfiguration, 
+  serializeJsonParsingConfiguration,
+  isJsonParsingConfigurationEqual 
+} from './utils/jsonParsingMigration';
 
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -225,9 +230,12 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       setFieldSelectorError(null);
     }
 
+    // Serialize configuration to ensure clean persistence
+    const serializedConfig = serializeJsonParsingConfiguration(newJsonParsing);
+
     onChange({
       ...query,
-      jsonParsing: newJsonParsing
+      jsonParsing: serializedConfig
     });
   };
 
@@ -237,46 +245,37 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     // Clear validation error when field is selected
     setFieldSelectorError(null);
     
+    const updatedConfig = {
+      ...query.jsonParsing,
+      targetField: targetField as any
+    };
+
+    // Serialize configuration to ensure clean persistence
+    const serializedConfig = serializeJsonParsingConfiguration(updatedConfig);
+    
     onChange({
       ...query,
-      jsonParsing: {
-        ...query.jsonParsing,
-        targetField: targetField as any
-      }
+      jsonParsing: serializedConfig
     });
   };
 
   // Comprehensive validation function for JSON parsing configuration
-  const validateJsonParsingConfiguration = () => {
+  const validateJsonParsingConfigurationLocal = () => {
     // Clear any existing errors first
     setFieldSelectorError(null);
     
-    // If JSON parsing is disabled, configuration is valid
-    if (!query.jsonParsing?.enabled) {
-      return true;
-    }
-
-    // Check if target field is selected
-    if (!query.jsonParsing.targetField) {
-      setFieldSelectorError('Field selection is required when JSON parsing is enabled');
+    // Use the centralized validation utility
+    const validation = validateJsonParsingConfiguration(query.jsonParsing);
+    
+    if (!validation.isValid && validation.errors.length > 0) {
+      setFieldSelectorError(validation.errors[0]); // Show first error
       return false;
     }
 
-    // Validate target field is one of the allowed options
-    const validFields = ['message', 'data', 'attributes', 'whole_log'];
-    if (!validFields.includes(query.jsonParsing.targetField)) {
-      setFieldSelectorError('Invalid field selection. Please choose from: message, data, attributes, or whole_log');
-      return false;
-    }
-
-    // Additional validation for specific field types
-    if (query.jsonParsing.targetField === 'whole_log') {
-      // Warn about potential performance impact for whole log parsing
-      if (!fieldSelectorError) {
-        // Only show this as a warning, not an error
-        console.warn('Whole log parsing may impact performance with large log volumes');
-      }
-    }
+    // Log warnings to console
+    validation.warnings.forEach(warning => {
+      console.warn(`JSON Parsing Configuration: ${warning}`);
+    });
 
     return true;
   };
@@ -290,17 +289,29 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     }
 
     // JSON parsing configuration validation
-    if (!validateJsonParsingConfiguration()) {
+    if (!validateJsonParsingConfigurationLocal()) {
       return false;
     }
 
     return true;
   };
 
+  // Track previous configuration for change detection
+  const [previousConfig, setPreviousConfig] = useState<JSONParsingConfig | undefined>(query.jsonParsing);
+
   // Validate configuration when JSON parsing state changes
   useEffect(() => {
-    validateJsonParsingConfiguration();
-  }, [query.jsonParsing?.enabled, query.jsonParsing?.targetField]);
+    validateJsonParsingConfigurationLocal();
+    
+    // Detect configuration changes and provide feedback
+    if (!isJsonParsingConfigurationEqual(previousConfig, query.jsonParsing)) {
+      console.log('JSON parsing configuration changed:', {
+        previous: previousConfig,
+        current: query.jsonParsing,
+      });
+      setPreviousConfig(query.jsonParsing);
+    }
+  }, [query.jsonParsing?.enabled, query.jsonParsing?.targetField, query.jsonParsing?.options]);
 
   // Helper function to calculate suggestions dropdown position
   const updateSuggestionsPositionFromEditor = (
