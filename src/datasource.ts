@@ -1,11 +1,22 @@
-import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue, QueryFixAction, QueryFixType } from '@grafana/data';
+import { 
+  DataSourceInstanceSettings, 
+  CoreApp, 
+  ScopedVars, 
+  MetricFindValue, 
+  QueryFixAction, 
+  QueryFixType,
+  DataSourceWithSupplementaryQueriesSupport,
+  SupplementaryQueryType,
+  SupplementaryQueryOptions,
+  DataQueryRequest
+} from '@grafana/data';
 import { DataSourceWithBackend, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 import { DataSourceWithQueryModificationSupport } from '@grafana/data';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
 
-export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery> {
+export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery>, DataSourceWithSupplementaryQueriesSupport<MyQuery> {
   // Enable annotation support
   annotations = {};
   private templateSrv = getTemplateSrv();
@@ -81,6 +92,108 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
 
     // Default to metrics
     return 'metrics';
+  }
+
+  /**
+   * Implemented for DataSourceWithSupplementaryQueriesSupport.
+   * Returns the supplementary query types that this datasource supports.
+   * Requirements: 18.1, 18.4
+   */
+  getSupportedSupplementaryQueryTypes(): SupplementaryQueryType[] {
+    return [SupplementaryQueryType.LogsVolume];
+  }
+
+  /**
+   * Implemented for DataSourceWithSupplementaryQueriesSupport.
+   * Generates a logs volume query from a logs query for histogram visualization.
+   * Requirements: 18.1, 18.4
+   */
+  getSupplementaryQuery(options: SupplementaryQueryOptions, query: MyQuery): MyQuery | undefined {
+    if (query.hide) {
+      return undefined;
+    }
+
+    switch (options.type) {
+      case SupplementaryQueryType.LogsVolume:
+        // Only generate volume queries for logs queries
+        const queryType = this.detectQueryType(query);
+        console.log('getSupplementaryQuery called', { 
+          queryType, 
+          logQuery: query.logQuery, 
+          refId: query.refId,
+          optionsType: options.type 
+        });
+        
+        if (queryType !== 'logs' || !query.logQuery) {
+          console.log('Skipping logs volume query generation', { queryType, logQuery: query.logQuery });
+          return undefined;
+        }
+
+        const volumeQuery = {
+          ...query,
+          refId: `log-volume-${query.refId}`,
+          queryType: 'logs-volume' as const,
+          // Keep the same log query for filtering
+          logQuery: query.logQuery,
+          // Keep the same indexes if specified
+          indexes: query.indexes,
+          // Remove pagination fields as they don't apply to volume queries
+          pageSize: undefined,
+          currentPage: undefined,
+          totalPages: undefined,
+          nextCursor: undefined,
+        };
+        
+        console.log('Generated logs volume query', volumeQuery);
+        return volumeQuery;
+
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Implemented for DataSourceWithSupplementaryQueriesSupport.
+   * Handles supplementary query requests by routing them appropriately.
+   * Requirements: 18.4, 18.5
+   */
+  getSupplementaryRequest(
+    type: SupplementaryQueryType,
+    request: DataQueryRequest<MyQuery>
+  ): DataQueryRequest<MyQuery> | undefined {
+    console.log('getSupplementaryRequest called', { type, requestTargets: request.targets.length });
+    
+    switch (type) {
+      case SupplementaryQueryType.LogsVolume:
+        const result = this.getLogsVolumeDataProvider(request);
+        console.log('getLogsVolumeDataProvider result', { 
+          hasResult: !!result, 
+          targetCount: result?.targets?.length || 0 
+        });
+        return result;
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Private method to generate logs volume data provider requests.
+   * Creates histogram queries from logs queries for volume visualization.
+   * Requirements: 18.1, 18.2
+   */
+  private getLogsVolumeDataProvider(
+    request: DataQueryRequest<MyQuery>
+  ): DataQueryRequest<MyQuery> | undefined {
+    const logsVolumeRequest = { ...request };
+    const targets = logsVolumeRequest.targets
+      .map((target) => this.getSupplementaryQuery({ type: SupplementaryQueryType.LogsVolume }, target))
+      .filter((query): query is MyQuery => !!query);
+
+    if (!targets.length) {
+      return undefined;
+    }
+
+    return { ...logsVolumeRequest, targets };
   }
 
   /**
