@@ -474,7 +474,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 			"from":  fromTime,
 			"to":    toTime,
 		},
-		"sort": "timestamp",
+		"sort": "-timestamp", // Sort descending (newest first) to show most recent logs
 		"page": map[string]interface{}{
 			"limit": pageSize, // Use user-specified page size
 		},
