@@ -334,10 +334,49 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 
 	// Collect all unique parsed field names for dynamic column creation
 	parsedFieldNames := make(map[string]bool)
+	
+	// Collect all unique attribute and tag names for individual columns
+	attributeNames := make(map[string]bool)
+	tagNames := make(map[string]bool)
+	
 	for _, entry := range logEntries {
+		// Collect parsed fields from message parsing
 		if entry.ParsedFields != nil {
 			for fieldName := range entry.ParsedFields {
 				parsedFieldNames[fieldName] = true
+			}
+		}
+		
+		// Extract attribute and tag names from labels JSON for individual columns
+		if len(entry.Labels) > 0 {
+			var labels LogLabels
+			if err := json.Unmarshal(entry.Labels, &labels); err == nil {
+				// Collect standard attribute names
+				if labels.Service != "" {
+					attributeNames["service"] = true
+				}
+				if labels.Source != "" {
+					attributeNames["source"] = true
+				}
+				if labels.Host != "" {
+					attributeNames["host"] = true
+				}
+				if labels.Env != "" {
+					attributeNames["env"] = true
+				}
+				if labels.Version != "" {
+					attributeNames["version"] = true
+				}
+				
+				// Collect custom attribute names
+				for attrName := range labels.Attributes {
+					attributeNames[attrName] = true
+				}
+				
+				// Collect tag names
+				for tagName := range labels.Tags {
+					tagNames[tagName] = true
+				}
 			}
 		}
 	}
@@ -363,10 +402,22 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			"errors", validationErrors)
 	}
 
-	// Create slices for parsed fields
+	// Create slices for parsed fields (from message parsing)
 	parsedFieldData := make(map[string][]interface{})
 	for fieldName := range parsedFieldNames {
 		parsedFieldData[fieldName] = make([]interface{}, entryCount)
+	}
+	
+	// Create slices for attribute fields (for individual columns)
+	attributeFieldData := make(map[string][]*string)
+	for attrName := range attributeNames {
+		attributeFieldData[attrName] = make([]*string, entryCount)
+	}
+	
+	// Create slices for tag fields (for individual columns)
+	tagFieldData := make(map[string][]*string)
+	for tagName := range tagNames {
+		tagFieldData[tagName] = make([]*string, entryCount)
 	}
 
 	// Populate data from sanitized log entries using corrected field structure
@@ -393,7 +444,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			labels[i] = json.RawMessage(`{}`) // Empty JSON object if no labels
 		}
 
-		// Populate parsed fields data
+		// Populate parsed fields data (from message parsing)
 		for fieldName := range parsedFieldNames {
 			if entry.ParsedFields != nil {
 				if value, exists := entry.ParsedFields[fieldName]; exists {
@@ -403,6 +454,54 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 				}
 			} else {
 				parsedFieldData[fieldName][i] = nil
+			}
+		}
+		
+		// Populate attribute and tag data for individual columns
+		if len(entry.Labels) > 0 {
+			var labels LogLabels
+			if err := json.Unmarshal(entry.Labels, &labels); err == nil {
+				// Populate standard attributes
+				if labels.Service != "" {
+					if _, exists := attributeFieldData["service"]; exists {
+						attributeFieldData["service"][i] = &labels.Service
+					}
+				}
+				if labels.Source != "" {
+					if _, exists := attributeFieldData["source"]; exists {
+						attributeFieldData["source"][i] = &labels.Source
+					}
+				}
+				if labels.Host != "" {
+					if _, exists := attributeFieldData["host"]; exists {
+						attributeFieldData["host"][i] = &labels.Host
+					}
+				}
+				if labels.Env != "" {
+					if _, exists := attributeFieldData["env"]; exists {
+						attributeFieldData["env"][i] = &labels.Env
+					}
+				}
+				if labels.Version != "" {
+					if _, exists := attributeFieldData["version"]; exists {
+						attributeFieldData["version"][i] = &labels.Version
+					}
+				}
+				
+				// Populate custom attributes
+				for attrName, attrValue := range labels.Attributes {
+					if fieldData, exists := attributeFieldData[attrName]; exists {
+						strValue := p.convertValueToString(attrValue)
+						fieldData[i] = &strValue
+					}
+				}
+				
+				// Populate tags
+				for tagName, tagValue := range labels.Tags {
+					if fieldData, exists := tagFieldData[tagName]; exists {
+						fieldData[i] = &tagValue
+					}
+				}
 			}
 		}
 	}
@@ -447,7 +546,33 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
-	// Add parsed fields as separate columns
+	// Add attribute fields as separate columns (always available for filtering/aggregation)
+	for attrName, fieldData := range attributeFieldData {
+		attrField := data.NewField(attrName, nil, fieldData)
+		attrField.Config = &data.FieldConfig{
+			DisplayName: attrName,
+			Custom: map[string]interface{}{
+				"attributeField": true, // Mark as attribute field
+				"source":         "datadog_attributes",
+			},
+		}
+		frame.Fields = append(frame.Fields, attrField)
+	}
+	
+	// Add tag fields as separate columns (always available for filtering/aggregation)
+	for tagName, fieldData := range tagFieldData {
+		tagField := data.NewField(tagName, nil, fieldData)
+		tagField.Config = &data.FieldConfig{
+			DisplayName: tagName,
+			Custom: map[string]interface{}{
+				"tagField": true, // Mark as tag field
+				"source":   "datadog_tags",
+			},
+		}
+		frame.Fields = append(frame.Fields, tagField)
+	}
+
+	// Add parsed fields as separate columns (from optional message parsing)
 	for fieldName, fieldData := range parsedFieldData {
 		// Convert interface{} slice to appropriate type for Grafana
 		stringData := make([]*string, entryCount)
@@ -467,6 +592,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			DisplayName: fieldName,
 			Custom: map[string]interface{}{
 				"parsedField": true, // Mark as parsed field for UI identification
+				"source":      "message_parsing",
 			},
 		}
 
@@ -496,6 +622,8 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
 		"fieldCount", len(frame.Fields),
+		"attributeFieldCount", len(attributeFieldData),
+		"tagFieldCount", len(tagFieldData),
 		"parsedFieldCount", len(parsedFieldNames),
 		"searchWords", searchWords)
 

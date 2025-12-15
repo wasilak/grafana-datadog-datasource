@@ -31,14 +31,14 @@ tags: {
   "team": "backend"
 }
 
-# These become individual accessible fields automatically:
-service: "web-app"
-env: "production"
-user_id: 123
-request_id: "abc-123"
-version: "1.2.3"
-datacenter: "us-east-1"
-team: "backend"
+# These become individual columns in Grafana for filtering/aggregation:
+service: "web-app"           ← Individual column for filtering
+env: "production"            ← Individual column for filtering  
+user_id: 123                 ← Individual column for filtering
+request_id: "abc-123"        ← Individual column for filtering
+version: "1.2.3"             ← Individual column for filtering
+datacenter: "us-east-1"      ← Individual column for filtering
+team: "backend"              ← Individual column for filtering
 ```
 
 ### Optional Message Parsing
@@ -263,31 +263,57 @@ parsed_performance.io_time_ms: 36
 parsed_performance.cache_hits: 12
 ```
 
-## 🔍 Filtering with Parsed Fields
+## 🔍 Filtering and Aggregation in Grafana UI
 
-### Using Structured Fields in Queries
+### Individual Columns Enable Grafana Operations
 
-Filter using automatically parsed attributes and tags:
+Each attribute and tag becomes an individual column in Grafana, enabling:
+
+**Filtering**:
+- Click column headers to filter by specific values
+- Use Grafana's filter controls in the logs panel
+- Create dashboard variables from column values
+
+**Aggregation**:
+- Group logs by service, environment, version, etc.
+- Count occurrences by any attribute or tag
+- Create metrics from log field values
+
+**Sorting**:
+- Sort logs by any attribute or tag value
+- Order by timestamp, service, severity, etc.
+
+### Query-based Filtering
+
+You can also filter using query syntax:
 
 ```bash
-# Filter by service (from attributes)
+# Filter by service (individual column)
 service:web-app
 
-# Filter by environment (from attributes)  
+# Filter by environment (individual column)  
 env:production
 
-# Filter by user ID (from attributes)
+# Filter by user ID (individual column)
 user_id:12345
 
-# Filter by version (from tags)
+# Filter by version (individual column)
 version:1.2.3
 
 # Filter by parsed message fields (if message parsing enabled)
 service:web-app parsed_action:login parsed_result:success
 
-# Complex filtering with automatic and parsed fields
+# Complex filtering across multiple columns
 service:web-app env:production user_id:12345 parsed_error.code:TIMEOUT
 ```
+
+### Dashboard Integration
+
+Use individual columns for:
+- **Variables**: Create dropdowns from service, env, version columns
+- **Panels**: Group and aggregate by any attribute or tag
+- **Alerts**: Set conditions based on specific field values
+- **Transformations**: Use field values for calculations and grouping
 
 ### Combining Original and Parsed Fields
 
