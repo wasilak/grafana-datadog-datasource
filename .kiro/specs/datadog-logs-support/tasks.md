@@ -231,7 +231,7 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - Handle bucket size calculation (1m, 5m, 15m, 1h, 4h based on time range)
   - _Requirements: 18.2, 18.3_
 
-- [ ]* 14.4 Write property test for logs volume data frame generation
+- [x]* 14.4 Write property test for logs volume data frame generation
   - **Property 10: Logs Volume Data Frame Structure**
   - **Validates: Requirements 18.1, 18.2, 18.3**
 
@@ -242,11 +242,11 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - Handle logs volume query failures gracefully (logs still work without histogram)
   - _Requirements: 18.4, 18.5_
 
-- [ ]* 14.6 Write property test for supplementary queries integration
+- [x]* 14.6 Write property test for supplementary queries integration
   - **Property 11: Logs Volume Supplementary Query Generation**
   - **Validates: Requirements 18.4, 18.5**
 
-- [ ] 15. Final Checkpoint - Verify All Requirements
+- [x] 15. Final Checkpoint - Verify All Requirements
   - Ensure all tests pass, ask the user if questions arise
   - Confirm pagination issues are completely resolved
   - Validate Grafana properly recognizes logs data AND histogram data

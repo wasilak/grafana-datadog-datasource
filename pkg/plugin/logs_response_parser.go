@@ -432,9 +432,21 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"fieldCount", len(frame.Fields),
 		"searchWords", searchWords)
 
-	// Note: Volume histogram is now handled by supplementary queries (LogsVolumeHandler)
-	// This ensures Grafana's logs panel properly recognizes and displays the histogram
-	return data.Frames{frame}
+	// Create frames array with logs frame
+	frames := data.Frames{frame}
+
+	// Also include volume histogram frame if we have time range and log entries
+	// This ensures the histogram is available immediately with the logs data
+	// without requiring a separate supplementary query that might have cache timing issues
+	if len(timeRange) > 0 && len(logEntries) > 0 {
+		volumeFrame := p.createLogsVolumeFrame(logEntries, refID, timeRange[0])
+		frames = append(frames, volumeFrame)
+		logger.Debug("Added volume histogram frame to logs response",
+			"refID", refID,
+			"volumeRefID", volumeFrame.RefID)
+	}
+
+	return frames
 }
 
 // createEmptyLogsDataFrame creates an empty logs data frame with corrected structure
@@ -490,7 +502,6 @@ func (p *LogsResponseParser) createEmptyLogsDataFrame(refID string) data.Frames 
 
 	logger.Debug("Created empty corrected logs data frame", "refID", refID)
 	
-	// Note: Volume histogram is now handled by supplementary queries (LogsVolumeHandler)
 	return data.Frames{frame}
 }
 
