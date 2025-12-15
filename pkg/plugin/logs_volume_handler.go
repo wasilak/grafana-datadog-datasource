@@ -183,6 +183,7 @@ func (h *LogsVolumeHandler) calculateBucketSize(timeRange backend.TimeRange) str
 
 // callLogsAggregationAPI makes API calls to get logs volume data using the logs search API
 // Since the dedicated aggregation endpoint may not be available, we use time-based search
+// NOTE: This approach provides approximations since we're limited to 1000 entries per time bucket
 // Requirements: 18.1, 18.4, 18.5
 func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request LogsAggregationRequest) (*LogsAggregationResponse, error) {
 	logger := log.New()
@@ -247,7 +248,7 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 						To:   bucketEnd.Format(time.RFC3339),
 					},
 					Sort:  "timestamp",
-					Limit: 1, // We only need the count, not the actual logs
+					Limit: 1000, // FIXED: Use higher limit to get better count estimates
 				},
 			},
 		}
@@ -289,14 +290,16 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 			continue
 		}
 
-		// Extract count from actual log entries returned
+		// FIXED: Extract count from actual log entries returned as an approximation
 		// Datadog Logs API doesn't provide total count in meta, so we use the actual entries count
+		// Note: This is an approximation since we're limited to 1000 entries per bucket
 		totalCount := len(searchResponse.Data)
 
 		logger.Debug("Extracted count for bucket", 
 			"time", currentTime, 
 			"count", totalCount,
-			"entriesReturned", len(searchResponse.Data))
+			"entriesReturned", len(searchResponse.Data),
+			"isLimitReached", totalCount >= 1000)
 
 		// Add bucket with count
 		buckets = append(buckets, LogsAggregationBucket{
