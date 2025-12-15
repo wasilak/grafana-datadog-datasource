@@ -18,17 +18,20 @@ import (
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4
 type LogsResponseParser struct {
 	datasource *Datasource
+	jsonConfig *JSONParsingConfig
 }
 
 // NewLogsResponseParser creates a new LogsResponseParser instance
-func NewLogsResponseParser(datasource *Datasource) *LogsResponseParser {
+func NewLogsResponseParser(datasource *Datasource, jsonConfig *JSONParsingConfig) *LogsResponseParser {
 	return &LogsResponseParser{
 		datasource: datasource,
+		jsonConfig: jsonConfig,
 	}
 }
 
 // ParseResponse parses Datadog Logs API response and converts to Grafana data frames
 // Handles both structured and unstructured response formats
+// Applies JSON parsing if configuration is provided
 func (p *LogsResponseParser) ParseResponse(apiResponse interface{}, refID string, query string) (data.Frames, error) {
 	logger := log.New()
 
@@ -55,7 +58,7 @@ func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refI
 	logger.Debug("Parsing structured logs response", "entryCount", len(response.Data))
 
 	// Convert log entries from response
-	logEntries, err := p.convertDataArrayToLogEntries(response.Data)
+	logEntries, err := p.convertDataArrayToLogEntries(response.Data, p.jsonConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert log entries: %w", err)
 	}
@@ -107,7 +110,7 @@ func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, 
 	logger.Debug("Parsing logs data array", "entryCount", len(dataArray))
 
 	// Convert log entries from data array
-	logEntries, err := p.convertDataArrayToLogEntries(dataArray)
+	logEntries, err := p.convertDataArrayToLogEntries(dataArray, p.jsonConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert log entries: %w", err)
 	}
@@ -117,7 +120,8 @@ func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, 
 }
 
 // convertDataArrayToLogEntries converts Datadog API data array to LogEntry structs
-func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string]interface{}) ([]LogEntry, error) {
+// Applies JSON parsing if configuration is provided
+func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string]interface{}, jsonConfig *JSONParsingConfig) ([]LogEntry, error) {
 	logger := log.New()
 	var logEntries []LogEntry
 
@@ -160,6 +164,11 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 			Body:      body,     // ✅ CORRECT - Changed from Message
 			Severity:  severity, // ✅ CORRECT - Changed from Level
 			Labels:    labels,   // ✅ CORRECT - All metadata as JSON
+		}
+
+		// Apply JSON parsing if configuration is provided and enabled
+		if jsonConfig != nil && jsonConfig.Enabled {
+			p.applyJSONParsing(&entry, attributes, jsonConfig)
 		}
 
 		logEntries = append(logEntries, entry)
@@ -798,4 +807,134 @@ func (p *LogsResponseParser) calculateBucketDuration(duration time.Duration) tim
 	default:
 		return 4 * time.Hour
 	}
+}
+// applyJSONParsing applies JSON parsing to a log entry based on the provided configuration
+// Handles field name conflicts by prefixing with "parsed_" and preserves original field values
+func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[string]interface{}, config *JSONParsingConfig) {
+	logger := log.New()
+	
+	// Create JSON parser with the provided configuration
+	parser := NewJSONParser(*config)
+	
+	// Determine the target field value to parse
+	var targetValue string
+	var err error
+	
+	switch config.TargetField {
+	case "whole_log":
+		// Parse the entire log entry as JSON
+		// Reconstruct the full log data for parsing
+		fullLogData := make(map[string]interface{})
+		fullLogData["id"] = entry.ID
+		fullLogData["timestamp"] = entry.Timestamp
+		fullLogData["body"] = entry.Body
+		fullLogData["severity"] = entry.Severity
+		fullLogData["attributes"] = attributes
+		
+		// Convert to JSON string for parsing
+		jsonBytes, marshalErr := json.Marshal(fullLogData)
+		if marshalErr != nil {
+			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal whole log for parsing: %v", marshalErr))
+			return
+		}
+		targetValue = string(jsonBytes)
+		
+	case "message", "body":
+		// Parse the body/message field
+		targetValue = entry.Body
+		
+	case "data":
+		// Parse the data field from attributes
+		if dataField, exists := attributes["data"]; exists {
+			if dataStr, ok := dataField.(string); ok {
+				targetValue = dataStr
+			} else {
+				// If data is not a string, try to marshal it to JSON first
+				jsonBytes, marshalErr := json.Marshal(dataField)
+				if marshalErr != nil {
+					entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal data field for parsing: %v", marshalErr))
+					return
+				}
+				targetValue = string(jsonBytes)
+			}
+		} else {
+			entry.ParseErrors = append(entry.ParseErrors, "Data field not found in log attributes")
+			return
+		}
+		
+	case "attributes":
+		// Parse the entire attributes object
+		jsonBytes, marshalErr := json.Marshal(attributes)
+		if marshalErr != nil {
+			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal attributes for parsing: %v", marshalErr))
+			return
+		}
+		targetValue = string(jsonBytes)
+		
+	default:
+		// Parse a custom field from attributes
+		if customField, exists := attributes[config.TargetField]; exists {
+			if customStr, ok := customField.(string); ok {
+				targetValue = customStr
+			} else {
+				// If custom field is not a string, try to marshal it to JSON first
+				jsonBytes, marshalErr := json.Marshal(customField)
+				if marshalErr != nil {
+					entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal custom field '%s' for parsing: %v", config.TargetField, marshalErr))
+					return
+				}
+				targetValue = string(jsonBytes)
+			}
+		} else {
+			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Custom field '%s' not found in log attributes", config.TargetField))
+			return
+		}
+	}
+	
+	// Parse the JSON content
+	parsedData, err := parser.ParseJSONField(targetValue)
+	if err != nil {
+		entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("JSON parsing failed for field '%s': %v", config.TargetField, err))
+		logger.Debug("JSON parsing failed", "field", config.TargetField, "error", err, "logID", entry.ID)
+		return
+	}
+	
+	// Flatten the parsed JSON object
+	flattenedFields := parser.FlattenObject(parsedData, "", 0)
+	
+	// Initialize ParsedFields map if not already done
+	if entry.ParsedFields == nil {
+		entry.ParsedFields = make(map[string]interface{})
+	}
+	
+	// Add flattened fields to the log entry, handling conflicts by prefixing with "parsed_"
+	for fieldName, fieldValue := range flattenedFields {
+		// Check for field name conflicts with existing fields
+		finalFieldName := fieldName
+		if p.hasFieldConflict(fieldName) {
+			finalFieldName = "parsed_" + fieldName
+		}
+		
+		entry.ParsedFields[finalFieldName] = fieldValue
+	}
+	
+	logger.Debug("Successfully applied JSON parsing", 
+		"logID", entry.ID, 
+		"targetField", config.TargetField, 
+		"parsedFieldCount", len(flattenedFields))
+}
+
+// hasFieldConflict checks if a field name conflicts with standard LogEntry fields
+func (p *LogsResponseParser) hasFieldConflict(fieldName string) bool {
+	standardFields := map[string]bool{
+		"id":           true,
+		"timestamp":    true,
+		"body":         true,
+		"severity":     true,
+		"labels":       true,
+		"parsedFields": true,
+		"parseErrors":  true,
+	}
+	
+	return standardFields[fieldName]
 }
