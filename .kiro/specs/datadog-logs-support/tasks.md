@@ -123,8 +123,8 @@ After reviewing the official Grafana logs data source tutorial, we've identified
 
 ## Phase 3: Enhanced Logs Features (Based on Official Tutorial)
 
-- [ ] 8. Implement Search Word Highlighting
-- [-] 8.1 Extract search terms from logs query
+- [x] 8. Implement Search Word Highlighting
+- [x] 8.1 Extract search terms from logs query
   - Parse Datadog query syntax to identify search terms (not facet filters)
   - Add `searchWords` array to frame metadata
   - Enable Grafana's automatic word highlighting in log messages
@@ -134,14 +134,14 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - **Property 4: Logs Query Parameter Handling**
   - **Validates: Requirements 1.1, 1.3, 1.4, 4.1, 4.2, 4.3, 4.4, 4.5**
 
-- [ ] 9. Implement Log Filtering Support
-- [ ] 9.1 Add modifyQuery method to datasource
+- [x] 9. Implement Log Filtering Support
+- [x] 9.1 Add modifyQuery method to datasource
   - Support `ADD_FILTER` and `ADD_FILTER_OUT` operations
   - Handle click-to-filter functionality in Grafana logs panel
   - Allow users to click log values to add/remove filters
   - _Requirements: 4.2, 4.3_
 
-- [ ] 9.2 Integrate filtering with existing query translation
+- [x] 9.2 Integrate filtering with existing query translation
   - Extend translateLogsQuery to handle filter operations
   - Maintain existing facet filter support (service:, status:, etc.)
   - _Requirements: 7.1, 7.2, 8.1, 8.2_
@@ -150,17 +150,17 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - **Property 7: Log Level and Service Filtering**
   - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3, 8.4, 8.5**
 
-- [ ] 10. Add Trace Linking Support
-- [ ] 10.1 Extract trace IDs from Datadog log attributes
-  - Identify trace ID fields in log data (dd.trace_id, trace_id, etc.)
-  - Create data links for trace navigation
-  - Add trace fields to labels JSON structure
+- [x] 10. Add Trace Linking Support
+- [x] 10.1 Extract trace IDs from Datadog log attributes
+  - ✅ COMPLETED: Identify trace ID fields in log data (dd.trace_id, trace_id, etc.)
+  - ✅ COMPLETED: Create data links for trace navigation
+  - ✅ COMPLETED: Add trace fields to labels JSON structure
   - _Requirements: 5.2, 5.3_
 
-- [ ] 10.2 Configure trace data links
-  - Set up links to Datadog trace UI
-  - Handle different trace ID formats (hex, decimal)
-  - Add data links to appropriate fields in data frame
+- [x] 10.2 Configure trace data links
+  - ✅ COMPLETED: Set up links to Datadog trace UI
+  - ✅ COMPLETED: Handle different trace ID formats (hex, decimal)
+  - ✅ COMPLETED: Add data links to appropriate fields in data frame
   - _Requirements: 13.4_
 
 ## Phase 4: Advanced Features

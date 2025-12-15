@@ -73,6 +73,9 @@ type LogLabels struct {
 	Version    string                 `json:"version,omitempty"`
 	Tags       map[string]string      `json:"tags,omitempty"`
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
+	// Trace linking support - Requirements 5.2, 5.3
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
 }
 
 // LogsCacheEntry stores cached logs data with timestamp for TTL validation
@@ -248,7 +251,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 			"cacheKey", cacheKey,
 			"currentPage", currentPage)
 		// Use parser to create frames from cached entries
-		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID)
+		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID, logsQuery)
 		return frames, nil
 	}
 	
@@ -272,7 +275,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
 	// Use parser to create Grafana data frames from log entries
-	frames := parser.createLogsDataFrames(logEntries, q.RefID)
+	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery)
 	
 	// Add pagination metadata to the response
 	if len(frames) > 0 {
@@ -1285,12 +1288,21 @@ func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (
 		}
 	}
 	
-	// Collect remaining attributes
+	// Extract trace IDs from common Datadog trace ID fields
+	// Requirements 5.2, 5.3 - Extract trace IDs from log attributes
+	labels.TraceID, labels.SpanID = d.extractTraceIDs(attributes)
+	
+	// Collect remaining attributes (excluding trace fields that we've already extracted)
 	labels.Attributes = make(map[string]interface{})
+	traceFields := map[string]bool{
+		"dd.trace_id": true, "trace_id": true, "traceId": true, "trace-id": true,
+		"dd.span_id": true, "span_id": true, "spanId": true, "span-id": true,
+	}
+	
 	for key, value := range attributes {
 		if key != "message" && key != "status" && key != "service" && 
 		   key != "source" && key != "host" && key != "tags" && key != "timestamp" &&
-		   key != "env" && key != "version" {
+		   key != "env" && key != "version" && !traceFields[key] {
 			labels.Attributes[key] = value
 		}
 	}
@@ -1303,6 +1315,181 @@ func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (
 	}
 	
 	return body, severity, labelsJSON
+}
+
+// extractTraceIDs extracts trace and span IDs from Datadog log attributes
+// Supports common Datadog trace ID field names and formats
+// Requirements 5.2, 5.3 - Extract trace IDs from log data
+func (d *Datasource) extractTraceIDs(attributes map[string]interface{}) (string, string) {
+	logger := log.New()
+	
+	var traceID, spanID string
+	
+	// Common Datadog trace ID field names (in order of preference)
+	traceIDFields := []string{
+		"dd.trace_id",    // Standard Datadog trace ID field
+		"trace_id",       // Alternative trace ID field
+		"traceId",        // CamelCase variant
+		"trace-id",       // Kebab-case variant
+	}
+	
+	// Common Datadog span ID field names (in order of preference)
+	spanIDFields := []string{
+		"dd.span_id",     // Standard Datadog span ID field
+		"span_id",        // Alternative span ID field
+		"spanId",         // CamelCase variant
+		"span-id",        // Kebab-case variant
+	}
+	
+	// Extract trace ID
+	for _, field := range traceIDFields {
+		if value, exists := attributes[field]; exists {
+			if strValue := d.convertTraceIDToString(value); strValue != "" {
+				traceID = strValue
+				logger.Debug("Extracted trace ID", "field", field, "traceID", traceID)
+				break
+			}
+		}
+	}
+	
+	// Extract span ID
+	for _, field := range spanIDFields {
+		if value, exists := attributes[field]; exists {
+			if strValue := d.convertTraceIDToString(value); strValue != "" {
+				spanID = strValue
+				logger.Debug("Extracted span ID", "field", field, "spanID", spanID)
+				break
+			}
+		}
+	}
+	
+	return traceID, spanID
+}
+
+// convertTraceIDToString converts various trace ID formats to string
+// Handles different formats: string, int64, uint64, hex strings
+func (d *Datasource) convertTraceIDToString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	
+	switch v := value.(type) {
+	case string:
+		// Already a string, validate it's not empty
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" || trimmed == "0" {
+			return ""
+		}
+		return trimmed
+		
+	case int64:
+		// Convert int64 to string, skip zero values
+		if v == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", v)
+		
+	case uint64:
+		// Convert uint64 to string, skip zero values
+		if v == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", v)
+		
+	case float64:
+		// JSON numbers are parsed as float64, convert to int64 first
+		intValue := int64(v)
+		if intValue == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", intValue)
+		
+	case int:
+		// Convert int to string, skip zero values
+		if v == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", v)
+		
+	default:
+		// Try to convert to string as fallback
+		strValue := fmt.Sprintf("%v", v)
+		trimmed := strings.TrimSpace(strValue)
+		if trimmed == "" || trimmed == "0" || trimmed == "<nil>" {
+			return ""
+		}
+		return trimmed
+	}
+}
+
+// createTraceDataLinks creates data links for trace navigation
+// Requirements 13.4 - Add data links to appropriate fields in data frame
+func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink {
+	logger := log.New()
+	
+	// Get Datadog site configuration for trace URL construction
+	site := d.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+	
+	var dataLinks []data.DataLink
+	
+	// Check if any log entries have trace IDs
+	hasTraceIDs := false
+	for _, entry := range logEntries {
+		if len(entry.Labels) > 0 {
+			var labels LogLabels
+			if err := json.Unmarshal(entry.Labels, &labels); err == nil {
+				if labels.TraceID != "" {
+					hasTraceIDs = true
+					break
+				}
+			}
+		}
+	}
+	
+	// Only create trace links if we have trace IDs
+	if !hasTraceIDs {
+		logger.Debug("No trace IDs found in log entries, skipping trace data links")
+		return dataLinks
+	}
+	
+	// Create trace data link for Datadog APM
+	traceLink := data.DataLink{
+		Title:       "View Trace in Datadog",
+		URL:         d.buildTraceURL(site, "${__data.fields.labels.trace_id}"),
+		TargetBlank: true,
+	}
+	
+	dataLinks = append(dataLinks, traceLink)
+	
+	logger.Debug("Created trace data links", 
+		"linkCount", len(dataLinks), 
+		"site", site,
+		"hasTraceIDs", hasTraceIDs)
+	
+	return dataLinks
+}
+
+// buildTraceURL constructs the Datadog trace URL for a given trace ID
+// Handles different trace ID formats (hex, decimal) and Datadog sites
+// Requirements 13.4 - Handle different trace ID formats
+func (d *Datasource) buildTraceURL(site, traceIDTemplate string) string {
+	// Datadog trace URL format: https://app.datadoghq.com/apm/trace/{trace_id}
+	// For other sites: https://app.{site}/apm/trace/{trace_id}
+	
+	var baseURL string
+	if site == "datadoghq.com" {
+		baseURL = "https://app.datadoghq.com"
+	} else {
+		baseURL = fmt.Sprintf("https://app.%s", site)
+	}
+	
+	// Use template variable that will be replaced by Grafana with actual trace ID
+	traceURL := fmt.Sprintf("%s/apm/trace/%s", baseURL, traceIDTemplate)
+	
+	return traceURL
 }
 
 // createEmptyLogsDataFrame creates an empty logs data frame with proper structure (LEGACY)
@@ -1653,7 +1840,7 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 // createLogsDataFrames creates Grafana DataFrames from log entries (CORRECTED STRUCTURE)
 // Completely rewritten to match Grafana's official logs data source standards
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 13.1
-func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) data.Frames {
+func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string, query string) data.Frames {
 	logger := log.New()
 
 	// Validate input parameters
@@ -1755,6 +1942,8 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 	labelsField := data.NewField("labels", nil, labels)
 	labelsField.Config = &data.FieldConfig{
 		DisplayName: "Labels",
+		// Add data links for trace navigation - Requirements 13.4
+		Links: d.createTraceDataLinks(sanitizedEntries),
 	}
 
 	// ✅ CORRECT - Add fields in the correct order for Grafana logs recognition
@@ -1766,6 +1955,9 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
+	// Extract search terms from the query for highlighting
+	searchWords := d.extractSearchTerms(query)
+
 	// ✅ CORRECT - Set appropriate metadata for Grafana's logs panel recognition
 	frame.Meta = &data.FrameMeta{
 		Type: data.FrameTypeLogLines, // Critical: This tells Grafana this is log data
@@ -1773,8 +1965,8 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 		PreferredVisualization: "logs",
 		Custom: map[string]interface{}{
 			// Enhanced metadata for search highlighting and filtering
-			"searchWords": []string{}, // For search term highlighting
-			"limit":       entryCount, // For pagination info
+			"searchWords": searchWords,  // For search term highlighting
+			"limit":       entryCount,   // For pagination info
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
@@ -1785,7 +1977,8 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string) d
 		"entryCount", entryCount,
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
-		"fieldCount", len(frame.Fields))
+		"fieldCount", len(frame.Fields),
+		"searchWords", searchWords)
 
 	return data.Frames{frame}
 }
@@ -1794,4 +1987,81 @@ func (d *Datasource) parseLogsError(err error, httpStatus int, responseBody stri
 	// Add logs context to the response body for better error detection
 	logsContext := fmt.Sprintf("logs: %s", responseBody)
 	return d.parseDatadogError(err, httpStatus, logsContext)
+}
+// extractSearchTerms extracts search terms from a Datadog logs query for highlighting purposes.
+// This function identifies text search terms while excluding facet filters.
+func (d *Datasource) extractSearchTerms(query string) []string {
+	if query == "" {
+		return []string{}
+	}
+
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return []string{}
+	}
+
+	searchTerms := []string{}
+
+	// Remove facet filters (service:, source:, status:, host:, env:, etc.)
+	// Facet pattern: word followed by colon and value (with optional quotes)
+	facetPattern := regexp.MustCompile(`\b\w+:\s*(?:"[^"]*"|[^\s]+)`)
+	queryWithoutFacets := facetPattern.ReplaceAllString(trimmedQuery, "")
+
+	// Remove boolean operators (AND, OR, NOT) as they're not search terms
+	booleanPattern := regexp.MustCompile(`(?i)\b(AND|OR|NOT)\b`)
+	queryWithoutFacets = booleanPattern.ReplaceAllString(queryWithoutFacets, " ")
+
+	// Remove parentheses used for grouping
+	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, "(", " ")
+	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, ")", " ")
+
+	// Extract quoted strings first (preserve spaces within quotes)
+	quotedPattern := regexp.MustCompile(`"([^"]*)"`)
+	quotedMatches := quotedPattern.FindAllStringSubmatch(queryWithoutFacets, -1)
+	for _, match := range quotedMatches {
+		if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
+			searchTerms = append(searchTerms, strings.TrimSpace(match[1]))
+		}
+	}
+
+	// Remove quoted strings from the query to process remaining words
+	queryWithoutQuotes := quotedPattern.ReplaceAllString(queryWithoutFacets, " ")
+
+	// Split remaining words by whitespace and filter out empty strings
+	words := strings.Fields(queryWithoutQuotes)
+
+	// Process individual words
+	for _, word := range words {
+		// Clean up the word by removing quotes and special characters at boundaries
+		cleanWord := strings.Trim(word, `"'`)
+
+		// Skip if the word is empty after cleaning
+		if cleanWord == "" {
+			continue
+		}
+
+		// Handle wildcard patterns - extract the base term without wildcards
+		if strings.Contains(cleanWord, "*") {
+			// For patterns like "error*" or "*error*", extract "error"
+			baseWord := strings.ReplaceAll(cleanWord, "*", "")
+			if baseWord != "" {
+				searchTerms = append(searchTerms, baseWord)
+			}
+		} else {
+			// Regular search term
+			searchTerms = append(searchTerms, cleanWord)
+		}
+	}
+
+	// Remove duplicates
+	seen := make(map[string]bool)
+	uniqueTerms := []string{}
+	for _, term := range searchTerms {
+		if !seen[term] {
+			seen[term] = true
+			uniqueTerms = append(uniqueTerms, term)
+		}
+	}
+
+	return uniqueTerms
 }
