@@ -149,15 +149,15 @@ source:nginx AND @env:prod* AND message:"timeout"
 
 ## 🏆 Why Choose This Plugin?
 
-| Advantage | This Plugin | Official Plugin |
-|-----------|-------------|-----------------|
+| Feature | This Plugin | Official Plugin |
+|---------|-------------|-----------------|
 | **Cost** | Free & Open Source | Grafana Enterprise Required |
-| **Logs Support** | Full logs search with autocomplete | Available |
-| **Autocomplete** | Advanced context-aware (metrics & logs) | Basic |
-| **Formulas** | Full mathematical expressions | Limited |
-| **Query Editor** | Modern with validation | Basic |
-| **Variables** | Complete support | Limited |
-| **Community** | Active development | Enterprise support |
+| **Logs Support** | ✅ Full logs search with autocomplete | ✅ Available |
+| **Metrics Support** | ✅ Full Datadog metrics API | ✅ Available |
+| **Autocomplete** | ✅ Context-aware (metrics & logs) | ✅ Available |
+| **Formulas** | ✅ Mathematical expressions | ✅ Available |
+| **Variables** | ✅ Template variable support | ✅ Available |
+| **Community** | ✅ Open source, community-driven | ✅ Enterprise support |
 
 ## 🤝 Community & Support
 
