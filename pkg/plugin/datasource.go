@@ -202,6 +202,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 		// Detect query type and route to appropriate handler
 		queryType := detectQueryType(&qm)
+		logger.Info("Detected query type", "refID", q.RefID, "queryType", queryType, "logQuery", qm.LogQuery, "explicitQueryType", qm.QueryType)
 		handler, exists := handlers[queryType]
 		if !exists {
 			logger.Error("unsupported query type", "queryType", queryType)
@@ -220,6 +221,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	// Execute queries for each handler and merge responses
 	responses := make([]*backend.QueryDataResponse, 0)
 	for queryType, handler := range handlers {
+		logger.Info("Executing handler", "queryType", queryType)
 		handlerResponse, err := handler.executeQueries(ctx)
 		if err != nil {
 			logger.Error("handler execution failed", "queryType", queryType, "error", err)
@@ -227,7 +229,10 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 		if handlerResponse != nil && len(handlerResponse.Responses) > 0 {
+			logger.Info("Handler returned responses", "queryType", queryType, "responseCount", len(handlerResponse.Responses))
 			responses = append(responses, handlerResponse)
+		} else {
+			logger.Info("Handler returned no responses", "queryType", queryType)
 		}
 	}
 

@@ -80,6 +80,7 @@ func (h *LogsVolumeHandler) executeQueries(ctx context.Context) (*backend.QueryD
 
 	// Return empty response if no queries to process
 	if len(h.volumeQueries) == 0 {
+		logger.Info("No logs volume queries to process")
 		return response, nil
 	}
 
@@ -288,11 +289,14 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 			continue
 		}
 
-		// Extract total count from meta information
-		totalCount := 0
-		if searchResponse.Meta != nil && searchResponse.Meta.Page != nil {
-			totalCount = searchResponse.Meta.Page.Total
-		}
+		// Extract count from actual log entries returned
+		// Datadog Logs API doesn't provide total count in meta, so we use the actual entries count
+		totalCount := len(searchResponse.Data)
+
+		logger.Debug("Extracted count for bucket", 
+			"time", currentTime, 
+			"count", totalCount,
+			"entriesReturned", len(searchResponse.Data))
 
 		// Add bucket with count
 		buckets = append(buckets, LogsAggregationBucket{
@@ -307,6 +311,15 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 			Buckets: buckets,
 		},
 	}
+
+	logger.Info("Created logs volume aggregation response", 
+		"totalBuckets", len(buckets),
+		"firstBucketCount", func() int {
+			if len(buckets) > 0 {
+				return buckets[0].Count
+			}
+			return -1
+		}())
 
 	return aggregationResponse, nil
 }
@@ -367,6 +380,19 @@ func (h *LogsVolumeHandler) createLogsVolumeDataFrame(response *LogsAggregationR
 		},
 	}
 
+	logger := log.New()
+	logger.Info("Created logs volume data frame", 
+		"refID", frame.RefID,
+		"timeValueCount", len(timeValues),
+		"countValueCount", len(countValues),
+		"totalCount", func() float64 {
+			total := 0.0
+			for _, count := range countValues {
+				total += count
+			}
+			return total
+		}())
+
 	return frame
 }
 
@@ -403,9 +429,10 @@ type LogsHistogram struct {
 }
 
 // LogsSearchResponse represents the response structure from Datadog's Logs Search API
+// This matches the structure used in the main logs handler
 type LogsSearchResponse struct {
-	Data []LogEntry     `json:"data"`
-	Meta *LogsSearchMeta `json:"meta"`
+	Data []map[string]interface{} `json:"data"`
+	Meta *LogsSearchMeta          `json:"meta"`
 }
 
 type LogsSearchMeta struct {
@@ -413,7 +440,7 @@ type LogsSearchMeta struct {
 }
 
 type LogsSearchPage struct {
-	Total int `json:"total"`
+	After string `json:"after"` // Pagination cursor, not total count
 }
 
 // LogsAggregationResponse represents the response structure for logs volume queries
