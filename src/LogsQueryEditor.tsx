@@ -18,6 +18,13 @@ type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOp
  * Requirements: 3.1, 3.2
  */
 export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: LogsQueryEditorProps) {
+  // Wrapper for onRunQuery that includes validation
+  const handleRunQuery = () => {
+    if (canExecuteQuery()) {
+      onRunQuery();
+    }
+    // If validation fails, the error messages are already displayed
+  };
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
   
@@ -239,21 +246,60 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     });
   };
 
-  // Validation function to check if field is selected when JSON parsing is enabled
+  // Comprehensive validation function for JSON parsing configuration
   const validateJsonParsingConfiguration = () => {
-    if (query.jsonParsing?.enabled && !query.jsonParsing.targetField) {
+    // Clear any existing errors first
+    setFieldSelectorError(null);
+    
+    // If JSON parsing is disabled, configuration is valid
+    if (!query.jsonParsing?.enabled) {
+      return true;
+    }
+
+    // Check if target field is selected
+    if (!query.jsonParsing.targetField) {
       setFieldSelectorError('Field selection is required when JSON parsing is enabled');
       return false;
     }
-    setFieldSelectorError(null);
+
+    // Validate target field is one of the allowed options
+    const validFields = ['message', 'data', 'attributes', 'whole_log'];
+    if (!validFields.includes(query.jsonParsing.targetField)) {
+      setFieldSelectorError('Invalid field selection. Please choose from: message, data, attributes, or whole_log');
+      return false;
+    }
+
+    // Additional validation for specific field types
+    if (query.jsonParsing.targetField === 'whole_log') {
+      // Warn about potential performance impact for whole log parsing
+      if (!fieldSelectorError) {
+        // Only show this as a warning, not an error
+        console.warn('Whole log parsing may impact performance with large log volumes');
+      }
+    }
+
+    return true;
+  };
+
+  // Enhanced validation that prevents query execution with invalid configuration
+  const canExecuteQuery = () => {
+    // Basic logs query validation
+    const logsValidation = validateLogsQuery(logQuery);
+    if (!logsValidation.isValid) {
+      return false;
+    }
+
+    // JSON parsing configuration validation
+    if (!validateJsonParsingConfiguration()) {
+      return false;
+    }
+
     return true;
   };
 
   // Validate configuration when JSON parsing state changes
   useEffect(() => {
-    if (query.jsonParsing?.enabled) {
-      validateJsonParsingConfiguration();
-    }
+    validateJsonParsingConfiguration();
   }, [query.jsonParsing?.enabled, query.jsonParsing?.targetField]);
 
   // Helper function to calculate suggestions dropdown position
@@ -294,10 +340,22 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     // Set the theme based on Grafana theme
     monaco.editor.setTheme(theme.isDark ? 'datadog-dark' : 'datadog-light');
 
-    // Add keyboard event listener for Cmd+Enter
+    // Add keyboard event listener for Cmd+Enter with validation
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       autocomplete.onClose();
-      onRunQuery();
+      
+      // Validate configuration before executing query
+      if (canExecuteQuery()) {
+        onRunQuery();
+      } else {
+        // Focus back to editor to show validation errors
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+          }
+        }, 0);
+      }
+      
       setTimeout(() => {
         if (editorRef.current) {
           editorRef.current.focus();
@@ -627,20 +685,31 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
       {/* Field Selector - shown when JSON parsing is enabled */}
       {query.jsonParsing?.enabled && (
-        <InlineFieldRow>
-          <FieldSelector
-            value={query.jsonParsing.targetField || ''}
-            onChange={handleTargetFieldChange}
-            options={fieldOptions}
-            label="Parse Field"
-            labelWidth={14}
-            tooltip="Select which log field contains JSON data to parse"
-            placeholder="Select field to parse"
-            required={true}
-            width={25}
-            validationError={fieldSelectorError}
-          />
-        </InlineFieldRow>
+        <>
+          <InlineFieldRow>
+            <FieldSelector
+              value={query.jsonParsing.targetField || ''}
+              onChange={handleTargetFieldChange}
+              options={fieldOptions}
+              label="Parse Field"
+              labelWidth={14}
+              tooltip="Select which log field contains JSON data to parse"
+              placeholder="Select field to parse"
+              required={true}
+              width={25}
+              validationError={fieldSelectorError}
+            />
+          </InlineFieldRow>
+          
+          {/* Display field selector validation error prominently */}
+          {fieldSelectorError && (
+            <Alert title="JSON Parsing Configuration Error" severity="error">
+              {fieldSelectorError}
+              <br />
+              <small>Query execution is disabled until this error is resolved.</small>
+            </Alert>
+          )}
+        </>
       )}
 
       {/* Logs Help Component */}
