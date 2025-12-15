@@ -64,6 +64,58 @@ type LogsAutocompleteCacheEntry struct {
 	Timestamp time.Time
 }
 
+// JSONParsingConfig represents the JSON parsing configuration from frontend
+type JSONParsingConfig struct {
+	Enabled         bool   `json:"enabled"`                    // Whether JSON parsing is enabled
+	TargetField     string `json:"targetField"`                // Field to parse: "whole_log", "message", "data", "attributes"
+	MaxDepth        int    `json:"maxDepth,omitempty"`         // Maximum nesting depth for parsing (default: 10)
+	MaxSize         int    `json:"maxSize,omitempty"`          // Maximum JSON size in bytes (default: 1MB)
+	PreserveOriginal bool   `json:"preserveOriginal,omitempty"` // Whether to preserve original field values (default: true)
+}
+
+// DefaultJSONParsingConfig returns default JSON parsing configuration
+func DefaultJSONParsingConfig() JSONParsingConfig {
+	return JSONParsingConfig{
+		Enabled:         false,
+		TargetField:     "",
+		MaxDepth:        10,
+		MaxSize:         1024 * 1024, // 1MB
+		PreserveOriginal: true,
+	}
+}
+
+// Validate validates the JSON parsing configuration
+func (config *JSONParsingConfig) Validate() error {
+	if !config.Enabled {
+		return nil // No validation needed if disabled
+	}
+	
+	if config.TargetField == "" {
+		return fmt.Errorf("target field must be specified when JSON parsing is enabled")
+	}
+	
+	validFields := map[string]bool{
+		"whole_log":  true,
+		"message":    true,
+		"data":       true,
+		"attributes": true,
+	}
+	
+	if !validFields[config.TargetField] {
+		return fmt.Errorf("invalid target field: %s. Must be one of: whole_log, message, data, attributes", config.TargetField)
+	}
+	
+	if config.MaxDepth <= 0 {
+		config.MaxDepth = 10 // Set default
+	}
+	
+	if config.MaxSize <= 0 {
+		config.MaxSize = 1024 * 1024 // Set default to 1MB
+	}
+	
+	return nil
+}
+
 // QueryModel represents a query from the frontend
 type QueryModel struct {
 	QueryText         string `json:"queryText"`
@@ -80,6 +132,8 @@ type QueryModel struct {
 	QueryType         string `json:"queryType,omitempty"`  // "logs", "logs-volume", or "metrics" (defaults to "metrics")
 	LogQuery          string `json:"logQuery,omitempty"`   // Logs search query
 	Indexes           []string `json:"indexes,omitempty"`  // Target log indexes
+	// JSON parsing configuration
+	JSONParsing       *JSONParsingConfig `json:"jsonParsing,omitempty"` // JSON parsing configuration for logs
 	// Deprecated: Use LegendMode and LegendTemplate instead
 	Label             string `json:"label,omitempty"`
 }

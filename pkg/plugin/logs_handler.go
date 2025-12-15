@@ -46,6 +46,18 @@ func (h *LogsHandler) processQuery(qm *QueryModel) error {
 		return fmt.Errorf("logs query cannot be empty")
 	}
 
+	// Validate and set defaults for JSON parsing configuration
+	if qm.JSONParsing == nil {
+		// Set default configuration if not provided
+		defaultConfig := DefaultJSONParsingConfig()
+		qm.JSONParsing = &defaultConfig
+	} else {
+		// Validate existing configuration
+		if err := qm.JSONParsing.Validate(); err != nil {
+			return fmt.Errorf("invalid JSON parsing configuration: %w", err)
+		}
+	}
+
 	// Find the corresponding backend query for RefID
 	var refID string
 	for _, q := range h.reqQueries {
