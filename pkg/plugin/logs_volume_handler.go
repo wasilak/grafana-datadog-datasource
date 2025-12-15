@@ -1,0 +1,327 @@
+package plugin
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	"github.com/grafana/grafana-plugin-sdk-go/data"
+)
+
+// LogsVolumeHandler handles Datadog logs volume queries for histogram visualization
+// Requirements: 18.1, 18.2, 18.4, 18.5
+type LogsVolumeHandler struct {
+	datasource     *Datasource
+	reqQueries     []backend.DataQuery
+	volumeQueries  []QueryModel
+	queryModels    map[string]QueryModel
+	ddCtx          context.Context
+}
+
+// NewLogsVolumeHandler creates a new LogsVolumeHandler instance
+// Requirements: 18.1, 18.4
+func NewLogsVolumeHandler(datasource *Datasource, queries []backend.DataQuery, ddCtx context.Context) *LogsVolumeHandler {
+	return &LogsVolumeHandler{
+		datasource:    datasource,
+		reqQueries:    queries,
+		volumeQueries: make([]QueryModel, 0),
+		queryModels:   make(map[string]QueryModel),
+		ddCtx:         ddCtx,
+	}
+}
+
+// processQuery processes a single logs volume query and prepares it for execution
+// Requirements: 18.1, 18.4
+func (h *LogsVolumeHandler) processQuery(qm *QueryModel) error {
+	logger := log.New()
+
+	// Skip hidden queries
+	if qm.Hide {
+		return nil
+	}
+
+	// Validate logs volume query
+	if qm.LogQuery == "" {
+		return fmt.Errorf("logs volume query cannot be empty")
+	}
+
+	// Find the corresponding backend query for RefID
+	var refID string
+	for _, q := range h.reqQueries {
+		var tempQM QueryModel
+		if err := json.Unmarshal(q.JSON, &tempQM); err != nil {
+			continue
+		}
+		if tempQM.LogQuery == qm.LogQuery && tempQM.QueryType == qm.QueryType {
+			refID = q.RefID
+			break
+		}
+	}
+
+	if refID == "" {
+		return fmt.Errorf("could not find RefID for logs volume query")
+	}
+
+	h.queryModels[refID] = *qm
+	h.volumeQueries = append(h.volumeQueries, *qm)
+
+	logger.Debug("Added logs volume query", "refID", refID, "logQuery", qm.LogQuery)
+	return nil
+}
+
+// executeQueries executes all processed logs volume queries and returns the response
+// Requirements: 18.1, 18.2, 18.4, 18.5
+func (h *LogsVolumeHandler) executeQueries(ctx context.Context) (*backend.QueryDataResponse, error) {
+	logger := log.New()
+	response := backend.NewQueryDataResponse()
+
+	// Return empty response if no queries to process
+	if len(h.volumeQueries) == 0 {
+		return response, nil
+	}
+
+	logger.Info("Processing logs volume queries", "volumeQueryCount", len(h.volumeQueries))
+
+	// Process each logs volume query
+	for refID, qm := range h.queryModels {
+		// Find the corresponding backend query
+		var backendQuery *backend.DataQuery
+		for _, q := range h.reqQueries {
+			if q.RefID == refID {
+				backendQuery = &q
+				break
+			}
+		}
+
+		if backendQuery == nil {
+			logger.Error("Could not find backend query for RefID", "refID", refID)
+			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, "could not find backend query")
+			continue
+		}
+
+		// Execute logs volume query
+		volumeResponse, err := h.queryLogsVolume(ctx, &qm, backendQuery)
+		if err != nil {
+			logger.Error("Failed to execute logs volume query", "refID", refID, "error", err)
+			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("logs volume query failed: %v", err))
+			continue
+		}
+
+		response.Responses[refID] = volumeResponse
+	}
+
+	return response, nil
+}
+
+// queryLogsVolume executes a logs volume query using Datadog's Logs Aggregation API
+// Requirements: 18.1, 18.2
+func (h *LogsVolumeHandler) queryLogsVolume(ctx context.Context, qm *QueryModel, backendQuery *backend.DataQuery) (backend.DataResponse, error) {
+	logger := log.New()
+
+	// Calculate appropriate bucket size based on time range
+	bucketSize := h.calculateBucketSize(backendQuery.TimeRange)
+	logger.Debug("Calculated bucket size", "bucketSize", bucketSize, "timeRange", backendQuery.TimeRange)
+
+	// Create logs aggregation request for Datadog API
+	// Using POST /api/v2/logs/aggregate endpoint
+	aggRequest := LogsAggregationRequest{
+		Data: LogsAggregationData{
+			Type: "aggregate_request",
+			Attributes: LogsAggregationAttributes{
+				Query: qm.LogQuery,
+				Time: LogsTimeRange{
+					From: backendQuery.TimeRange.From.Format(time.RFC3339),
+					To:   backendQuery.TimeRange.To.Format(time.RFC3339),
+				},
+				Compute: []LogsCompute{{
+					Aggregation: "count",
+				}},
+				GroupBy: []LogsGroupBy{{
+					Facet: "@timestamp",
+					Histogram: LogsHistogram{
+						Interval: bucketSize,
+					},
+				}},
+			},
+		},
+	}
+
+	// Execute aggregation API call
+	aggregationResponse, err := h.callLogsAggregationAPI(ctx, aggRequest)
+	if err != nil {
+		return backend.DataResponse{}, fmt.Errorf("logs aggregation API call failed: %w", err)
+	}
+
+	// Transform response to Grafana data frame
+	frame := h.createLogsVolumeDataFrame(aggregationResponse, bucketSize, backendQuery.RefID)
+
+	return backend.DataResponse{Frames: []*data.Frame{frame}}, nil
+}
+
+// calculateBucketSize determines the appropriate time bucket size based on the query time range
+// Requirements: 18.2, 18.3
+func (h *LogsVolumeHandler) calculateBucketSize(timeRange backend.TimeRange) string {
+	duration := timeRange.To.Sub(timeRange.From)
+
+	switch {
+	case duration <= time.Hour:
+		return "1m"
+	case duration <= 6*time.Hour:
+		return "5m"
+	case duration <= 24*time.Hour:
+		return "15m"
+	case duration <= 7*24*time.Hour:
+		return "1h"
+	default:
+		return "4h"
+	}
+}
+
+// callLogsAggregationAPI makes the actual API call to Datadog's Logs Aggregation API
+// Requirements: 18.1, 18.4, 18.5
+func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request LogsAggregationRequest) (*LogsAggregationResponse, error) {
+	logger := log.New()
+
+	// Get API credentials (reuse same authentication as logs queries)
+	// Requirements: 18.4 - use same authentication and error handling as logs queries
+	apiKey, ok := h.datasource.SecureJSONData["apiKey"]
+	if !ok {
+		return nil, fmt.Errorf("missing apiKey in secure data")
+	}
+
+	appKey, ok := h.datasource.SecureJSONData["appKey"]
+	if !ok {
+		return nil, fmt.Errorf("missing appKey in secure data")
+	}
+
+	// Get Datadog site configuration
+	site := h.datasource.JSONData.Site
+	if site == "" {
+		site = "datadoghq.com" // Default to US
+	}
+
+	// Construct API URL
+	apiURL := fmt.Sprintf("https://api.%s/api/v2/logs/aggregate", site)
+
+	// Marshal request body
+	requestBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	logger.Debug("Making logs aggregation API call", "url", apiURL, "query", request.Data.Attributes.Query)
+
+	// Make HTTP request using the same patterns as existing logs implementation
+	// This ensures consistent timeout, error handling, and authentication
+	httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", apiURL, requestBody, apiKey, appKey)
+	if err != nil {
+		return nil, fmt.Errorf("logs aggregation API request failed: %w", err)
+	}
+
+	// Parse response
+	var aggregationResponse LogsAggregationResponse
+	if err := json.Unmarshal(httpResponse, &aggregationResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse aggregation response: %w", err)
+	}
+
+	return &aggregationResponse, nil
+}
+
+// createLogsVolumeDataFrame creates a Grafana data frame for logs volume histogram visualization
+// Requirements: 18.2, 18.3
+func (h *LogsVolumeHandler) createLogsVolumeDataFrame(response *LogsAggregationResponse, bucketSize string, refID string) *data.Frame {
+	// Extract time buckets and counts from aggregation response
+	var timeValues []time.Time
+	var countValues []float64
+
+	// Process aggregation buckets
+	for _, bucket := range response.Data.Buckets {
+		// Parse timestamp
+		timestamp, err := time.Parse(time.RFC3339, bucket.By.Timestamp)
+		if err != nil {
+			continue // Skip invalid timestamps
+		}
+
+		timeValues = append(timeValues, timestamp)
+		countValues = append(countValues, float64(bucket.Count))
+	}
+
+	// Create data frame with proper structure for histogram visualization
+	frame := data.NewFrame(
+		"logs-volume", // Frame name
+		data.NewField("Time", nil, timeValues),
+		data.NewField("Count", nil, countValues),
+	)
+
+	// Set frame metadata for histogram visualization
+	// Requirements: 18.3 - proper metadata for Grafana recognition
+	// Use refId prefix 'log-volume-' to match Grafana conventions
+	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
+	frame.Meta = &data.FrameMeta{
+		Type:                    data.FrameTypeTimeSeriesMulti,
+		PreferredVisualization: "graph", // For histogram display - using string instead of constant
+		Custom: map[string]interface{}{
+			"bucketSize": bucketSize,
+		},
+	}
+
+	return frame
+}
+
+// Data structures for Datadog Logs Aggregation API
+
+// LogsAggregationRequest represents the request structure for Datadog's Logs Aggregation API
+type LogsAggregationRequest struct {
+	Data LogsAggregationData `json:"data"`
+}
+
+type LogsAggregationData struct {
+	Type       string                     `json:"type"`
+	Attributes LogsAggregationAttributes  `json:"attributes"`
+}
+
+type LogsAggregationAttributes struct {
+	Query   string          `json:"query"`
+	Time    LogsTimeRange   `json:"time"`
+	Compute []LogsCompute   `json:"compute"`
+	GroupBy []LogsGroupBy   `json:"group_by"`
+}
+
+type LogsTimeRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type LogsCompute struct {
+	Aggregation string `json:"aggregation"`
+}
+
+type LogsGroupBy struct {
+	Facet     string        `json:"facet"`
+	Histogram LogsHistogram `json:"histogram"`
+}
+
+type LogsHistogram struct {
+	Interval string `json:"interval"`
+}
+
+// LogsAggregationResponse represents the response structure from Datadog's Logs Aggregation API
+type LogsAggregationResponse struct {
+	Data LogsAggregationResponseData `json:"data"`
+}
+
+type LogsAggregationResponseData struct {
+	Buckets []LogsAggregationBucket `json:"buckets"`
+}
+
+type LogsAggregationBucket struct {
+	By    LogsAggregationBucketBy `json:"by"`
+	Count int                     `json:"count"`
+}
+
+type LogsAggregationBucketBy struct {
+	Timestamp string `json:"@timestamp"`
+}
