@@ -156,14 +156,19 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 
 		// Extract standard fields using the corrected structure
 		body, severity, labels := p.extractLogAttributes(attributes)
+		
+		// Extract individual attributes and tags for Grafana filtering
+		individualAttributes, individualTags := p.extractIndividualFields(attributes)
 
 		// Create log entry with corrected structure
 		entry := LogEntry{
-			ID:        logID,
-			Timestamp: timestamp,
-			Body:      body,     // ✅ CORRECT - Changed from Message
-			Severity:  severity, // ✅ CORRECT - Changed from Level
-			Labels:    labels,   // ✅ CORRECT - All metadata as JSON
+			ID:         logID,
+			Timestamp:  timestamp,
+			Body:       body,                 // ✅ CORRECT - Changed from Message
+			Severity:   severity,             // ✅ CORRECT - Changed from Level
+			Labels:     labels,               // ✅ CORRECT - All metadata as JSON
+			Attributes: individualAttributes, // Individual attributes for filtering
+			Tags:       individualTags,       // Individual tags for filtering
 		}
 
 		// Apply JSON parsing if configuration is provided and enabled
@@ -303,6 +308,34 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 	return body, severity, labelsJSON
 }
 
+// extractIndividualFields extracts attributes and tags as individual fields for Grafana filtering/aggregation
+// This enables each attribute and tag to appear as a separate column in Grafana logs panel
+func (p *LogsResponseParser) extractIndividualFields(attributes map[string]interface{}) (map[string]interface{}, map[string]string) {
+	individualAttributes := make(map[string]interface{})
+	individualTags := make(map[string]string)
+	
+	// Extract all attributes as individual fields (except special ones we handle separately)
+	for key, value := range attributes {
+		if key != "message" && key != "status" && key != "tags" && key != "timestamp" {
+			individualAttributes[key] = value
+		}
+	}
+	
+	// Extract tags as individual fields (Datadog returns tags as array of "key:value" strings)
+	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
+		for _, tag := range tagsArray {
+			if tagStr, ok := tag.(string); ok {
+				parts := strings.SplitN(tagStr, ":", 2)
+				if len(parts) == 2 {
+					individualTags[parts[0]] = parts[1]
+				}
+			}
+		}
+	}
+	
+	return individualAttributes, individualTags
+}
+
 // createLogsDataFrames creates Grafana DataFrames from log entries using corrected structure
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 13.1
 func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID string, query string, timeRange ...backend.TimeRange) data.Frames {
@@ -347,36 +380,17 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			}
 		}
 		
-		// Extract attribute and tag names from labels JSON for individual columns
-		if len(entry.Labels) > 0 {
-			var labels LogLabels
-			if err := json.Unmarshal(entry.Labels, &labels); err == nil {
-				// Collect standard attribute names
-				if labels.Service != "" {
-					attributeNames["service"] = true
-				}
-				if labels.Source != "" {
-					attributeNames["source"] = true
-				}
-				if labels.Host != "" {
-					attributeNames["host"] = true
-				}
-				if labels.Env != "" {
-					attributeNames["env"] = true
-				}
-				if labels.Version != "" {
-					attributeNames["version"] = true
-				}
-				
-				// Collect custom attribute names
-				for attrName := range labels.Attributes {
-					attributeNames[attrName] = true
-				}
-				
-				// Collect tag names
-				for tagName := range labels.Tags {
-					tagNames[tagName] = true
-				}
+		// Collect attribute names directly from the entry
+		if entry.Attributes != nil {
+			for attrName := range entry.Attributes {
+				attributeNames[attrName] = true
+			}
+		}
+		
+		// Collect tag names directly from the entry
+		if entry.Tags != nil {
+			for tagName := range entry.Tags {
+				tagNames[tagName] = true
 			}
 		}
 	}
@@ -457,50 +471,21 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			}
 		}
 		
-		// Populate attribute and tag data for individual columns
-		if len(entry.Labels) > 0 {
-			var labels LogLabels
-			if err := json.Unmarshal(entry.Labels, &labels); err == nil {
-				// Populate standard attributes
-				if labels.Service != "" {
-					if _, exists := attributeFieldData["service"]; exists {
-						attributeFieldData["service"][i] = &labels.Service
-					}
+		// Populate attribute data for individual columns
+		if entry.Attributes != nil {
+			for attrName, attrValue := range entry.Attributes {
+				if fieldData, exists := attributeFieldData[attrName]; exists {
+					strValue := p.convertValueToString(attrValue)
+					fieldData[i] = &strValue
 				}
-				if labels.Source != "" {
-					if _, exists := attributeFieldData["source"]; exists {
-						attributeFieldData["source"][i] = &labels.Source
-					}
-				}
-				if labels.Host != "" {
-					if _, exists := attributeFieldData["host"]; exists {
-						attributeFieldData["host"][i] = &labels.Host
-					}
-				}
-				if labels.Env != "" {
-					if _, exists := attributeFieldData["env"]; exists {
-						attributeFieldData["env"][i] = &labels.Env
-					}
-				}
-				if labels.Version != "" {
-					if _, exists := attributeFieldData["version"]; exists {
-						attributeFieldData["version"][i] = &labels.Version
-					}
-				}
-				
-				// Populate custom attributes
-				for attrName, attrValue := range labels.Attributes {
-					if fieldData, exists := attributeFieldData[attrName]; exists {
-						strValue := p.convertValueToString(attrValue)
-						fieldData[i] = &strValue
-					}
-				}
-				
-				// Populate tags
-				for tagName, tagValue := range labels.Tags {
-					if fieldData, exists := tagFieldData[tagName]; exists {
-						fieldData[i] = &tagValue
-					}
+			}
+		}
+		
+		// Populate tag data for individual columns
+		if entry.Tags != nil {
+			for tagName, tagValue := range entry.Tags {
+				if fieldData, exists := tagFieldData[tagName]; exists {
+					fieldData[i] = &tagValue
 				}
 			}
 		}

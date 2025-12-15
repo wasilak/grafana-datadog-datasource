@@ -61,6 +61,11 @@ type LogEntry struct {
 	Body         string                 `json:"body"`         // ✅ CORRECT - Changed from Message to Body
 	Severity     string                 `json:"severity"`     // ✅ CORRECT - Changed from Level to Severity
 	Labels       json.RawMessage        `json:"labels"`       // ✅ CORRECT - All metadata as JSON
+	
+	// Individual attribute fields for Grafana filtering/aggregation
+	Attributes   map[string]interface{} `json:"attributes,omitempty"`   // All attributes as individual fields
+	Tags         map[string]string      `json:"tags,omitempty"`         // All tags as individual fields
+	
 	ParsedFields map[string]interface{} `json:"parsedFields,omitempty"` // JSON parsing results
 	ParseErrors  []string               `json:"parseErrors,omitempty"`  // JSON parsing error messages
 }
