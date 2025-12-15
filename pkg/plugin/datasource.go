@@ -77,14 +77,9 @@ type QueryModel struct {
 	// Query options
 	Interval          *int64 `json:"interval,omitempty"`   // Override interval in milliseconds
 	// Logs query fields
-	QueryType         string `json:"queryType,omitempty"`  // "logs" or "metrics" (defaults to "metrics")
+	QueryType         string `json:"queryType,omitempty"`  // "logs", "logs-volume", or "metrics" (defaults to "metrics")
 	LogQuery          string `json:"logQuery,omitempty"`   // Logs search query
 	Indexes           []string `json:"indexes,omitempty"`  // Target log indexes
-	// Pagination fields for logs
-	PageSize          *int   `json:"pageSize,omitempty"`   // Number of log entries per page (default: 100)
-	CurrentPage       *int   `json:"currentPage,omitempty"` // Current page number (1-based, default: 1)
-	TotalPages        *int   `json:"totalPages,omitempty"` // Total number of pages available
-	NextCursor        string `json:"nextCursor,omitempty"` // Cursor for next page (from Datadog API)
 	// Deprecated: Use LegendMode and LegendTemplate instead
 	Label             string `json:"label,omitempty"`
 }

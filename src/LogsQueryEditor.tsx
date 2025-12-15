@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow, Input } from '@grafana/ui';
+import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -24,20 +24,9 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [showHelp, setShowHelp] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
-  
-  // Simplified pagination state - rely on Grafana's built-in logs handling
-  const [pageSize, setPageSize] = useState(query.pageSize || 100);
-  const [currentPage, setCurrentPage] = useState(query.currentPage || 1);
-  const [pageHistory, setPageHistory] = useState<{[page: number]: string}>({1: ''}); // Track cursors for each page
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
-
-  // Simplified cache management - rely on backend caching only
-  const clearPageHistory = () => {
-    setPageHistory({1: ''});
-    console.log('🗑️ Page history cleared');
-  };
 
   // Define handleItemSelect for logs-specific autocomplete
   const handleItemSelect = async (item: CompletionItem) => {
@@ -153,44 +142,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       suggestions: autocomplete.state.suggestions,
     };
   }, [autocomplete.state.isOpen, autocomplete.state.selectedIndex, autocomplete.state.suggestions]);
-
-
-
-  // Reset pagination state when query changes
-  useEffect(() => {
-    if (query.logQuery !== logQuery) {
-      console.log('🗑️ Query changed, resetting pagination');
-      setCurrentPage(1);
-      setPageHistory({1: ''});
-      onChange({
-        ...query,
-        currentPage: 1,
-        nextCursor: '',
-        queryType: 'logs'
-      });
-    }
-  }, [query.logQuery]);
-
-  // Update page history when nextCursor is received from backend
-  useEffect(() => {
-    if (query.nextCursor && currentPage >= 1) {
-      // Store the cursor for the next page
-      setPageHistory(prev => ({
-        ...prev,
-        [currentPage + 1]: query.nextCursor || ''
-      }));
-    }
-  }, [query.nextCursor, currentPage]);
-
-  // Sync local state with query state
-  useEffect(() => {
-    if (query.pageSize && query.pageSize !== pageSize) {
-      setPageSize(query.pageSize);
-    }
-    if (query.currentPage && query.currentPage !== currentPage) {
-      setCurrentPage(query.currentPage);
-    }
-  }, [query.pageSize, query.currentPage]);
 
   const onLogQueryChange = (newValue: string) => {
     // Validate the logs query
@@ -566,130 +517,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 Loading...
               </div>
             )}
-          </div>
-        </InlineField>
-      </InlineFieldRow>
-
-      {/* Pagination Controls */}
-      <InlineFieldRow>
-        <InlineField 
-          label="Page Size" 
-          labelWidth={14}
-          tooltip="Number of log entries to fetch per page (default: 100, max: 1000)"
-        >
-          <Input
-            type="number"
-            value={pageSize}
-            min={10}
-            max={1000}
-            step={10}
-            width={10}
-            onChange={(e) => {
-              const newPageSize = Math.max(10, Math.min(1000, parseInt(e.currentTarget.value) || 100));
-              setPageSize(newPageSize);
-              setCurrentPage(1); // Reset to first page when page size changes
-              setPageHistory({1: ''}); // Reset page history
-              onChange({ 
-                ...query, 
-                pageSize: newPageSize,
-                currentPage: 1,
-                nextCursor: '', // Reset cursor when page size changes
-                queryType: 'logs'
-              });
-            }}
-            onBlur={() => {
-              // Trigger query execution when page size changes
-              console.log(`📡 Executing query for page 1 (page size changed)`);
-              onRunQuery();
-            }}
-          />
-        </InlineField>
-        
-        <InlineField 
-          label="Page" 
-          labelWidth={8}
-          tooltip="Current page number"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="angle-left"
-              aria-label="Previous page"
-              disabled={currentPage <= 1}
-              onClick={() => {
-                const newPage = Math.max(1, currentPage - 1);
-                const cursor = pageHistory[newPage] || '';
-                
-                setCurrentPage(newPage);
-                console.log(`📡 Navigating to page ${newPage}`);
-                onChange({ 
-                  ...query, 
-                  currentPage: newPage,
-                  nextCursor: cursor,
-                  queryType: 'logs'
-                });
-                onRunQuery();
-              }}
-            />
-            
-            <Input
-              type="number"
-              value={currentPage}
-              min={1}
-              max={999}
-              width={8}
-              onChange={(e) => {
-                const newPage = Math.max(1, parseInt(e.currentTarget.value) || 1);
-                setCurrentPage(newPage);
-                const cursor = pageHistory[newPage] || '';
-                onChange({ 
-                  ...query, 
-                  currentPage: newPage,
-                  nextCursor: cursor,
-                  queryType: 'logs'
-                });
-              }}
-              onBlur={() => {
-                // Trigger query execution when page number changes
-                console.log(`📡 Executing query for page ${currentPage} (manual input)`);
-                onRunQuery();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  console.log(`📡 Executing query for page ${currentPage} (Enter key)`);
-                  onRunQuery();
-                }
-              }}
-            />
-            
-            <span style={{ 
-              fontSize: theme.typography.size.sm, 
-              color: theme.colors.text.secondary,
-              whiteSpace: 'nowrap'
-            }}>
-              {`of ${currentPage}+`}
-            </span>
-            
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="angle-right"
-              aria-label="Next page"
-              onClick={() => {
-                const newPage = currentPage + 1;
-                
-                setCurrentPage(newPage);
-                console.log(`📡 Navigating to page ${newPage}`);
-                onChange({ 
-                  ...query, 
-                  currentPage: newPage,
-                  nextCursor: pageHistory[newPage] || '',
-                  queryType: 'logs'
-                });
-                onRunQuery();
-              }}
-            />
           </div>
         </InlineField>
       </InlineFieldRow>

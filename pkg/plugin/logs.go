@@ -197,8 +197,9 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
-// executeSingleLogsQuery executes a single logs query with pagination and caching support
+// executeSingleLogsQuery executes a single logs query with caching support
 // Also handles logs-volume queries by returning only the volume histogram frame
+// Pagination is handled by Grafana's logs panel (load more on scroll)
 func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel, q *backend.DataQuery) (data.Frames, error) {
 	logger := log.New()
 
@@ -218,45 +219,34 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	from := q.TimeRange.From.UnixMilli()
 	to := q.TimeRange.To.UnixMilli()
 
-	// Get pagination parameters first (needed for cache key)
-	pageSize := 100 // Default page size
-	if qm.PageSize != nil && *qm.PageSize > 0 {
-		pageSize = *qm.PageSize
-		if pageSize > 1000 {
-			pageSize = 1000 // Cap at 1000 for API limits
+	// Get limit from Grafana's MaxDataPoints (set by logs panel)
+	// Default to 500 if not provided, cap at 1000 for Datadog API limits
+	limit := 500
+	if q.MaxDataPoints > 0 {
+		limit = int(q.MaxDataPoints)
+		if limit > 1000 {
+			limit = 1000 // Cap at 1000 for Datadog API limits
 		}
 	}
 
-	// Create cache key for this query (includes query, time range, and pagination)
-	// Include cursor and page size to ensure each page is cached separately
-	cursorKey := qm.NextCursor
-	if cursorKey == "" {
-		cursorKey = "first" // Use "first" for the first page
-	}
-	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%s:%d", logsQuery, from, to, cursorKey, pageSize)
+	// Create cache key for this query (includes query, time range, and limit)
+	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%d", logsQuery, from, to, limit)
 	
 	// Check cache first (60-second TTL for better cache hit rates and reduced API calls)
 	// This helps prevent rate limiting while still being responsive to new logs
 	cacheTTL := 60 * time.Second
-	
-	currentPage := 1 // Default to first page
-	if qm.CurrentPage != nil && *qm.CurrentPage > 0 {
-		currentPage = *qm.CurrentPage
-	}
 
 	logger.Info("Logs cache lookup", 
 		"cacheKey", cacheKey, 
 		"query", logsQuery, 
-		"currentPage", currentPage,
-		"cursor", cursorKey,
-		"pageSize", pageSize)
+		"limit", limit,
+		"isVolumeQuery", isVolumeQuery)
 	
 	if cachedEntry := d.GetCachedLogsEntry(cacheKey, cacheTTL); cachedEntry != nil {
 		logger.Info("✅ Cache HIT - Returning cached logs result", 
 			"query", logsQuery, 
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
-			"currentPage", currentPage,
 			"isVolumeQuery", isVolumeQuery)
 		
 		// For logs-volume queries, return only the volume histogram frame
@@ -272,20 +262,19 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	
 	logger.Info("❌ Cache MISS - Fetching from Datadog API", 
 		"cacheKey", cacheKey,
-		"currentPage", currentPage)
+		"limit", limit)
 
-	// Execute single page query (no automatic pagination)
-	logEntries, nextCursor, err := d.executeSingleLogsPageQuery(ctx, logsQuery, from, to, qm.NextCursor, pageSize)
+	// Execute single query with limit (no cursor-based pagination)
+	logEntries, nextCursor, err := d.executeSingleLogsPageQuery(ctx, logsQuery, from, to, "", limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute logs query: %w", err)
 	}
 
-	// Cache the results for this specific page
+	// Cache the results
 	logger.Info("💾 Caching logs result", 
 		"cacheKey", cacheKey, 
 		"entriesCount", len(logEntries),
-		"currentPage", currentPage,
-		"nextCursor", nextCursor != "",
+		"limit", limit,
 		"cacheTTL", cacheTTL,
 		"isVolumeQuery", isVolumeQuery)
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
@@ -302,46 +291,12 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 
 	// For regular logs queries, create the logs data frame
 	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery, q.TimeRange)
-	
-	// Add pagination metadata to the response
-	if len(frames) > 0 {
-		frame := frames[0]
-		if frame.Meta == nil {
-			frame.Meta = &data.FrameMeta{}
-		}
-		if frame.Meta.Custom == nil {
-			frame.Meta.Custom = make(map[string]interface{})
-		}
-		
-		// Add pagination info to frame metadata
-		if customMap, ok := frame.Meta.Custom.(map[string]interface{}); ok {
-			customMap["pagination"] = map[string]interface{}{
-				"currentPage": currentPage,
-				"pageSize":    pageSize,
-				"hasNextPage": nextCursor != "",
-				"nextCursor":  nextCursor,
-				"totalEntries": len(logEntries),
-			}
-		} else {
-			frame.Meta.Custom = map[string]interface{}{
-				"pagination": map[string]interface{}{
-					"currentPage": currentPage,
-					"pageSize":    pageSize,
-					"hasNextPage": nextCursor != "",
-					"nextCursor":  nextCursor,
-					"totalEntries": len(logEntries),
-				},
-			}
-		}
-	}
 
 	logger.Info("Successfully executed logs query", 
 		"query", logsQuery, 
 		"entriesReturned", len(logEntries),
 		"framesCreated", len(frames),
-		"currentPage", currentPage,
-		"pageSize", pageSize,
-		"hasNextPage", nextCursor != "")
+		"limit", limit)
 
 	return frames, nil
 }
