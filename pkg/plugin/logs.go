@@ -232,9 +232,9 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	}
 	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%s:%d", logsQuery, from, to, cursorKey, pageSize)
 	
-	// Check cache first (30-second TTL for better pagination UX)
-	// Increased back to 30s for better cache hit rates while still being responsive
-	cacheTTL := 30 * time.Second
+	// Check cache first (60-second TTL for better cache hit rates and reduced API calls)
+	// This helps prevent rate limiting while still being responsive to new logs
+	cacheTTL := 60 * time.Second
 	
 	currentPage := 1 // Default to first page
 	if qm.CurrentPage != nil && *qm.CurrentPage > 0 {

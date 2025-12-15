@@ -137,11 +137,13 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           logQuery: query.logQuery,
           // Keep the same indexes if specified
           indexes: query.indexes,
-          // Remove pagination fields as they don't apply to volume queries
-          pageSize: undefined,
-          currentPage: undefined,
+          // Keep pagination fields to ensure cache key matches the logs query
+          // This allows the volume query to reuse cached log entries
+          pageSize: query.pageSize || 100,
+          currentPage: query.currentPage || 1,
+          // Clear cursor-related fields as volume doesn't need pagination
           totalPages: undefined,
-          nextCursor: undefined,
+          nextCursor: '',
         };
         
         console.log('Generated logs volume query', volumeQuery);
