@@ -115,19 +115,19 @@
   - **Property 8: Parsing Mode Consistency**
   - **Validates: Requirements 2.1, 2.4**
 
-- [-] 5. Frontend Integration and Validation
+- [x] 5. Frontend Integration and Validation
 
-- [x] 5.1 Add query validation for JSON parsing configuration
-  - Validate that field is selected when JSON parsing is enabled
-  - Provide clear error messages for invalid configurations
-  - Prevent query execution with incomplete JSON parsing setup
-  - _Requirements: 7.3_
+- [x] 5.1 Remove JSON parsing configuration UI (CHANGED SCOPE)
+  - Removed all JSON parsing configuration UI elements from LogsQueryEditor
+  - Made field parsing automatic and invisible to users
+  - Attributes and tags are now always parsed and flattened
+  - _Requirements: Simplified from original 7.3_
 
-- [x] 5.2 Implement configuration persistence
-  - Ensure JSON parsing configuration is saved with queries
-  - Test configuration persistence across browser sessions
-  - Handle configuration migration for existing queries
-  - _Requirements: 1.5_
+- [x] 5.2 Automatic field parsing implementation
+  - Field parsing now happens automatically in backend without user configuration
+  - All Datadog attributes and tags are parsed using dot notation
+  - Individual fields appear as separate filterable columns in Grafana
+  - _Requirements: Simplified from original 1.5_
 
 - [ ]* 5.3 Write property test for validation enforcement
   - **Property 9: Validation Enforcement**
@@ -153,10 +153,10 @@
   - _Requirements: 9.4_
 
 - [x] 6.3 Add feature documentation
-  - Document JSON parsing configuration options
-  - Provide examples of common use cases and field patterns
-  - Document performance considerations and limitations
-  - Explain error handling and troubleshooting steps
+  - Updated README.md with feature status table and proper documentation links
+  - Changed "JSON Log Parsing" to "Automatic Field Parsing" to reflect new approach
+  - Documented that field parsing is now automatic and invisible to users
+  - Updated documentation links to use absolute GitHub URLs for plugin validation
   - _Requirements: 8.5_
 
 - [ ] 7. Final Integration and Testing
