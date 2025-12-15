@@ -117,49 +117,55 @@ func (h *LogsVolumeHandler) executeQueries(ctx context.Context) (*backend.QueryD
 	return response, nil
 }
 
-// queryLogsVolume executes a logs volume query using Datadog's Logs Aggregation API
+// queryLogsVolume creates a volume histogram from cached log entries
+// NO additional API calls - uses the same data from the logs query cache
 // Requirements: 18.1, 18.2
 func (h *LogsVolumeHandler) queryLogsVolume(ctx context.Context, qm *QueryModel, backendQuery *backend.DataQuery) (backend.DataResponse, error) {
 	logger := log.New()
 
-	// Calculate appropriate bucket size based on time range
-	bucketSize := h.calculateBucketSize(backendQuery.TimeRange)
-	logger.Debug("Calculated bucket size", "bucketSize", bucketSize, "timeRange", backendQuery.TimeRange)
-
-	// Create logs aggregation request for Datadog API
-	// Using logs search API for volume calculation
-	aggRequest := LogsAggregationRequest{
-		Data: LogsAggregationData{
-			Type: "aggregate_request",
-			Attributes: LogsAggregationAttributes{
-				Query: qm.LogQuery,
-				Time: LogsTime{
-					From: backendQuery.TimeRange.From.Format(time.RFC3339),
-					To:   backendQuery.TimeRange.To.Format(time.RFC3339),
-				},
-				Compute: []LogsCompute{{
-					Aggregation: "count",
-				}},
-				GroupBy: []LogsGroupBy{{
-					Facet: "@timestamp",
-					Histogram: LogsHistogram{
-						Interval: bucketSize,
-					},
-				}},
-			},
-		},
+	// Get cached log entries from the main logs query - NO additional API calls
+	from := backendQuery.TimeRange.From.UnixMilli()
+	to := backendQuery.TimeRange.To.UnixMilli()
+	
+	// Build cache key matching the logs query cache key format
+	cursorKey := "first"
+	pageSize := 100
+	if qm.PageSize != nil && *qm.PageSize > 0 {
+		pageSize = *qm.PageSize
+	}
+	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%s:%d", qm.LogQuery, from, to, cursorKey, pageSize)
+	
+	// Try to get cached entries (use same TTL as logs queries)
+	cacheTTL := 30 * time.Second
+	cachedEntry := h.datasource.GetCachedLogsEntry(cacheKey, cacheTTL)
+	
+	var logEntries []LogEntry
+	if cachedEntry != nil {
+		logEntries = cachedEntry.LogEntries
+		logger.Info("Using cached log entries for volume calculation", 
+			"query", qm.LogQuery,
+			"entriesCount", len(logEntries),
+			"cacheKey", cacheKey)
+	} else {
+		// If no cache, return empty volume frame - the logs query will populate the cache
+		logger.Info("No cached log entries for volume calculation, returning empty frame", 
+			"query", qm.LogQuery,
+			"cacheKey", cacheKey)
+		parser := NewLogsResponseParser(h.datasource)
+		volumeFrame := parser.createEmptyVolumeFrame(backendQuery.RefID)
+		return backend.DataResponse{Frames: data.Frames{volumeFrame}}, nil
 	}
 
-	// Execute aggregation API call
-	aggregationResponse, err := h.callLogsAggregationAPI(ctx, aggRequest)
-	if err != nil {
-		return backend.DataResponse{}, fmt.Errorf("logs aggregation API call failed: %w", err)
-	}
+	// Create volume frame from cached entries - no API calls!
+	parser := NewLogsResponseParser(h.datasource)
+	volumeFrame := parser.createLogsVolumeFrame(logEntries, backendQuery.RefID, backendQuery.TimeRange)
 
-	// Transform response to Grafana data frame
-	frame := h.createLogsVolumeDataFrame(aggregationResponse, bucketSize, backendQuery.RefID)
+	logger.Info("Created volume histogram from cached log entries", 
+		"query", qm.LogQuery,
+		"entriesCount", len(logEntries),
+		"refID", backendQuery.RefID)
 
-	return backend.DataResponse{Frames: []*data.Frame{frame}}, nil
+	return backend.DataResponse{Frames: data.Frames{volumeFrame}}, nil
 }
 
 // calculateBucketSize determines the appropriate time bucket size based on the query time range

@@ -432,17 +432,9 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"fieldCount", len(frame.Fields),
 		"searchWords", searchWords)
 
-	// Create volume histogram frame from the same log entries
-	// This calculates histogram data points based on log line timestamps
-	var volumeFrame *data.Frame
-	if len(timeRange) > 0 {
-		volumeFrame = p.createLogsVolumeFrame(sanitizedEntries, refID, timeRange[0])
-	} else {
-		// Fallback: calculate time range from log entries if not provided
-		volumeFrame = p.createLogsVolumeFrameFromEntries(sanitizedEntries, refID)
-	}
-
-	return data.Frames{frame, volumeFrame}
+	// Note: Volume histogram is now handled by supplementary queries (LogsVolumeHandler)
+	// This ensures Grafana's logs panel properly recognizes and displays the histogram
+	return data.Frames{frame}
 }
 
 // createEmptyLogsDataFrame creates an empty logs data frame with corrected structure
@@ -498,10 +490,8 @@ func (p *LogsResponseParser) createEmptyLogsDataFrame(refID string) data.Frames 
 
 	logger.Debug("Created empty corrected logs data frame", "refID", refID)
 	
-	// Also create empty volume frame for consistency
-	volumeFrame := p.createEmptyVolumeFrame(refID)
-	
-	return data.Frames{frame, volumeFrame}
+	// Note: Volume histogram is now handled by supplementary queries (LogsVolumeHandler)
+	return data.Frames{frame}
 }
 
 // addPaginationMetadata adds pagination information to data frames
