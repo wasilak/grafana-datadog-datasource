@@ -168,22 +168,26 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 	return logEntries, nil
 }
 
-// parseTimestamp parses timestamp from log attributes
+// parseTimestamp parses timestamp from log attributes and ensures UTC timezone
+// Grafana expects all timestamps in UTC for proper display
 func (p *LogsResponseParser) parseTimestamp(attributes map[string]interface{}) (time.Time, error) {
 	timestampInterface, exists := attributes["timestamp"]
 	if !exists {
 		return time.Time{}, fmt.Errorf("timestamp field not found")
 	}
 
+	var parsedTime time.Time
+	var err error
+
 	switch ts := timestampInterface.(type) {
 	case string:
 		// Try RFC3339 format first (Datadog standard)
-		if parsedTime, err := time.Parse(time.RFC3339, ts); err == nil {
-			return parsedTime, nil
+		if parsedTime, err = time.Parse(time.RFC3339, ts); err == nil {
+			return parsedTime.UTC(), nil
 		}
 		// Try RFC3339Nano format
-		if parsedTime, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-			return parsedTime, nil
+		if parsedTime, err = time.Parse(time.RFC3339Nano, ts); err == nil {
+			return parsedTime.UTC(), nil
 		}
 		// Try other common formats
 		formats := []string{
@@ -192,20 +196,20 @@ func (p *LogsResponseParser) parseTimestamp(attributes map[string]interface{}) (
 			"2006-01-02 15:04:05",
 		}
 		for _, format := range formats {
-			if parsedTime, err := time.Parse(format, ts); err == nil {
-				return parsedTime, nil
+			if parsedTime, err = time.Parse(format, ts); err == nil {
+				return parsedTime.UTC(), nil
 			}
 		}
 		return time.Time{}, fmt.Errorf("unable to parse timestamp string: %s", ts)
 	case float64:
-		// Unix timestamp in seconds
-		return time.Unix(int64(ts), 0), nil
+		// Unix timestamp in seconds - already UTC
+		return time.Unix(int64(ts), 0).UTC(), nil
 	case int64:
-		// Unix timestamp in seconds or milliseconds
+		// Unix timestamp in seconds or milliseconds - already UTC
 		if ts > 1e12 { // Likely milliseconds
-			return time.UnixMilli(ts), nil
+			return time.UnixMilli(ts).UTC(), nil
 		}
-		return time.Unix(ts, 0), nil
+		return time.Unix(ts, 0).UTC(), nil
 	default:
 		return time.Time{}, fmt.Errorf("unsupported timestamp type: %T", ts)
 	}
@@ -570,8 +574,11 @@ func (p *LogsResponseParser) sanitizeLogEntry(entry LogEntry) LogEntry {
 	entry.Body = strings.TrimSpace(entry.Body)
 
 	// Ensure timestamp is not zero - use current time as fallback
+	// Always convert to UTC for Grafana compatibility
 	if entry.Timestamp.IsZero() {
-		entry.Timestamp = time.Now()
+		entry.Timestamp = time.Now().UTC()
+	} else {
+		entry.Timestamp = entry.Timestamp.UTC()
 	}
 
 	// Sanitize labels JSON if present
