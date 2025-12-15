@@ -195,8 +195,12 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 }
 
 // executeSingleLogsQuery executes a single logs query with pagination and caching support
+// Also handles logs-volume queries by returning only the volume histogram frame
 func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel, q *backend.DataQuery) (data.Frames, error) {
 	logger := log.New()
+
+	// Check if this is a logs-volume query (supplementary query for histogram)
+	isVolumeQuery := qm.QueryType == "logs-volume"
 
 	// Create logs response parser
 	parser := NewLogsResponseParser(d)
@@ -249,8 +253,16 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 			"query", logsQuery, 
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
-			"currentPage", currentPage)
-		// Use parser to create frames from cached entries, passing time range for volume calculation
+			"currentPage", currentPage,
+			"isVolumeQuery", isVolumeQuery)
+		
+		// For logs-volume queries, return only the volume histogram frame
+		if isVolumeQuery {
+			volumeFrame := parser.createLogsVolumeFrame(cachedEntry.LogEntries, q.RefID, q.TimeRange)
+			return data.Frames{volumeFrame}, nil
+		}
+		
+		// For regular logs queries, return the logs data frame
 		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID, logsQuery, q.TimeRange)
 		return frames, nil
 	}
@@ -271,10 +283,21 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		"entriesCount", len(logEntries),
 		"currentPage", currentPage,
 		"nextCursor", nextCursor != "",
-		"cacheTTL", cacheTTL)
+		"cacheTTL", cacheTTL,
+		"isVolumeQuery", isVolumeQuery)
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
-	// Use parser to create Grafana data frames from log entries, passing time range for volume calculation
+	// For logs-volume queries, return only the volume histogram frame
+	if isVolumeQuery {
+		volumeFrame := parser.createLogsVolumeFrame(logEntries, q.RefID, q.TimeRange)
+		logger.Info("Created volume histogram frame for logs-volume query",
+			"query", logsQuery,
+			"entriesCount", len(logEntries),
+			"refID", q.RefID)
+		return data.Frames{volumeFrame}, nil
+	}
+
+	// For regular logs queries, create the logs data frame
 	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery, q.TimeRange)
 	
 	// Add pagination metadata to the response

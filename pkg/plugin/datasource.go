@@ -180,10 +180,10 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 	// Use Query Handler Architecture Pattern
 	// Create handlers for different query types
+	// Note: LogsVolumeQueryType is handled by LogsHandler - volume is calculated from log entries
 	handlers := make(map[QueryType]QueryHandler)
 	handlers[MetricsQueryType] = NewMetricsHandler(d, req.Queries, ddCtx, metricsApi)
 	handlers[LogsQueryType] = NewLogsHandler(d, req.Queries, ddCtx)
-	handlers[LogsVolumeQueryType] = NewLogsVolumeHandler(d, req.Queries, ddCtx)
 
 	// Parse all queries and route to appropriate handlers
 	for _, q := range req.Queries {

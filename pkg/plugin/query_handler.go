@@ -23,11 +23,10 @@ const (
 	// MetricsQueryType represents Datadog metrics queries
 	MetricsQueryType QueryType = "metrics"
 	
-	// LogsQueryType represents Datadog logs queries  
+	// LogsQueryType represents Datadog logs queries
+	// Note: logs-volume queries are also handled by LogsHandler since volume
+	// is calculated from log entries (no separate API call needed)
 	LogsQueryType QueryType = "logs"
-	
-	// LogsVolumeQueryType represents logs volume histogram queries
-	LogsVolumeQueryType QueryType = "logs-volume"
 )
 
 // detectQueryType determines the query type based on the QueryModel
@@ -36,10 +35,10 @@ func detectQueryType(qm *QueryModel) QueryType {
 	// Explicit query type takes precedence
 	if qm.QueryType != "" {
 		switch qm.QueryType {
-		case "logs":
+		case "logs", "logs-volume":
+			// Both logs and logs-volume are handled by LogsHandler
+			// Volume histogram is calculated from log entries
 			return LogsQueryType
-		case "logs-volume":
-			return LogsVolumeQueryType
 		case "metrics":
 			return MetricsQueryType
 		}
