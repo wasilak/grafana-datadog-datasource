@@ -18,14 +18,12 @@ import (
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4
 type LogsResponseParser struct {
 	datasource *Datasource
-	jsonConfig *JSONParsingConfig
 }
 
 // NewLogsResponseParser creates a new LogsResponseParser instance
-func NewLogsResponseParser(datasource *Datasource, jsonConfig *JSONParsingConfig) *LogsResponseParser {
+func NewLogsResponseParser(datasource *Datasource) *LogsResponseParser {
 	return &LogsResponseParser{
 		datasource: datasource,
-		jsonConfig: jsonConfig,
 	}
 }
 
@@ -58,7 +56,7 @@ func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refI
 	logger.Debug("Parsing structured logs response", "entryCount", len(response.Data))
 
 	// Convert log entries from response
-	logEntries, err := p.convertDataArrayToLogEntries(response.Data, p.jsonConfig)
+	logEntries, err := p.convertDataArrayToLogEntries(response.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert log entries: %w", err)
 	}
@@ -110,7 +108,7 @@ func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, 
 	logger.Debug("Parsing logs data array", "entryCount", len(dataArray))
 
 	// Convert log entries from data array
-	logEntries, err := p.convertDataArrayToLogEntries(dataArray, p.jsonConfig)
+	logEntries, err := p.convertDataArrayToLogEntries(dataArray)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert log entries: %w", err)
 	}
@@ -120,8 +118,8 @@ func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, 
 }
 
 // convertDataArrayToLogEntries converts Datadog API data array to LogEntry structs
-// Applies JSON parsing if configuration is provided
-func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string]interface{}, jsonConfig *JSONParsingConfig) ([]LogEntry, error) {
+// Always flattens attributes and tags for Grafana filtering
+func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string]interface{}) ([]LogEntry, error) {
 	logger := log.New()
 	var logEntries []LogEntry
 
@@ -157,7 +155,8 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 		// Extract standard fields using the corrected structure
 		body, severity, labels := p.extractLogAttributes(attributes)
 		
-		// Extract and flatten all attributes and tags for Grafana filtering
+		// Always extract and flatten all attributes and tags for Grafana filtering
+		// This enables individual filterable columns in Grafana UI without user configuration
 		flattenedFields, _ := p.extractIndividualFields(attributes)
 
 		// Create log entry with corrected structure
@@ -167,12 +166,7 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 			Body:            body,            // ✅ CORRECT - Changed from Message
 			Severity:        severity,        // ✅ CORRECT - Changed from Level
 			Labels:          labels,          // ✅ CORRECT - All metadata as JSON
-			FlattenedFields: flattenedFields, // Flattened attributes and tags for filtering
-		}
-
-		// Apply JSON parsing if configuration is provided and enabled
-		if jsonConfig != nil && jsonConfig.Enabled {
-			p.applyJSONParsing(&entry, attributes, jsonConfig)
+			FlattenedFields: flattenedFields, // Always flattened attributes and tags for filtering
 		}
 
 		logEntries = append(logEntries, entry)

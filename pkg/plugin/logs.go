@@ -212,8 +212,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	// Check if this is a logs-volume query (supplementary query for histogram)
 	isVolumeQuery := qm.QueryType == "logs-volume"
 
-	// Create logs response parser with JSON parsing configuration
-	parser := NewLogsResponseParser(d, qm.JSONParsing)
+	// Create logs response parser (always flattens attributes and tags)
+	parser := NewLogsResponseParser(d)
 
 	// Translate Grafana query to Datadog logs search syntax
 	logsQuery, err := d.translateLogsQuery(qm, q)
@@ -524,8 +524,8 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	}
 
 	// Parse log entries from response using parser
-	parser := NewLogsResponseParser(d, nil) // No JSON config available at this level
-	logEntries, err := parser.convertDataArrayToLogEntries(logsResponse.Data, nil)
+	parser := NewLogsResponseParser(d) // Always flattens attributes and tags
+	logEntries, err := parser.convertDataArrayToLogEntries(logsResponse.Data)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to parse logs response: %w", err)
 	}

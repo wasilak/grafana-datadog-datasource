@@ -3,17 +3,12 @@ import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRo
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
-import { MyDataSourceOptions, MyQuery, CompletionItem, JSONParsingConfig } from './types';
+import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
 import { validateLogsQuery } from './utils/logsQueryValidator';
-import { FieldSelector } from './components/FieldSelector';
-import { 
-  validateJsonParsingConfiguration, 
-  serializeJsonParsingConfiguration,
-  isJsonParsingConfigurationEqual 
-} from './utils/jsonParsingMigration';
+
 
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -37,7 +32,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [showHelp, setShowHelp] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
-  const [fieldSelectorError, setFieldSelectorError] = useState<string | null>(null);
+
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -210,75 +205,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     setShowHelp(false);
   };
 
-  // JSON parsing configuration handlers
-  const handleJsonParsingToggle = (enabled: boolean) => {
-    const newJsonParsing = enabled 
-      ? { 
-          enabled: true, 
-          targetField: 'message' as const, // Default to message field
-          options: {
-            preserveOriginal: true,
-            flattenNested: true,
-            maxDepth: 10,
-            maxSize: 1024 * 1024 // 1MB
-          }
-        }
-      : { enabled: false, targetField: 'message' as const };
 
-    // Clear field selector error when disabling JSON parsing
-    if (!enabled) {
-      setFieldSelectorError(null);
-    }
-
-    // Serialize configuration to ensure clean persistence
-    const serializedConfig = serializeJsonParsingConfiguration(newJsonParsing);
-
-    onChange({
-      ...query,
-      jsonParsing: serializedConfig
-    });
-  };
-
-  const handleTargetFieldChange = (targetField: string) => {
-    if (!query.jsonParsing) return;
-    
-    // Clear validation error when field is selected
-    setFieldSelectorError(null);
-    
-    const updatedConfig = {
-      ...query.jsonParsing,
-      targetField: targetField as any
-    };
-
-    // Serialize configuration to ensure clean persistence
-    const serializedConfig = serializeJsonParsingConfiguration(updatedConfig);
-    
-    onChange({
-      ...query,
-      jsonParsing: serializedConfig
-    });
-  };
-
-  // Comprehensive validation function for JSON parsing configuration
-  const validateJsonParsingConfigurationLocal = () => {
-    // Clear any existing errors first
-    setFieldSelectorError(null);
-    
-    // Use the centralized validation utility
-    const validation = validateJsonParsingConfiguration(query.jsonParsing);
-    
-    if (!validation.isValid && validation.errors.length > 0) {
-      setFieldSelectorError(validation.errors[0]); // Show first error
-      return false;
-    }
-
-    // Log warnings to console
-    validation.warnings.forEach(warning => {
-      console.warn(`JSON Parsing Configuration: ${warning}`);
-    });
-
-    return true;
-  };
 
   // Enhanced validation that prevents query execution with invalid configuration
   const canExecuteQuery = () => {
@@ -288,30 +215,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       return false;
     }
 
-    // JSON parsing configuration validation
-    if (!validateJsonParsingConfigurationLocal()) {
-      return false;
-    }
-
     return true;
   };
 
-  // Track previous configuration for change detection
-  const [previousConfig, setPreviousConfig] = useState<JSONParsingConfig | undefined>(query.jsonParsing);
 
-  // Validate configuration when JSON parsing state changes
-  useEffect(() => {
-    validateJsonParsingConfigurationLocal();
-    
-    // Detect configuration changes and provide feedback
-    if (!isJsonParsingConfigurationEqual(previousConfig, query.jsonParsing)) {
-      console.log('JSON parsing configuration changed:', {
-        previous: previousConfig,
-        current: query.jsonParsing,
-      });
-      setPreviousConfig(query.jsonParsing);
-    }
-  }, [query.jsonParsing?.enabled, query.jsonParsing?.targetField, query.jsonParsing?.options]);
 
   // Helper function to calculate suggestions dropdown position
   const updateSuggestionsPositionFromEditor = (
@@ -423,15 +330,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
   const { logQuery = '' } = query;
 
-  // Simplified field options - only message parsing is configurable
-  // Attributes and tags are always parsed automatically since they come as JSON from Datadog
-  const fieldOptions = [
-    { 
-      label: 'Log Message', 
-      value: 'message',
-      description: 'Parse JSON content from the log message field (attributes and tags are always parsed automatically)'
-    }
-  ];
+
 
   return (
     <Stack gap={2} direction="column">
@@ -660,46 +559,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
         </InlineField>
       </InlineFieldRow>
 
-      {/* JSON Parsing Configuration Panel */}
-      <InlineFieldRow>
-        <InlineField 
-          label="Parse Message JSON" 
-          labelWidth={14}
-          tooltip="Parse JSON content from log messages (attributes and tags are always parsed automatically)"
-        >
-          <Stack gap={1} direction="row" alignItems="center">
-            <Button
-              variant={query.jsonParsing?.enabled ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => handleJsonParsingToggle(!query.jsonParsing?.enabled)}
-              icon={query.jsonParsing?.enabled ? "check" : "plus"}
-            >
-              {query.jsonParsing?.enabled ? 'Message Parsing Enabled' : 'Parse Message as JSON'}
-            </Button>
-          </Stack>
-        </InlineField>
-      </InlineFieldRow>
 
-      {/* Automatic field selection - no user input needed since only message parsing is configurable */}
-      {query.jsonParsing?.enabled && (
-        <InlineFieldRow>
-          <InlineField 
-            label="Parsing" 
-            labelWidth={14}
-            tooltip="Message field will be parsed as JSON. Attributes and tags are always parsed automatically."
-          >
-            <div style={{ 
-              padding: '6px 12px', 
-              backgroundColor: theme.colors.background.secondary, 
-              borderRadius: '3px',
-              fontSize: '12px',
-              color: theme.colors.text.secondary
-            }}>
-              ✓ Message field • ✓ Attributes (automatic) • ✓ Tags (automatic)
-            </div>
-          </InlineField>
-        </InlineFieldRow>
-      )}
 
       {/* Logs Help Component */}
       {showHelp && (
