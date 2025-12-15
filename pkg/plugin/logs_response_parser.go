@@ -268,7 +268,8 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 		labels.Version = version
 	}
 
-	// Extract tags (Datadog returns tags as array of "key:value" strings)
+	// Extract and parse tags (Datadog returns tags as array of "key:value" strings)
+	// Always parse tags as structured data since they're already structured from Datadog
 	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
 		labels.Tags = make(map[string]string)
 		for _, tag := range tagsArray {
@@ -281,7 +282,8 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 		}
 	}
 
-	// Collect remaining attributes
+	// Always parse remaining attributes as structured data since they come from Datadog as JSON
+	// This provides automatic access to all custom attributes without user configuration
 	labels.Attributes = make(map[string]interface{})
 	for key, value := range attributes {
 		if key != "message" && key != "status" && key != "service" &&
@@ -892,91 +894,22 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 	var targetValue string
 	var err error
 	
+	// Only support parsing the message/body field since attributes and tags are always parsed automatically
 	switch config.TargetField {
-	case "whole_log":
-		// Parse the entire log entry as JSON
-		// Reconstruct the full log data for parsing
-		fullLogData := make(map[string]interface{})
-		fullLogData["id"] = entry.ID
-		fullLogData["timestamp"] = entry.Timestamp
-		fullLogData["body"] = entry.Body
-		fullLogData["severity"] = entry.Severity
-		fullLogData["attributes"] = attributes
-		
-		// Convert to JSON string for parsing
-		jsonBytes, marshalErr := json.Marshal(fullLogData)
-		if marshalErr != nil {
-			errorMsg := fmt.Sprintf("Failed to marshal whole log for parsing: %v", marshalErr)
-			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-			logger.Warn("JSON marshaling failed for whole log", "logID", entry.ID, "error", marshalErr)
-			return
-		}
-		targetValue = string(jsonBytes)
-		
-	case "message", "body":
-		// Parse the body/message field
+	case "message", "body", "":
+		// Parse the body/message field - this is the only user-configurable JSON parsing
 		targetValue = entry.Body
 		if targetValue == "" {
 			logger.Debug("Body field is empty, skipping JSON parsing", "logID", entry.ID)
 			return
 		}
 		
-	case "data":
-		// Parse the data field from attributes
-		if dataField, exists := attributes["data"]; exists {
-			if dataStr, ok := dataField.(string); ok {
-				targetValue = dataStr
-			} else {
-				// If data is not a string, try to marshal it to JSON first
-				jsonBytes, marshalErr := json.Marshal(dataField)
-				if marshalErr != nil {
-					errorMsg := fmt.Sprintf("Failed to marshal data field for parsing: %v", marshalErr)
-					entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-					logger.Warn("JSON marshaling failed for data field", "logID", entry.ID, "error", marshalErr)
-					return
-				}
-				targetValue = string(jsonBytes)
-			}
-		} else {
-			errorMsg := "Data field not found in log attributes"
-			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-			logger.Debug("Data field not found", "logID", entry.ID)
-			return
-		}
-		
-	case "attributes":
-		// Parse the entire attributes object
-		jsonBytes, marshalErr := json.Marshal(attributes)
-		if marshalErr != nil {
-			errorMsg := fmt.Sprintf("Failed to marshal attributes for parsing: %v", marshalErr)
-			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-			logger.Warn("JSON marshaling failed for attributes", "logID", entry.ID, "error", marshalErr)
-			return
-		}
-		targetValue = string(jsonBytes)
-		
 	default:
-		// Parse a custom field from attributes
-		if customField, exists := attributes[config.TargetField]; exists {
-			if customStr, ok := customField.(string); ok {
-				targetValue = customStr
-			} else {
-				// If custom field is not a string, try to marshal it to JSON first
-				jsonBytes, marshalErr := json.Marshal(customField)
-				if marshalErr != nil {
-					errorMsg := fmt.Sprintf("Failed to marshal custom field '%s' for parsing: %v", config.TargetField, marshalErr)
-					entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-					logger.Warn("JSON marshaling failed for custom field", "logID", entry.ID, "field", config.TargetField, "error", marshalErr)
-					return
-				}
-				targetValue = string(jsonBytes)
-			}
-		} else {
-			errorMsg := fmt.Sprintf("Custom field '%s' not found in log attributes", config.TargetField)
-			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-			logger.Debug("Custom field not found", "logID", entry.ID, "field", config.TargetField)
-			return
-		}
+		// Attributes and tags are now always parsed automatically, no user configuration needed
+		errorMsg := fmt.Sprintf("Unsupported target field: %s. Only 'message' field parsing is configurable. Attributes and tags are always parsed automatically.", config.TargetField)
+		entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+		logger.Warn("Unsupported target field for JSON parsing", "logID", entry.ID, "targetField", config.TargetField)
+		return
 	}
 	
 	// Skip parsing if target value is empty or only whitespace

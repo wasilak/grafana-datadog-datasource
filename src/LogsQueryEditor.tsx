@@ -423,27 +423,13 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
   const { logQuery = '' } = query;
 
-  // Field selector options with descriptions
+  // Simplified field options - only message parsing is configurable
+  // Attributes and tags are always parsed automatically since they come as JSON from Datadog
   const fieldOptions = [
     { 
-      label: 'Message Field', 
+      label: 'Log Message', 
       value: 'message',
-      description: 'Parse JSON content from the log message field'
-    },
-    { 
-      label: 'Data Field', 
-      value: 'data',
-      description: 'Parse JSON content from the data field'
-    },
-    { 
-      label: 'Attributes Field', 
-      value: 'attributes',
-      description: 'Parse JSON content from the attributes field'
-    },
-    { 
-      label: 'Whole Log', 
-      value: 'whole_log',
-      description: 'Parse the entire log entry as JSON'
+      description: 'Parse JSON content from the log message field (attributes and tags are always parsed automatically)'
     }
   ];
 
@@ -677,9 +663,9 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       {/* JSON Parsing Configuration Panel */}
       <InlineFieldRow>
         <InlineField 
-          label="JSON Parsing" 
+          label="Parse Message JSON" 
           labelWidth={14}
-          tooltip="Enable JSON parsing to extract structured data from log fields"
+          tooltip="Parse JSON content from log messages (attributes and tags are always parsed automatically)"
         >
           <Stack gap={1} direction="row" alignItems="center">
             <Button
@@ -688,39 +674,31 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
               onClick={() => handleJsonParsingToggle(!query.jsonParsing?.enabled)}
               icon={query.jsonParsing?.enabled ? "check" : "plus"}
             >
-              {query.jsonParsing?.enabled ? 'Enabled' : 'Enable JSON Parsing'}
+              {query.jsonParsing?.enabled ? 'Message Parsing Enabled' : 'Parse Message as JSON'}
             </Button>
           </Stack>
         </InlineField>
       </InlineFieldRow>
 
-      {/* Field Selector - shown when JSON parsing is enabled */}
+      {/* Automatic field selection - no user input needed since only message parsing is configurable */}
       {query.jsonParsing?.enabled && (
-        <>
-          <InlineFieldRow>
-            <FieldSelector
-              value={query.jsonParsing.targetField || ''}
-              onChange={handleTargetFieldChange}
-              options={fieldOptions}
-              label="Parse Field"
-              labelWidth={14}
-              tooltip="Select which log field contains JSON data to parse"
-              placeholder="Select field to parse"
-              required={true}
-              width={25}
-              validationError={fieldSelectorError}
-            />
-          </InlineFieldRow>
-          
-          {/* Display field selector validation error prominently */}
-          {fieldSelectorError && (
-            <Alert title="JSON Parsing Configuration Error" severity="error">
-              {fieldSelectorError}
-              <br />
-              <small>Query execution is disabled until this error is resolved.</small>
-            </Alert>
-          )}
-        </>
+        <InlineFieldRow>
+          <InlineField 
+            label="Parsing" 
+            labelWidth={14}
+            tooltip="Message field will be parsed as JSON. Attributes and tags are always parsed automatically."
+          >
+            <div style={{ 
+              padding: '6px 12px', 
+              backgroundColor: theme.colors.background.secondary, 
+              borderRadius: '3px',
+              fontSize: '12px',
+              color: theme.colors.text.secondary
+            }}>
+              ✓ Message field • ✓ Attributes (automatic) • ✓ Tags (automatic)
+            </div>
+          </InlineField>
+        </InlineFieldRow>
       )}
 
       {/* Logs Help Component */}

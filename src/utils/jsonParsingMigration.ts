@@ -56,14 +56,15 @@ export function validateJsonParsingConfiguration(config?: JSONParsingConfig): {
     return { isValid: true, errors, warnings };
   }
 
-  // Check if target field is selected
+  // Check if target field is selected - only 'message' is now supported for user configuration
+  // Attributes and tags are always parsed automatically
   if (!config.targetField) {
     errors.push('Field selection is required when JSON parsing is enabled');
   } else {
-    // Validate target field is one of the allowed options
-    const validFields = ['message', 'data', 'attributes', 'whole_log'];
+    // Only 'message' field parsing is configurable - attributes and tags are always parsed
+    const validFields = ['message'];
     if (!validFields.includes(config.targetField)) {
-      errors.push(`Invalid field selection. Please choose from: ${validFields.join(', ')}`);
+      errors.push(`Invalid field selection. Only 'message' field parsing is configurable. Attributes and tags are always parsed automatically.`);
     }
   }
 
@@ -87,10 +88,7 @@ export function validateJsonParsingConfiguration(config?: JSONParsingConfig): {
     }
   }
 
-  // Field-specific warnings
-  if (config.targetField === 'whole_log') {
-    warnings.push('Whole log parsing may impact performance with large log volumes');
-  }
+  // No field-specific warnings needed since only 'message' field is supported
 
   return {
     isValid: errors.length === 0,

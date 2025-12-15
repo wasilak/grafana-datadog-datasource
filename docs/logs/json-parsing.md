@@ -14,58 +14,85 @@ The JSON parsing feature addresses the common scenario where applications log st
 - **Maintains original data** alongside parsed fields
 - **Handles various JSON structures** dynamically
 
-### Common Use Cases
+### What You Get Automatically
 
 ```bash
-# Before JSON parsing: Escaped JSON string
-message: "{\"user\":{\"id\":123,\"name\":\"John\"},\"action\":\"login\",\"timestamp\":\"2023-12-01T10:00:00Z\"}"
+# Datadog logs automatically include structured data:
+attributes: {
+  "service": "web-app",
+  "env": "production", 
+  "user_id": 123,
+  "request_id": "abc-123"
+}
 
-# After JSON parsing: Individual accessible fields
-parsed_user.id: 123
-parsed_user.name: "John"
+tags: {
+  "version": "1.2.3",
+  "datacenter": "us-east-1",
+  "team": "backend"
+}
+
+# These become individual accessible fields automatically:
+service: "web-app"
+env: "production"
+user_id: 123
+request_id: "abc-123"
+version: "1.2.3"
+datacenter: "us-east-1"
+team: "backend"
+```
+
+### Optional Message Parsing
+
+```bash
+# If your log message contains JSON:
+message: "{\"action\":\"login\",\"result\":\"success\",\"duration_ms\":45}"
+
+# Enable message parsing to get:
 parsed_action: "login"
-parsed_timestamp: "2023-12-01T10:00:00Z"
+parsed_result: "success"
+parsed_duration_ms: 45
 ```
 
 ## 🚀 Getting Started
 
-### Step 1: Enable JSON Parsing
+### Step 1: Automatic Parsing (Always Enabled)
+
+**Attributes and tags are automatically parsed** - no configuration needed! Datadog logs already come with structured JSON data in these fields.
+
+### Step 2: Optional Message Parsing
 
 1. Open the **Logs Query Editor**
-2. Look for the **JSON Parsing** section below the main query input
-3. Toggle the **Enable JSON Parsing** switch to `ON`
-
-### Step 2: Select Target Field
-
-Choose which field contains the JSON data to parse:
-
-- **`whole_log`** - Parse the entire log message as JSON
-- **`message`** - Parse only the message field content
-- **`data`** - Parse a custom data field
-- **`attributes`** - Parse log attributes field
+2. Look for the **Parse Message JSON** section below the main query input
+3. Click **Parse Message as JSON** to enable parsing of the log message field
 
 ### Step 3: Run Your Query
 
-Execute your logs query as normal. The parsed JSON fields will appear as additional columns in the logs panel.
+Execute your logs query as normal. You'll see:
+- **Automatic fields**: All attributes and tags as individual columns
+- **Optional fields**: Parsed message content (if enabled)
 
 ## 📋 Configuration Options
 
-### Field Selection
+### Automatic Parsing (Always Enabled)
 
-| Field Option | Description | Use Case |
-|--------------|-------------|----------|
-| `whole_log` | Parse entire log entry as JSON | Fully structured JSON logs |
-| `message` | Parse message field content | JSON in log message |
-| `data` | Parse custom data field | Application-specific data field |
-| `attributes` | Parse attributes field | Metadata in attributes |
+| Field | Description | Status |
+|-------|-------------|--------|
+| `attributes` | All log attributes from Datadog | ✅ Always parsed automatically |
+| `tags` | All log tags from Datadog | ✅ Always parsed automatically |
 
-### Advanced Options
+### Optional Message Parsing
 
-The JSON parser includes several built-in safeguards:
+| Field Option | Description | Configuration |
+|--------------|-------------|---------------|
+| `message` | Parse JSON content from log message | Toggle on/off as needed |
 
-- **Size Limits**: Large JSON objects are automatically limited to prevent memory issues
+### Built-in Safeguards
+
+The JSON parser includes automatic protections:
+
+- **Size Limits**: Large JSON objects are limited to prevent memory issues
 - **Depth Limits**: Deeply nested structures are limited to prevent performance degradation  
-- **Timeout Protection**: Parsing operations have timeouts to prevent query blocking
+- **Timeout Protection**: Parsing operations timeout to prevent query blocking
 - **Error Handling**: Invalid JSON preserves original data and continues processing
 
 ## 🔧 Field Structure and Naming
@@ -238,25 +265,28 @@ parsed_performance.cache_hits: 12
 
 ## 🔍 Filtering with Parsed Fields
 
-### Using Parsed Fields in Queries
+### Using Structured Fields in Queries
 
-Once JSON is parsed, you can filter on the individual fields:
+Filter using automatically parsed attributes and tags:
 
 ```bash
-# Filter by parsed user ID
-service:web-app parsed_user_id:12345
+# Filter by service (from attributes)
+service:web-app
 
-# Filter by parsed error codes
-service:api parsed_error.code:INVALID_CREDENTIALS
+# Filter by environment (from attributes)  
+env:production
 
-# Filter by parsed response status
-service:gateway parsed_response.status:>=500
+# Filter by user ID (from attributes)
+user_id:12345
 
-# Filter by parsed performance metrics
-service:database parsed_execution_time_ms:>1000
+# Filter by version (from tags)
+version:1.2.3
 
-# Complex filtering with parsed fields
-service:web-app parsed_user.role:admin parsed_action:delete parsed_result:success
+# Filter by parsed message fields (if message parsing enabled)
+service:web-app parsed_action:login parsed_result:success
+
+# Complex filtering with automatic and parsed fields
+service:web-app env:production user_id:12345 parsed_error.code:TIMEOUT
 ```
 
 ### Combining Original and Parsed Fields
@@ -276,14 +306,15 @@ service:web-app status:ERROR parsed_error.code:DATABASE_CONNECTION
 
 ### Optimization Guidelines
 
-1. **Enable Only When Needed**
-   - JSON parsing adds processing overhead
-   - Only enable for queries that need structured field access
-   - Disable when working with plain text logs
+1. **Automatic Parsing is Optimized**
+   - Attributes and tags parsing is always enabled and optimized
+   - No performance impact from automatic parsing
+   - These fields are already structured from Datadog
 
-2. **Choose Appropriate Fields**
-   - Parse specific fields (`message`, `data`) rather than `whole_log` when possible
-   - Smaller JSON structures parse faster than large ones
+2. **Message Parsing Considerations**
+   - Only enable message parsing when log messages contain JSON
+   - Message parsing adds minimal overhead for valid JSON
+   - Disable message parsing for plain text logs
 
 3. **Monitor Query Performance**
    - Large JSON objects may increase query response time
@@ -321,24 +352,29 @@ service:web-app parsed_error.code:DATABASE_ERROR @timestamp:>now-1h
 
 #### 1. No Parsed Fields Appearing
 
-**Symptoms**: JSON parsing is enabled but no `parsed_*` fields appear
+**Symptoms**: Expected structured fields don't appear in logs panel
 
-**Possible Causes**:
-- Selected field doesn't contain valid JSON
-- JSON is nested within escaped strings
-- Field name doesn't exist in log entries
+**Automatic Fields (Should Always Appear)**:
+- Attributes and tags from Datadog are always parsed automatically
+- Look for fields like `service`, `env`, `host`, `source`, etc.
+- These come from Datadog's structured log data
+
+**Message Parsing Issues**:
+- Message field doesn't contain valid JSON
+- JSON syntax errors in message content
+- Message parsing not enabled
 
 **Solutions**:
 ```bash
-# Check if field contains JSON
-# Look at raw log data first
-service:web-app
+# Check automatic fields first
+# These should always be present from Datadog
+service:web-app env:production
 
-# Try different field options
-# Switch from "message" to "data" or "attributes"
+# For message parsing, verify JSON content
+# Copy message to JSON validator to check syntax
 
-# Verify field exists
-# Check log structure in Datadog UI
+# Enable message parsing if needed
+# Use "Parse Message as JSON" toggle
 ```
 
 #### 2. Partial Field Parsing
