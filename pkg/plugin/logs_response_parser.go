@@ -330,6 +330,16 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 	ids := make([]string, entryCount)              // ✅ CORRECT - Added ID field
 	labels := make([]json.RawMessage, entryCount)  // ✅ CORRECT - Single labels field with JSON
 
+	// Collect all unique parsed field names for dynamic column creation
+	parsedFieldNames := make(map[string]bool)
+	for _, entry := range logEntries {
+		if entry.ParsedFields != nil {
+			for fieldName := range entry.ParsedFields {
+				parsedFieldNames[fieldName] = true
+			}
+		}
+	}
+
 	// Validate and sanitize log entries
 	var validationErrors []string
 	sanitizedEntries := make([]LogEntry, entryCount)
@@ -349,6 +359,12 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		logger.Warn("Log entry validation errors found",
 			"errorCount", len(validationErrors),
 			"errors", validationErrors)
+	}
+
+	// Create slices for parsed fields
+	parsedFieldData := make(map[string][]interface{})
+	for fieldName := range parsedFieldNames {
+		parsedFieldData[fieldName] = make([]interface{}, entryCount)
 	}
 
 	// Populate data from sanitized log entries using corrected field structure
@@ -373,6 +389,19 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			labels[i] = entry.Labels
 		} else {
 			labels[i] = json.RawMessage(`{}`) // Empty JSON object if no labels
+		}
+
+		// Populate parsed fields data
+		for fieldName := range parsedFieldNames {
+			if entry.ParsedFields != nil {
+				if value, exists := entry.ParsedFields[fieldName]; exists {
+					parsedFieldData[fieldName][i] = value
+				} else {
+					parsedFieldData[fieldName][i] = nil // Use nil for missing values
+				}
+			} else {
+				parsedFieldData[fieldName][i] = nil
+			}
 		}
 	}
 
@@ -416,6 +445,32 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
+	// Add parsed fields as separate columns
+	for fieldName, fieldData := range parsedFieldData {
+		// Convert interface{} slice to appropriate type for Grafana
+		stringData := make([]*string, entryCount)
+		for i, value := range fieldData {
+			if value != nil {
+				// Convert any value to string representation for display
+				strValue := p.convertValueToString(value)
+				stringData[i] = &strValue
+			} else {
+				stringData[i] = nil // Keep nil for missing values
+			}
+		}
+
+		// Create field for parsed data
+		parsedField := data.NewField(fieldName, nil, stringData)
+		parsedField.Config = &data.FieldConfig{
+			DisplayName: fieldName,
+			Custom: map[string]interface{}{
+				"parsedField": true, // Mark as parsed field for UI identification
+			},
+		}
+
+		frame.Fields = append(frame.Fields, parsedField)
+	}
+
 	// Extract search terms from the query for highlighting
 	searchWords := p.extractSearchTerms(query)
 
@@ -439,6 +494,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
 		"fieldCount", len(frame.Fields),
+		"parsedFieldCount", len(parsedFieldNames),
 		"searchWords", searchWords)
 
 	// Return only the logs frame - volume histogram is returned separately
@@ -937,4 +993,44 @@ func (p *LogsResponseParser) hasFieldConflict(fieldName string) bool {
 	}
 	
 	return standardFields[fieldName]
+}
+// convertValueToString converts any value to a string representation for display in Grafana
+func (p *LogsResponseParser) convertValueToString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+
+	switch v := value.(type) {
+	case string:
+		return v
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("%d", v)
+	case uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", v)
+	case float32, float64:
+		return fmt.Sprintf("%g", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	case []interface{}:
+		// Convert arrays to JSON string representation
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("[array with %d items]", len(v))
+		}
+		return string(jsonBytes)
+	case map[string]interface{}:
+		// Convert objects to JSON string representation
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return "[object]"
+		}
+		return string(jsonBytes)
+	default:
+		// Fallback to JSON marshaling for unknown types
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v) // Use Go's default string representation
+		}
+		return string(jsonBytes)
+	}
 }
