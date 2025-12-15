@@ -1428,9 +1428,11 @@ func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink
 	logger := log.New()
 	
 	// Get Datadog site configuration for trace URL construction
-	site := d.JSONData.Site
-	if site == "" {
-		site = "datadoghq.com" // Default to US
+	site := "datadoghq.com" // Default to US
+	if d.JSONData != nil {
+		if d.JSONData.Site != "" {
+			site = d.JSONData.Site
+		}
 	}
 	
 	var dataLinks []data.DataLink
@@ -1983,10 +1985,181 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string, q
 	return data.Frames{frame}
 }
 // parseLogsError provides logs-specific error handling using existing error patterns
+// Enhanced to handle logs API permission errors and common logs query issues
+// Requirements: 12.1, 12.2, 12.3
 func (d *Datasource) parseLogsError(err error, httpStatus int, responseBody string) string {
+	logger := log.New()
+	
+	// Handle logs-specific HTTP status codes first
+	switch httpStatus {
+	case 401:
+		return "Invalid Datadog API credentials - check your API key and App key for logs access"
+	case 403:
+		// Enhanced logs permission error handling
+		if strings.Contains(responseBody, "logs_read_data") || 
+		   strings.Contains(responseBody, "logs") ||
+		   strings.Contains(strings.ToLower(responseBody), "log") {
+			return "API key missing required permissions - need 'logs_read_data' scope for logs queries"
+		}
+		return "API key missing required permissions for logs access - check your Datadog API key permissions"
+	case 400:
+		// Parse logs-specific syntax errors
+		return d.parseLogsQuerySyntaxError(responseBody)
+	case 429:
+		return "Datadog Logs API rate limit exceeded - try reducing query frequency or narrowing time range"
+	case 500, 502, 503, 504:
+		return fmt.Sprintf("Datadog Logs API service error (%d) - logs service may be temporarily unavailable", httpStatus)
+	}
+	
+	// Handle error message patterns for logs-specific issues
+	errorMsg := err.Error()
+	lowerErrorMsg := strings.ToLower(errorMsg)
+	
+	// Timeout errors with logs context
+	if strings.Contains(lowerErrorMsg, "timeout") || strings.Contains(lowerErrorMsg, "context deadline exceeded") {
+		return "Log query timeout - try narrowing your search criteria, reducing time range, or using more specific filters"
+	}
+	
+	// Network connectivity errors
+	if strings.Contains(lowerErrorMsg, "connection refused") || strings.Contains(lowerErrorMsg, "no such host") {
+		return "Cannot connect to Datadog Logs API - check your network connection and Datadog site configuration"
+	}
+	
+	// Rate limiting errors (can appear in error message)
+	if strings.Contains(lowerErrorMsg, "rate limit") || strings.Contains(lowerErrorMsg, "too many requests") {
+		return "Datadog Logs API rate limit exceeded - please wait before retrying or reduce query frequency"
+	}
+	
+	// SSL/TLS errors
+	if strings.Contains(lowerErrorMsg, "tls") || strings.Contains(lowerErrorMsg, "certificate") {
+		return "SSL/TLS error connecting to Datadog Logs API - check your network security settings"
+	}
+	
+	// Logs index access errors
+	if strings.Contains(responseBody, "index") && strings.Contains(responseBody, "access") {
+		return "Access denied to logs index - check your API key permissions for the requested log indexes"
+	}
+	
+	// Query complexity errors
+	if strings.Contains(responseBody, "complex") || strings.Contains(responseBody, "limit") {
+		return "Logs query too complex - try simplifying your search criteria or reducing the time range"
+	}
+	
 	// Add logs context to the response body for better error detection
 	logsContext := fmt.Sprintf("logs: %s", responseBody)
+	
+	// Log the error details for debugging
+	logger.Debug("Parsing logs error", 
+		"httpStatus", httpStatus,
+		"errorMessage", errorMsg,
+		"responseBodyLength", len(responseBody))
+	
+	// Fall back to existing error parsing with logs context
 	return d.parseDatadogError(err, httpStatus, logsContext)
+}
+
+// parseLogsQuerySyntaxError parses logs-specific query syntax errors and provides helpful suggestions
+// Requirements: 12.1, 12.3 - Improve error messages for common logs query issues
+func (d *Datasource) parseLogsQuerySyntaxError(responseBody string) string {
+	if responseBody == "" {
+		return "Invalid logs query syntax - check your search criteria and facet filters"
+	}
+	
+	// Try to parse JSON response for detailed error information
+	var errResp map[string]interface{}
+	if err := json.Unmarshal([]byte(responseBody), &errResp); err != nil {
+		// If not JSON, provide generic logs syntax help
+		return d.formatLogsQueryError(responseBody)
+	}
+	
+	// Extract error messages from different possible formats
+	var errorMessages []string
+	
+	// Handle "errors" field (array of errors)
+	if errorsField, ok := errResp["errors"]; ok {
+		switch errors := errorsField.(type) {
+		case []interface{}:
+			for _, errItem := range errors {
+				if errMsg, ok := errItem.(string); ok {
+					errorMessages = append(errorMessages, errMsg)
+				} else if errObj, ok := errItem.(map[string]interface{}); ok {
+					if msg, ok := errObj["message"].(string); ok {
+						errorMessages = append(errorMessages, msg)
+					} else if detail, ok := errObj["detail"].(string); ok {
+						errorMessages = append(errorMessages, detail)
+					}
+				}
+			}
+		case string:
+			errorMessages = append(errorMessages, errors)
+		}
+	}
+	
+	// Handle "error" field (single error)
+	if len(errorMessages) == 0 {
+		if errorField, ok := errResp["error"]; ok {
+			switch errValue := errorField.(type) {
+			case string:
+				errorMessages = append(errorMessages, errValue)
+			case map[string]interface{}:
+				if msg, ok := errValue["message"].(string); ok {
+					errorMessages = append(errorMessages, msg)
+				}
+			}
+		}
+	}
+	
+	// Handle "message" field directly
+	if len(errorMessages) == 0 {
+		if msgField, ok := errResp["message"].(string); ok {
+			errorMessages = append(errorMessages, msgField)
+		}
+	}
+	
+	// If we found error messages, format them with logs-specific suggestions
+	if len(errorMessages) > 0 {
+		errorText := strings.Join(errorMessages, "; ")
+		return d.formatLogsQueryError(errorText)
+	}
+	
+	// Fallback for unrecognized error format
+	return "Invalid logs query syntax - check your search criteria and facet filters"
+}
+
+// formatLogsQueryError formats logs query errors with helpful suggestions
+// Requirements: 12.3 - Improve error messages for common logs query issues
+func (d *Datasource) formatLogsQueryError(errorText string) string {
+	lowerError := strings.ToLower(errorText)
+	
+	// Provide specific suggestions based on error patterns
+	var suggestion string
+	
+	// Service/source facet errors
+	if strings.Contains(lowerError, "service") || strings.Contains(lowerError, "facet") {
+		suggestion = "Use correct facet syntax: 'service:web-app', 'source:nginx', 'host:server-01'"
+	} else if strings.Contains(lowerError, "status") || strings.Contains(lowerError, "level") {
+		suggestion = "Use log level syntax: 'status:ERROR', 'status:(ERROR OR WARN)'. Valid levels: DEBUG, INFO, WARN, ERROR, FATAL"
+	} else if strings.Contains(lowerError, "operator") || strings.Contains(lowerError, "boolean") {
+		suggestion = "Use boolean operators: 'service:web-app AND status:ERROR', 'error OR warning'"
+	} else if strings.Contains(lowerError, "wildcard") || strings.Contains(lowerError, "pattern") {
+		suggestion = "Use wildcard patterns: 'error*', '*exception*', 'web-*'"
+	} else if strings.Contains(lowerError, "quote") || strings.Contains(lowerError, "string") {
+		suggestion = "Quote values with spaces: 'service:\"my service\"', '\"error message\"'"
+	} else if strings.Contains(lowerError, "time") || strings.Contains(lowerError, "range") {
+		suggestion = "Use Grafana's time picker instead of inline time filters like '@timestamp:>now-1h'"
+	} else if strings.Contains(lowerError, "syntax") || strings.Contains(lowerError, "parse") {
+		suggestion = "Check query syntax. Examples: 'service:web-app status:ERROR', 'error AND service:api'"
+	} else {
+		// Generic logs query help
+		suggestion = "Use Datadog logs search syntax. Examples: 'service:web-app', 'status:ERROR', 'error AND service:api'"
+	}
+	
+	// Format the final error message
+	if len(errorText) > 200 {
+		errorText = errorText[:200] + "..."
+	}
+	
+	return fmt.Sprintf("Invalid logs query: %s\nSuggestion: %s", errorText, suggestion)
 }
 // extractSearchTerms extracts search terms from a Datadog logs query for highlighting purposes.
 // This function identifies text search terms while excluding facet filters.

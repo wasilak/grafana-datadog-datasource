@@ -330,7 +330,8 @@ func parseDatadogErrorResponse(responseBody string, queryText string) string {
 func suggestQueryFix(errorMsg string, queryText string) string {
 	lowerError := strings.ToLower(errorMsg)
 
-	// Check for logs-specific error patterns first
+	// Enhanced logs-specific error patterns and suggestions
+	// Requirements: 12.3 - Improve error messages for common logs query issues
 	if strings.Contains(lowerError, "logs") || strings.Contains(lowerError, "log") {
 		if strings.Contains(lowerError, "service") || strings.Contains(lowerError, "facet") {
 			return "Suggestion: Use logs facet syntax 'service:api-gateway' or 'source:nginx'. Multiple facets: 'service:web-app source:nginx'"
@@ -343,6 +344,21 @@ func suggestQueryFix(errorMsg string, queryText string) string {
 		}
 		if strings.Contains(lowerError, "wildcard") || strings.Contains(lowerError, "pattern") {
 			return "Suggestion: Use wildcard patterns like 'error*' or '*exception*' for text matching"
+		}
+		if strings.Contains(lowerError, "permission") || strings.Contains(lowerError, "scope") {
+			return "Suggestion: Ensure your Datadog API key has 'logs_read_data' scope enabled in your Datadog organization settings"
+		}
+		if strings.Contains(lowerError, "index") || strings.Contains(lowerError, "access") {
+			return "Suggestion: Check that your API key has access to the requested log indexes. Contact your Datadog admin if needed"
+		}
+		if strings.Contains(lowerError, "rate") || strings.Contains(lowerError, "limit") {
+			return "Suggestion: Reduce query frequency, narrow time range, or use more specific filters to avoid rate limits"
+		}
+		if strings.Contains(lowerError, "timeout") {
+			return "Suggestion: Try narrowing your search criteria, reducing time range, or using more specific facet filters"
+		}
+		if strings.Contains(lowerError, "complex") {
+			return "Suggestion: Simplify your logs query by reducing boolean operators or using fewer facet filters"
 		}
 		return "Suggestion: Use Datadog logs search syntax. Examples: 'service:web-app status:ERROR', 'error AND service:api', 'source:nginx'"
 	}
@@ -644,9 +660,13 @@ func (d *Datasource) parseDatadogError(err error, httpStatus int, responseBody s
 	if httpStatus == 401 || strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "Unauthorized") {
 		return "Invalid Datadog API credentials - check your API key and App key"
 	} else if httpStatus == 403 || strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
-		// Check if this is a logs-specific permission error
-		if strings.Contains(responseBody, "logs") || strings.Contains(err.Error(), "logs") {
-			return "API key missing required permissions - need 'logs_read_data' scope"
+		// Enhanced logs-specific permission error detection
+		// Requirements: 12.1, 12.2 - Handle logs API permission errors (logs_read_data scope)
+		if strings.Contains(responseBody, "logs_read_data") {
+			return "API key missing required permissions - need 'logs_read_data' scope for logs queries"
+		} else if strings.Contains(responseBody, "logs") || strings.Contains(err.Error(), "logs") ||
+				  strings.Contains(strings.ToLower(responseBody), "log") {
+			return "API key missing required permissions - need 'logs_read_data' scope for logs access"
 		}
 		return "API key missing required permissions (need 'metrics_read' scope)"
 	} else if httpStatus == 400 || strings.Contains(err.Error(), "400") {
