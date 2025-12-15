@@ -250,8 +250,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
 			"currentPage", currentPage)
-		// Use parser to create frames from cached entries
-		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID, logsQuery)
+		// Use parser to create frames from cached entries, passing time range for volume calculation
+		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID, logsQuery, q.TimeRange)
 		return frames, nil
 	}
 	
@@ -274,8 +274,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 		"cacheTTL", cacheTTL)
 	d.SetCachedLogsEntry(cacheKey, logEntries, nextCursor)
 
-	// Use parser to create Grafana data frames from log entries
-	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery)
+	// Use parser to create Grafana data frames from log entries, passing time range for volume calculation
+	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery, q.TimeRange)
 	
 	// Add pagination metadata to the response
 	if len(frames) > 0 {

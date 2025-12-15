@@ -206,9 +206,50 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 		site = "datadoghq.com" // Default to US
 	}
 
-	// Use logs search API instead of aggregation API for better compatibility
-	// Construct API URL for logs search
-	apiURL := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
+	// Use logs analytics aggregation API for proper volume calculation
+	// This is the correct API for getting aggregated log counts over time
+	apiURL := fmt.Sprintf("https://api.%s/api/v2/logs/analytics/aggregate", site)
+
+	// Marshal the aggregation request body for the proper API
+	requestBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal aggregation request: %w", err)
+	}
+
+	logger.Debug("Making logs aggregation API call", 
+		"url", apiURL, 
+		"query", request.Data.Attributes.Query,
+		"bucketInterval", request.Data.Attributes.GroupBy[0].Histogram.Interval)
+
+	// Make HTTP request to the aggregation API
+	httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", apiURL, requestBody, apiKey, appKey)
+	if err != nil {
+		logger.Warn("Logs aggregation API request failed, falling back to search API", "error", err)
+		// Fall back to the search API approach if aggregation fails
+		return h.fallbackToSearchAPI(ctx, request, apiKey, appKey, site)
+	}
+
+	// Parse aggregation response
+	var aggregationResponse LogsAggregationResponse
+	if err := json.Unmarshal(httpResponse, &aggregationResponse); err != nil {
+		logger.Warn("Failed to parse aggregation response, falling back to search API", "error", err)
+		// Fall back to the search API approach if parsing fails
+		return h.fallbackToSearchAPI(ctx, request, apiKey, appKey, site)
+	}
+
+	logger.Info("Successfully used logs aggregation API", 
+		"totalBuckets", len(aggregationResponse.Data.Buckets))
+
+	return &aggregationResponse, nil
+}
+
+// fallbackToSearchAPI provides a fallback implementation using the logs search API
+// This approach uses the original method but with better error handling
+func (h *LogsVolumeHandler) fallbackToSearchAPI(ctx context.Context, request LogsAggregationRequest, apiKey, appKey, site string) (*LogsAggregationResponse, error) {
+	logger := log.New()
+	
+	// Use logs search API as fallback
+	searchURL := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 
 	// Parse time range
 	fromTime, err := time.Parse(time.RFC3339, request.Data.Attributes.Time.From)
@@ -248,7 +289,7 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 						To:   bucketEnd.Format(time.RFC3339),
 					},
 					Sort:  "timestamp",
-					Limit: 1000, // FIXED: Use higher limit to get better count estimates
+					Limit: 1000, // Use higher limit to get better count estimates
 				},
 			},
 		}
@@ -260,14 +301,14 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 			continue
 		}
 
-		logger.Debug("Making logs search API call for volume bucket", 
-			"url", apiURL, 
+		logger.Debug("Making logs search API call for volume bucket (fallback)", 
+			"url", searchURL, 
 			"query", request.Data.Attributes.Query,
 			"bucketStart", currentTime,
 			"bucketEnd", bucketEnd)
 
 		// Make HTTP request
-		httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", apiURL, requestBody, apiKey, appKey)
+		httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", searchURL, requestBody, apiKey, appKey)
 		if err != nil {
 			logger.Warn("Logs search API request failed for bucket", "time", currentTime, "error", err)
 			// Add empty bucket to maintain time series continuity
@@ -290,12 +331,10 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 			continue
 		}
 
-		// FIXED: Extract count from actual log entries returned as an approximation
-		// Datadog Logs API doesn't provide total count in meta, so we use the actual entries count
-		// Note: This is an approximation since we're limited to 1000 entries per bucket
+		// Extract count from actual log entries returned as an approximation
 		totalCount := len(searchResponse.Data)
 
-		logger.Debug("Extracted count for bucket", 
+		logger.Debug("Extracted count for bucket (fallback)", 
 			"time", currentTime, 
 			"count", totalCount,
 			"entriesReturned", len(searchResponse.Data),

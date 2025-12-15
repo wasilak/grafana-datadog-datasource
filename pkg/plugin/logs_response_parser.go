@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
@@ -293,7 +294,7 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 
 // createLogsDataFrames creates Grafana DataFrames from log entries using corrected structure
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 13.1
-func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID string, query string) data.Frames {
+func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID string, query string, timeRange ...backend.TimeRange) data.Frames {
 	logger := log.New()
 
 	// Validate input parameters
@@ -433,7 +434,13 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 
 	// Create volume histogram frame from the same log entries
 	// This calculates histogram data points based on log line timestamps
-	volumeFrame := p.createLogsVolumeFrame(sanitizedEntries, refID)
+	var volumeFrame *data.Frame
+	if len(timeRange) > 0 {
+		volumeFrame = p.createLogsVolumeFrame(sanitizedEntries, refID, timeRange[0])
+	} else {
+		// Fallback: calculate time range from log entries if not provided
+		volumeFrame = p.createLogsVolumeFrameFromEntries(sanitizedEntries, refID)
+	}
 
 	return data.Frames{frame, volumeFrame}
 }
@@ -683,7 +690,7 @@ func (p *LogsResponseParser) extractSearchTerms(query string) []string {
 // createLogsVolumeFrame creates a histogram data frame from log entries
 // This calculates volume data points by counting logs in time buckets
 // Requirements: 18.2, 18.3
-func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID string) *data.Frame {
+func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID string, timeRange backend.TimeRange) *data.Frame {
 	logger := log.New()
 
 	// Handle empty log entries
@@ -692,16 +699,10 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 		return p.createEmptyVolumeFrame(refID)
 	}
 
-	// Find time range from log entries
-	var minTime, maxTime time.Time
-	for i, entry := range logEntries {
-		if i == 0 || entry.Timestamp.Before(minTime) {
-			minTime = entry.Timestamp
-		}
-		if i == 0 || entry.Timestamp.After(maxTime) {
-			maxTime = entry.Timestamp
-		}
-	}
+	// Use the query time range for bucket calculation, not log entry timestamps
+	// This ensures the histogram covers the full requested time range
+	minTime := timeRange.From.UTC()
+	maxTime := timeRange.To.UTC()
 
 	// Calculate appropriate bucket size based on time range
 	duration := maxTime.Sub(minTime)
@@ -718,15 +719,19 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 		buckets[t] = 0
 	}
 
-	// Count logs in each bucket
+	// Count logs in each bucket - use UTC timestamps for consistency
 	for _, entry := range logEntries {
-		bucketTime := entry.Timestamp.Truncate(bucketDuration)
-		buckets[bucketTime]++
+		entryTime := entry.Timestamp.UTC()
+		bucketTime := entryTime.Truncate(bucketDuration)
+		// Only count if within our time range
+		if !bucketTime.Before(bucketStart) && !bucketTime.After(maxTime) {
+			buckets[bucketTime]++
+		}
 	}
 
 	// Convert map to sorted slices
 	var timeValues []time.Time
-	var countValues []uint64
+	var countValues []float64 // Use float64 to match LogsVolumeHandler
 
 	// Sort bucket times
 	sortedTimes := make([]time.Time, 0, len(buckets))
@@ -745,30 +750,25 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 
 	for _, t := range sortedTimes {
 		timeValues = append(timeValues, t)
-		countValues = append(countValues, uint64(buckets[t]))
+		countValues = append(countValues, float64(buckets[t]))
 	}
 
-	// Create the volume data frame
-	frame := data.NewFrame("logsVolume")
-	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
-
-	// Create time field
-	timeField := data.NewField("Time", nil, timeValues)
+	// Create the volume data frame with structure matching LogsVolumeHandler
+	frame := data.NewFrame(
+		"logs-volume", // Frame name - matches LogsVolumeHandler
+		data.NewField("Time", nil, timeValues),
+		data.NewField("Count", nil, countValues), // Field name matches LogsVolumeHandler
+	)
 	
-	// Create count field with proper display name
-	countField := data.NewField("logs", nil, countValues)
-	countField.Config = &data.FieldConfig{
-		DisplayNameFromDS: "Log volume",
-	}
-
-	frame.Fields = append(frame.Fields, timeField, countField)
-
-	// Set metadata for histogram visualization
+	// Set frame metadata for histogram visualization
+	// Use refId prefix 'log-volume-' to match Grafana conventions
+	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
 	frame.Meta = &data.FrameMeta{
 		Type:                   data.FrameTypeTimeSeriesMulti,
-		PreferredVisualization: data.VisTypeGraph,
+		PreferredVisualization: "graph", // String to match LogsVolumeHandler
 		Custom: map[string]interface{}{
 			"logsVolumeType": "logs_volume",
+			"bucketSize":     bucketDuration.String(),
 		},
 	}
 
@@ -776,27 +776,25 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 		"refID", frame.RefID,
 		"bucketCount", len(timeValues),
 		"totalLogs", len(logEntries),
-		"bucketDuration", bucketDuration.String())
+		"bucketDuration", bucketDuration.String(),
+		"timeRange", fmt.Sprintf("%s to %s", minTime, maxTime))
 
 	return frame
 }
 
 // createEmptyVolumeFrame creates an empty volume frame
 func (p *LogsResponseParser) createEmptyVolumeFrame(refID string) *data.Frame {
-	frame := data.NewFrame("logsVolume")
+	// Create empty frame with structure matching LogsVolumeHandler
+	frame := data.NewFrame(
+		"logs-volume", // Frame name - matches LogsVolumeHandler
+		data.NewField("Time", nil, []time.Time{}),
+		data.NewField("Count", nil, []float64{}), // Field name matches LogsVolumeHandler
+	)
+	
 	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
-
-	timeField := data.NewField("Time", nil, []time.Time{})
-	countField := data.NewField("logs", nil, []uint64{})
-	countField.Config = &data.FieldConfig{
-		DisplayNameFromDS: "Log volume",
-	}
-
-	frame.Fields = append(frame.Fields, timeField, countField)
-
 	frame.Meta = &data.FrameMeta{
 		Type:                   data.FrameTypeTimeSeriesMulti,
-		PreferredVisualization: data.VisTypeGraph,
+		PreferredVisualization: "graph", // String to match LogsVolumeHandler
 		Custom: map[string]interface{}{
 			"logsVolumeType": "logs_volume",
 		},
@@ -823,4 +821,36 @@ func (p *LogsResponseParser) calculateBucketDuration(duration time.Duration) tim
 	default:
 		return 4 * time.Hour
 	}
+}
+
+// createLogsVolumeFrameFromEntries creates a volume frame by calculating time range from log entries
+// This is a fallback when the query time range is not available
+func (p *LogsResponseParser) createLogsVolumeFrameFromEntries(logEntries []LogEntry, refID string) *data.Frame {
+	logger := log.New()
+
+	// Handle empty log entries
+	if len(logEntries) == 0 {
+		logger.Debug("No log entries for volume calculation (fallback)", "refID", refID)
+		return p.createEmptyVolumeFrame(refID)
+	}
+
+	// Find time range from log entries
+	var minTime, maxTime time.Time
+	for i, entry := range logEntries {
+		entryTime := entry.Timestamp.UTC()
+		if i == 0 || entryTime.Before(minTime) {
+			minTime = entryTime
+		}
+		if i == 0 || entryTime.After(maxTime) {
+			maxTime = entryTime
+		}
+	}
+
+	// Create a synthetic time range from the entries
+	timeRange := backend.TimeRange{
+		From: minTime,
+		To:   maxTime,
+	}
+
+	return p.createLogsVolumeFrame(logEntries, refID, timeRange)
 }
