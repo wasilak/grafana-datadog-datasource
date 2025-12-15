@@ -159,10 +159,13 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 			continue
 		}
 
-		// Skip if not a logs query
-		if qm.QueryType != "logs" && qm.LogQuery == "" {
+		// Skip if not a logs or logs-volume query
+		// logs-volume queries are supplementary queries for histogram visualization
+		if qm.QueryType != "logs" && qm.QueryType != "logs-volume" && qm.LogQuery == "" {
 			continue
 		}
+		
+		logger.Debug("Processing logs query", "refID", q.RefID, "queryType", qm.QueryType, "logQuery", qm.LogQuery)
 
 		// Skip hidden queries
 		if qm.Hide {
