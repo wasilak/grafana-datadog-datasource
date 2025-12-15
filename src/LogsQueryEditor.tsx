@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow, Select } from '@grafana/ui';
+import { CodeEditor, Stack, Alert, useTheme2, Button, InlineField, InlineFieldRow } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -8,6 +8,7 @@ import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
 import { validateLogsQuery } from './utils/logsQueryValidator';
+import { FieldSelector } from './components/FieldSelector';
 
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -24,6 +25,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const [showHelp, setShowHelp] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [fieldSelectorError, setFieldSelectorError] = useState<string | null>(null);
 
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
@@ -211,6 +213,11 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
         }
       : { enabled: false, targetField: 'message' as const };
 
+    // Clear field selector error when disabling JSON parsing
+    if (!enabled) {
+      setFieldSelectorError(null);
+    }
+
     onChange({
       ...query,
       jsonParsing: newJsonParsing
@@ -220,6 +227,9 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const handleTargetFieldChange = (targetField: string) => {
     if (!query.jsonParsing) return;
     
+    // Clear validation error when field is selected
+    setFieldSelectorError(null);
+    
     onChange({
       ...query,
       jsonParsing: {
@@ -228,6 +238,23 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       }
     });
   };
+
+  // Validation function to check if field is selected when JSON parsing is enabled
+  const validateJsonParsingConfiguration = () => {
+    if (query.jsonParsing?.enabled && !query.jsonParsing.targetField) {
+      setFieldSelectorError('Field selection is required when JSON parsing is enabled');
+      return false;
+    }
+    setFieldSelectorError(null);
+    return true;
+  };
+
+  // Validate configuration when JSON parsing state changes
+  useEffect(() => {
+    if (query.jsonParsing?.enabled) {
+      validateJsonParsingConfiguration();
+    }
+  }, [query.jsonParsing?.enabled, query.jsonParsing?.targetField]);
 
   // Helper function to calculate suggestions dropdown position
   const updateSuggestionsPositionFromEditor = (
@@ -594,27 +621,27 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
             >
               {query.jsonParsing?.enabled ? 'Enabled' : 'Enable JSON Parsing'}
             </Button>
-            
-            {query.jsonParsing?.enabled && (
-              <>
-                <InlineField 
-                  label="Parse Field" 
-                  labelWidth={12}
-                  tooltip="Select which log field contains JSON data to parse"
-                >
-                  <Select
-                    width={20}
-                    value={query.jsonParsing.targetField}
-                    options={fieldOptions}
-                    onChange={(option) => handleTargetFieldChange(option.value!)}
-                    placeholder="Select field to parse"
-                  />
-                </InlineField>
-              </>
-            )}
           </Stack>
         </InlineField>
       </InlineFieldRow>
+
+      {/* Field Selector - shown when JSON parsing is enabled */}
+      {query.jsonParsing?.enabled && (
+        <InlineFieldRow>
+          <FieldSelector
+            value={query.jsonParsing.targetField || ''}
+            onChange={handleTargetFieldChange}
+            options={fieldOptions}
+            label="Parse Field"
+            labelWidth={14}
+            tooltip="Select which log field contains JSON data to parse"
+            placeholder="Select field to parse"
+            required={true}
+            width={25}
+            validationError={fieldSelectorError}
+          />
+        </InlineFieldRow>
+      )}
 
       {/* Logs Help Component */}
       {showHelp && (
