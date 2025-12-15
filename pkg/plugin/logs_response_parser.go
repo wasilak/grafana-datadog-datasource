@@ -866,11 +866,27 @@ func (p *LogsResponseParser) calculateBucketDuration(duration time.Duration) tim
 }
 // applyJSONParsing applies JSON parsing to a log entry based on the provided configuration
 // Handles field name conflicts by prefixing with "parsed_" and preserves original field values
+// Implements comprehensive error handling to gracefully handle invalid JSON without failing entire query
+// Requirements: 5.1, 5.2, 5.3, 5.5
 func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[string]interface{}, config *JSONParsingConfig) {
 	logger := log.New()
 	
+	// Early return if JSON parsing is disabled - skip parsing logic entirely for performance
+	if !config.Enabled {
+		logger.Debug("JSON parsing is disabled, skipping", "logID", entry.ID)
+		return
+	}
+	
 	// Create JSON parser with the provided configuration
 	parser := NewJSONParser(*config)
+	
+	// Initialize ParsedFields and ParseErrors if not already done
+	if entry.ParsedFields == nil {
+		entry.ParsedFields = make(map[string]interface{})
+	}
+	if entry.ParseErrors == nil {
+		entry.ParseErrors = []string{}
+	}
 	
 	// Determine the target field value to parse
 	var targetValue string
@@ -890,7 +906,9 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 		// Convert to JSON string for parsing
 		jsonBytes, marshalErr := json.Marshal(fullLogData)
 		if marshalErr != nil {
-			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal whole log for parsing: %v", marshalErr))
+			errorMsg := fmt.Sprintf("Failed to marshal whole log for parsing: %v", marshalErr)
+			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+			logger.Warn("JSON marshaling failed for whole log", "logID", entry.ID, "error", marshalErr)
 			return
 		}
 		targetValue = string(jsonBytes)
@@ -898,6 +916,10 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 	case "message", "body":
 		// Parse the body/message field
 		targetValue = entry.Body
+		if targetValue == "" {
+			logger.Debug("Body field is empty, skipping JSON parsing", "logID", entry.ID)
+			return
+		}
 		
 	case "data":
 		// Parse the data field from attributes
@@ -908,13 +930,17 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 				// If data is not a string, try to marshal it to JSON first
 				jsonBytes, marshalErr := json.Marshal(dataField)
 				if marshalErr != nil {
-					entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal data field for parsing: %v", marshalErr))
+					errorMsg := fmt.Sprintf("Failed to marshal data field for parsing: %v", marshalErr)
+					entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+					logger.Warn("JSON marshaling failed for data field", "logID", entry.ID, "error", marshalErr)
 					return
 				}
 				targetValue = string(jsonBytes)
 			}
 		} else {
-			entry.ParseErrors = append(entry.ParseErrors, "Data field not found in log attributes")
+			errorMsg := "Data field not found in log attributes"
+			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+			logger.Debug("Data field not found", "logID", entry.ID)
 			return
 		}
 		
@@ -922,7 +948,9 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 		// Parse the entire attributes object
 		jsonBytes, marshalErr := json.Marshal(attributes)
 		if marshalErr != nil {
-			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal attributes for parsing: %v", marshalErr))
+			errorMsg := fmt.Sprintf("Failed to marshal attributes for parsing: %v", marshalErr)
+			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+			logger.Warn("JSON marshaling failed for attributes", "logID", entry.ID, "error", marshalErr)
 			return
 		}
 		targetValue = string(jsonBytes)
@@ -936,48 +964,87 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 				// If custom field is not a string, try to marshal it to JSON first
 				jsonBytes, marshalErr := json.Marshal(customField)
 				if marshalErr != nil {
-					entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Failed to marshal custom field '%s' for parsing: %v", config.TargetField, marshalErr))
+					errorMsg := fmt.Sprintf("Failed to marshal custom field '%s' for parsing: %v", config.TargetField, marshalErr)
+					entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+					logger.Warn("JSON marshaling failed for custom field", "logID", entry.ID, "field", config.TargetField, "error", marshalErr)
 					return
 				}
 				targetValue = string(jsonBytes)
 			}
 		} else {
-			entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("Custom field '%s' not found in log attributes", config.TargetField))
+			errorMsg := fmt.Sprintf("Custom field '%s' not found in log attributes", config.TargetField)
+			entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+			logger.Debug("Custom field not found", "logID", entry.ID, "field", config.TargetField)
 			return
 		}
 	}
 	
-	// Parse the JSON content
-	parsedData, err := parser.ParseJSONField(targetValue)
-	if err != nil {
-		entry.ParseErrors = append(entry.ParseErrors, fmt.Sprintf("JSON parsing failed for field '%s': %v", config.TargetField, err))
-		logger.Debug("JSON parsing failed", "field", config.TargetField, "error", err, "logID", entry.ID)
+	// Skip parsing if target value is empty or only whitespace
+	if strings.TrimSpace(targetValue) == "" {
+		logger.Debug("Target field is empty or whitespace, skipping JSON parsing", "logID", entry.ID, "field", config.TargetField)
 		return
 	}
 	
-	// Flatten the parsed JSON object
-	flattenedFields := parser.FlattenObject(parsedData, "", 0)
-	
-	// Initialize ParsedFields map if not already done
-	if entry.ParsedFields == nil {
-		entry.ParsedFields = make(map[string]interface{})
+	// Attempt to parse the JSON content with comprehensive error handling
+	parsedData, err := parser.ParseJSONField(targetValue)
+	if err != nil {
+		// Handle invalid JSON syntax gracefully - preserve original field value and log detailed error
+		errorMsg := fmt.Sprintf("JSON parsing failed for field '%s': %v", config.TargetField, err)
+		entry.ParseErrors = append(entry.ParseErrors, errorMsg)
+		
+		// Log detailed error information for debugging purposes
+		logger.Debug("JSON parsing failed - preserving original data", 
+			"logID", entry.ID,
+			"field", config.TargetField, 
+			"error", err,
+			"jsonLength", len(targetValue),
+			"jsonPreview", p.truncateForLogging(targetValue, 100))
+		
+		// Try partial parsing for mixed valid/invalid content
+		partialData := p.attemptPartialParsing(targetValue, config.TargetField, entry.ID)
+		if partialData != nil {
+			logger.Debug("Partial JSON parsing succeeded", "logID", entry.ID, "field", config.TargetField)
+			parsedData = partialData
+		} else {
+			// If partial parsing also fails, preserve original value as a parsed field for reference
+			if config.PreserveOriginal {
+				originalFieldName := fmt.Sprintf("original_%s", config.TargetField)
+				entry.ParsedFields[originalFieldName] = targetValue
+				logger.Debug("Preserved original field value", "logID", entry.ID, "originalField", originalFieldName)
+			}
+			// Continue processing other log entries without interruption
+			return
+		}
 	}
 	
+	// Flatten the parsed JSON object with depth limiting
+	flattenedFields := parser.FlattenObject(parsedData, "", 0)
+	
 	// Add flattened fields to the log entry, handling conflicts by prefixing with "parsed_"
+	conflictCount := 0
 	for fieldName, fieldValue := range flattenedFields {
 		// Check for field name conflicts with existing fields
 		finalFieldName := fieldName
 		if p.hasFieldConflict(fieldName) {
 			finalFieldName = "parsed_" + fieldName
+			conflictCount++
+		}
+		
+		// Ensure we don't overwrite existing parsed fields
+		if _, exists := entry.ParsedFields[finalFieldName]; exists {
+			finalFieldName = fmt.Sprintf("%s_%d", finalFieldName, len(entry.ParsedFields))
 		}
 		
 		entry.ParsedFields[finalFieldName] = fieldValue
 	}
 	
+	// Log successful parsing with detailed information for debugging
 	logger.Debug("Successfully applied JSON parsing", 
 		"logID", entry.ID, 
 		"targetField", config.TargetField, 
-		"parsedFieldCount", len(flattenedFields))
+		"parsedFieldCount", len(flattenedFields),
+		"conflictCount", conflictCount,
+		"totalParsedFields", len(entry.ParsedFields))
 }
 
 // hasFieldConflict checks if a field name conflicts with standard LogEntry fields
@@ -1033,4 +1100,75 @@ func (p *LogsResponseParser) convertValueToString(value interface{}) string {
 		}
 		return string(jsonBytes)
 	}
+}
+// truncateForLogging truncates a string for logging purposes to prevent log spam
+func (p *LogsResponseParser) truncateForLogging(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// attemptPartialParsing attempts to parse partial JSON content from mixed valid/invalid content
+// This handles cases where logs contain both JSON and non-JSON content
+// Requirements: 5.3 - Implement partial parsing for mixed valid/invalid content
+func (p *LogsResponseParser) attemptPartialParsing(content string, fieldName string, logID string) interface{} {
+	logger := log.New()
+	
+	// Try to find JSON objects or arrays within the content
+	jsonPatterns := []string{
+		`\{[^{}]*\}`,           // Simple objects
+		`\[[^\[\]]*\]`,         // Simple arrays
+		`\{.*?\}`,              // Objects with nested content (non-greedy)
+		`\[.*?\]`,              // Arrays with nested content (non-greedy)
+	}
+	
+	for _, pattern := range jsonPatterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		
+		matches := re.FindAllString(content, -1)
+		for _, match := range matches {
+			// Try to parse each potential JSON match
+			var data interface{}
+			if err := json.Unmarshal([]byte(match), &data); err == nil {
+				logger.Debug("Partial JSON parsing succeeded", 
+					"logID", logID, 
+					"field", fieldName,
+					"extractedJSON", match[:min(len(match), 100)])
+				return data
+			}
+		}
+	}
+	
+	// If no valid JSON found, try to extract key-value pairs
+	kvPattern := regexp.MustCompile(`(\w+):\s*"([^"]*)"`)
+	matches := kvPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) > 0 {
+		result := make(map[string]interface{})
+		for _, match := range matches {
+			if len(match) >= 3 {
+				result[match[1]] = match[2]
+			}
+		}
+		if len(result) > 0 {
+			logger.Debug("Extracted key-value pairs from mixed content", 
+				"logID", logID, 
+				"field", fieldName,
+				"extractedPairs", len(result))
+			return result
+		}
+	}
+	
+	return nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

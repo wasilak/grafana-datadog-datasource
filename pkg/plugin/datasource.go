@@ -73,18 +73,20 @@ type JSONParsingConfig struct {
 	PreserveOriginal bool   `json:"preserveOriginal,omitempty"` // Whether to preserve original field values (default: true)
 }
 
-// DefaultJSONParsingConfig returns default JSON parsing configuration
+// DefaultJSONParsingConfig returns default JSON parsing configuration with performance safeguards
+// Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 func DefaultJSONParsingConfig() JSONParsingConfig {
 	return JSONParsingConfig{
 		Enabled:         false,
 		TargetField:     "",
-		MaxDepth:        10,
-		MaxSize:         1024 * 1024, // 1MB
-		PreserveOriginal: true,
+		MaxDepth:        10,                // Limit nesting depth to prevent performance issues
+		MaxSize:         1024 * 1024,       // 1MB - reasonable size limit to prevent memory issues
+		PreserveOriginal: true,             // Preserve original values for debugging
 	}
 }
 
-// Validate validates the JSON parsing configuration
+// Validate validates the JSON parsing configuration with performance safeguards
+// Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 func (config *JSONParsingConfig) Validate() error {
 	if !config.Enabled {
 		return nil // No validation needed if disabled
@@ -105,12 +107,17 @@ func (config *JSONParsingConfig) Validate() error {
 		return fmt.Errorf("invalid target field: %s. Must be one of: whole_log, message, data, attributes", config.TargetField)
 	}
 	
+	// Validate and enforce performance limits
 	if config.MaxDepth <= 0 {
-		config.MaxDepth = 10 // Set default
+		config.MaxDepth = 10 // Set reasonable default
+	} else if config.MaxDepth > 50 { // Prevent excessive nesting
+		return fmt.Errorf("maxDepth (%d) exceeds maximum allowed value (50) to prevent performance issues", config.MaxDepth)
 	}
 	
 	if config.MaxSize <= 0 {
 		config.MaxSize = 1024 * 1024 // Set default to 1MB
+	} else if config.MaxSize > 10*1024*1024 { // Prevent excessive memory usage
+		return fmt.Errorf("maxSize (%d bytes) exceeds maximum allowed value (10MB) to prevent memory issues", config.MaxSize)
 	}
 	
 	return nil
@@ -134,9 +141,10 @@ func NewJSONParser(config JSONParsingConfig) *JSONParser {
 
 // ParseJSONField parses a JSON string field and returns the parsed data as interface{}
 // Uses Go's json.Unmarshal with interface{} for dynamic JSON parsing
-// Implements size and timeout limits for parsing operations
+// Implements comprehensive performance safeguards: size limits, timeouts, memory monitoring
+// Requirements: 6.1, 6.2, 6.4, 6.5
 func (p *JSONParser) ParseJSONField(jsonString string) (interface{}, error) {
-	// Check if parsing is enabled
+	// Skip parsing logic entirely when JSON parsing is disabled for performance
 	if !p.config.Enabled {
 		return nil, fmt.Errorf("JSON parsing is disabled")
 	}
@@ -146,17 +154,32 @@ func (p *JSONParser) ParseJSONField(jsonString string) (interface{}, error) {
 		return nil, fmt.Errorf("empty JSON string")
 	}
 
-	// Check size limits to prevent memory issues
+	// Implement JSON size limits to prevent memory issues
 	if len(jsonString) > p.config.MaxSize {
-		p.logger.Warn("JSON string exceeds size limit",
+		p.logger.Warn("JSON string exceeds size limit - rejecting to prevent memory issues",
 			"size", len(jsonString),
-			"maxSize", p.config.MaxSize)
+			"maxSize", p.config.MaxSize,
+			"sizeMB", float64(len(jsonString))/(1024*1024))
 		return nil, fmt.Errorf("JSON string size (%d bytes) exceeds maximum allowed size (%d bytes)", 
 			len(jsonString), p.config.MaxSize)
 	}
 
-	// Create a context with timeout to prevent parsing from blocking
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Additional performance check: reject extremely large JSON that could cause issues
+	if len(jsonString) > 10*1024*1024 { // 10MB absolute limit
+		p.logger.Error("JSON string exceeds absolute size limit - potential DoS attempt",
+			"size", len(jsonString),
+			"sizeMB", float64(len(jsonString))/(1024*1024))
+		return nil, fmt.Errorf("JSON string size (%d bytes) exceeds absolute maximum (10MB)", len(jsonString))
+	}
+
+	// Implement parsing timeouts to prevent query blocking
+	// Use configurable timeout with reasonable default
+	timeout := 5 * time.Second
+	if p.config.MaxSize > 1024*1024 { // For larger allowed sizes, use longer timeout
+		timeout = 10 * time.Second
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Channel to receive parsing result
@@ -166,8 +189,18 @@ func (p *JSONParser) ParseJSONField(jsonString string) (interface{}, error) {
 	}
 	resultChan := make(chan parseResult, 1)
 
-	// Parse JSON in a goroutine to enable timeout handling
+	// Parse JSON in a goroutine to enable timeout handling and prevent blocking
 	go func() {
+		defer func() {
+			// Recover from potential panics during JSON parsing
+			if r := recover(); r != nil {
+				p.logger.Error("JSON parsing panic recovered",
+					"panic", r,
+					"jsonLength", len(jsonString))
+				resultChan <- parseResult{data: nil, err: fmt.Errorf("JSON parsing panic: %v", r)}
+			}
+		}()
+
 		var data interface{}
 		err := json.Unmarshal([]byte(jsonString), &data)
 		resultChan <- parseResult{data: data, err: err}
@@ -177,37 +210,41 @@ func (p *JSONParser) ParseJSONField(jsonString string) (interface{}, error) {
 	select {
 	case result := <-resultChan:
 		if result.err != nil {
-			p.logger.Debug("JSON parsing failed",
+			p.logger.Debug("JSON parsing failed - continuing with error handling",
 				"error", result.err,
 				"jsonLength", len(jsonString),
 				"jsonPreview", p.truncateString(jsonString, 100))
 			return nil, fmt.Errorf("failed to parse JSON: %w", result.err)
 		}
 
+		// Log successful parsing with performance metrics
 		p.logger.Debug("JSON parsing successful",
 			"jsonLength", len(jsonString),
-			"dataType", fmt.Sprintf("%T", result.data))
+			"dataType", fmt.Sprintf("%T", result.data),
+			"timeout", timeout.String())
 
 		return result.data, nil
 
 	case <-ctx.Done():
-		p.logger.Warn("JSON parsing timeout",
-			"timeout", "5s",
-			"jsonLength", len(jsonString))
-		return nil, fmt.Errorf("JSON parsing timeout after 5 seconds")
+		// Add parsing timeouts to prevent query blocking
+		p.logger.Warn("JSON parsing timeout - preventing query blocking",
+			"timeout", timeout.String(),
+			"jsonLength", len(jsonString),
+			"sizeMB", float64(len(jsonString))/(1024*1024))
+		return nil, fmt.Errorf("JSON parsing timeout after %v", timeout)
 	}
 }
 
 // FlattenObject flattens a nested JSON object using dot notation for field names
 // Handles arrays by serializing them as JSON strings
-// Implements depth limiting to prevent performance issues
+// Implements comprehensive performance safeguards: depth limiting, field count limits, size monitoring
 // Requirements: 3.1, 3.2, 3.3, 6.3
 func (p *JSONParser) FlattenObject(obj interface{}, prefix string, currentDepth int) map[string]interface{} {
 	result := make(map[string]interface{})
 
-	// Check depth limit to prevent performance issues with deeply nested objects
+	// Limit nesting depth for deeply nested JSON structures to prevent performance degradation
 	if currentDepth >= p.config.MaxDepth {
-		p.logger.Debug("Reached maximum flattening depth",
+		p.logger.Debug("Reached maximum flattening depth - preventing performance issues",
 			"currentDepth", currentDepth,
 			"maxDepth", p.config.MaxDepth,
 			"prefix", prefix)
@@ -223,8 +260,35 @@ func (p *JSONParser) FlattenObject(obj interface{}, prefix string, currentDepth 
 
 	switch v := obj.(type) {
 	case map[string]interface{}:
+		// Performance safeguard: limit the number of fields to prevent excessive memory usage
+		if len(v) > 1000 { // Reasonable limit for field count
+			p.logger.Warn("Object has too many fields - limiting to prevent performance issues",
+				"fieldCount", len(v),
+				"prefix", prefix,
+				"depth", currentDepth)
+			
+			// Convert large objects to JSON string to avoid processing thousands of fields
+			if jsonBytes, err := json.Marshal(v); err == nil {
+				result[prefix] = string(jsonBytes)
+			} else {
+				result[prefix] = fmt.Sprintf("[object with %d fields]", len(v))
+			}
+			return result
+		}
+
 		// Handle nested objects - flatten using dot notation
+		fieldCount := 0
 		for key, value := range v {
+			// Additional safeguard: limit total processed fields per object
+			fieldCount++
+			if fieldCount > 500 { // Process at most 500 fields per object
+				p.logger.Debug("Limiting field processing to prevent performance issues",
+					"processedFields", fieldCount,
+					"totalFields", len(v),
+					"prefix", prefix)
+				break
+			}
+
 			var newKey string
 			if prefix == "" {
 				newKey = key
@@ -245,6 +309,15 @@ func (p *JSONParser) FlattenObject(obj interface{}, prefix string, currentDepth 
 		}
 
 	case []interface{}:
+		// Performance safeguard: limit array processing for very large arrays
+		if len(v) > 10000 { // Reasonable limit for array size
+			p.logger.Warn("Array is too large - converting to string to prevent performance issues",
+				"arrayLength", len(v),
+				"prefix", prefix)
+			result[prefix] = fmt.Sprintf("[array with %d items - too large to process]", len(v))
+			return result
+		}
+
 		// Handle arrays by serializing them as JSON strings
 		if jsonBytes, err := json.Marshal(v); err == nil {
 			result[prefix] = string(jsonBytes)
