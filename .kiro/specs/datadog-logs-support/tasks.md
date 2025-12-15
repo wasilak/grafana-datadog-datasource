@@ -176,8 +176,8 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - **Property 1: Logs API Integration Consistency**
   - **Validates: Requirements 6.1, 6.2, 6.3, 6.5, 10.2, 10.3, 10.5, 12.1, 12.4, 12.5**
 
-- [ ] 12. Enhanced Error Handling
-- [ ] 12.1 Extend error parsing for logs-specific errors
+- [-] 12. Enhanced Error Handling
+- [x] 12.1 Extend error parsing for logs-specific errors
   - Add logs context to error messages
   - Handle logs API permission errors (logs_read_data scope)
   - Improve error messages for common logs query issues
@@ -209,22 +209,22 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - Test logs panel recognition and display
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 14. Implement Logs Volume Histogram Support (Using Grafana's Supplementary Queries)
-- [ ] 14.1 Implement DataSourceWithSupplementaryQueriesSupport interface
+- [-] 14. Implement Logs Volume Histogram Support (Using Grafana's Supplementary Queries)
+- [x] 14.1 Implement DataSourceWithSupplementaryQueriesSupport interface
   - Extend DataSource class to implement DataSourceWithSupplementaryQueriesSupport
   - Add getSupportedSupplementaryQueryTypes() method returning [SupplementaryQueryType.LogsVolume]
   - Implement getSupplementaryQuery() method to generate logs volume queries from logs queries
   - Implement getSupplementaryRequest() method to handle logs volume data requests
   - _Requirements: 18.1, 18.4_
 
-- [ ] 14.2 Add Datadog Logs Aggregation API integration
+- [x] 14.2 Add Datadog Logs Aggregation API integration
   - Implement POST /api/v2/logs/aggregate endpoint support in backend
   - Support timeseries aggregation with date_histogram grouping
   - Handle automatic bucket size calculation based on time range
   - Add queryLogsVolume method to handle logs-volume query type
   - _Requirements: 18.1, 18.2_
 
-- [ ] 14.3 Create logs volume data frame generation
+- [x] 14.3 Create logs volume data frame generation
   - Generate data frame with Time and Count fields for histogram visualization
   - Set proper metadata (preferredVisualisationType: 'graph')
   - Use refId prefix 'log-volume-' to match Grafana conventions
@@ -235,7 +235,7 @@ After reviewing the official Grafana logs data source tutorial, we've identified
   - **Property 10: Logs Volume Data Frame Structure**
   - **Validates: Requirements 18.1, 18.2, 18.3**
 
-- [ ] 14.5 Add logs volume query type detection and routing
+- [x] 14.5 Add logs volume query type detection and routing
   - Extend QueryData method to handle 'logs-volume' query type
   - Route logs volume queries to Datadog Logs Aggregation API
   - Ensure logs volume queries use same authentication and error handling as logs queries
