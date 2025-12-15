@@ -183,6 +183,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	handlers := make(map[QueryType]QueryHandler)
 	handlers[MetricsQueryType] = NewMetricsHandler(d, req.Queries, ddCtx, metricsApi)
 	handlers[LogsQueryType] = NewLogsHandler(d, req.Queries, ddCtx)
+	handlers[LogsVolumeQueryType] = NewLogsVolumeHandler(d, req.Queries, ddCtx)
 
 	// Parse all queries and route to appropriate handlers
 	for _, q := range req.Queries {
@@ -4356,4 +4357,59 @@ func (d *Datasource) fetchLogsTagValues(ctx context.Context, tagName, apiKey, ap
 
 	logger.Info("Fetched logs tag values", "tag", tagName, "count", len(tagValues))
 	return tagValues, nil
+}
+
+// makeDatadogAPIRequest makes HTTP requests to Datadog APIs with consistent authentication and error handling
+// Requirements: 18.1, 18.4, 18.5 - Support timeseries aggregation with same authentication and error handling as logs queries
+func (d *Datasource) makeDatadogAPIRequest(ctx context.Context, method, url string, requestBody []byte, apiKey, appKey string) ([]byte, error) {
+	logger := log.New()
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(string(requestBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API request: %w", err)
+	}
+
+	// Add authentication headers (same pattern as logs.go)
+	req.Header.Set("DD-API-KEY", apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", appKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	// Execute the request with timeout (same as logs implementation)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		// Use existing error handling patterns for timeout and network errors
+		errorMsg := d.parseDatadogError(err, 0, "")
+		return nil, fmt.Errorf("%s", errorMsg)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check response status
+	if resp.StatusCode != 200 {
+		logger.Error("API request failed", 
+			"method", method,
+			"url", url,
+			"statusCode", resp.StatusCode,
+			"responseBody", string(responseBody),
+			"requestBody", string(requestBody))
+		
+		// Use existing error handling patterns
+		errorMsg := d.parseDatadogError(fmt.Errorf("HTTP %d", resp.StatusCode), resp.StatusCode, string(responseBody))
+		return nil, fmt.Errorf("%s", errorMsg)
+	}
+
+	logger.Debug("API request successful", 
+		"method", method,
+		"url", url,
+		"statusCode", resp.StatusCode)
+
+	return responseBody, nil
 }
