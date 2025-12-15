@@ -56,11 +56,13 @@ type LogsPageData struct {
 // LogEntry represents a single log entry from Datadog (CORRECTED STRUCTURE)
 // Updated to match Grafana's official logs data source standards
 type LogEntry struct {
-	ID         string          `json:"id"`
-	Timestamp  time.Time       `json:"timestamp"`
-	Body       string          `json:"body"`       // ✅ CORRECT - Changed from Message to Body
-	Severity   string          `json:"severity"`   // ✅ CORRECT - Changed from Level to Severity
-	Labels     json.RawMessage `json:"labels"`     // ✅ CORRECT - All metadata as JSON
+	ID           string                 `json:"id"`
+	Timestamp    time.Time              `json:"timestamp"`
+	Body         string                 `json:"body"`         // ✅ CORRECT - Changed from Message to Body
+	Severity     string                 `json:"severity"`     // ✅ CORRECT - Changed from Level to Severity
+	Labels       json.RawMessage        `json:"labels"`       // ✅ CORRECT - All metadata as JSON
+	ParsedFields map[string]interface{} `json:"parsedFields,omitempty"` // JSON parsing results
+	ParseErrors  []string               `json:"parseErrors,omitempty"`  // JSON parsing error messages
 }
 
 // LogLabels helper struct for JSON marshaling of labels field
