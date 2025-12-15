@@ -20,10 +20,12 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 
 | Feature | Description | Documentation |
 |---------|-------------|---------------|
-| 🎯 **Smart Autocomplete** | Context-aware suggestions with real-time validation | [Autocomplete Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/autocomplete.md) |
-| 🔧 **Advanced Query Editor** | Boolean operators, formulas, and custom legends | [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/query-editor.md) |
-| 📊 **Formula Support** | Mathematical expressions across multiple queries | [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/formulas.md) |
-| 🏷️ **Custom Legends** | Template variables and dynamic series naming | [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/legends.md) |
+| 🎯 **Smart Autocomplete** | Context-aware suggestions for metrics and logs | [Metrics](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/autocomplete.md) • [Logs](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/autocomplete.md) |
+| 🔧 **Advanced Query Editor** | Boolean operators, formulas, and custom legends | [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/query-editor.md) |
+| 📊 **Formula Support** | Mathematical expressions across multiple queries | [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/formulas.md) |
+| 📋 **Logs Support** | Full Datadog logs search with syntax highlighting | [Getting Started](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/getting-started.md) • [Query Syntax](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/query-syntax.md) |
+| 🔧 **JSON Log Parsing** | Parse structured JSON from log fields into columns | [JSON Parsing Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/json-parsing.md) |
+| 🏷️ **Custom Legends** | Template variables and dynamic series naming | [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/legends.md) |
 | 🔍 **Explore Integration** | Full support for Grafana Explore mode | [Using Explore](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/explore.md) |
 | 📈 **Dashboard Variables** | Complete variable support with autocomplete | [Variables Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/variables.md) |
 | ⚡ **Performance Optimized** | Caching, debouncing, and concurrent request limiting | [Performance](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/performance.md) |
@@ -39,17 +41,18 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 
 ### ✅ Supported
 - **Metrics queries** with full Datadog query language
+- **Logs queries** with Datadog logs search syntax and autocomplete
 - **Formulas and expressions** (`$A * 100 / $B`)
 - **Boolean operators** (`OR`, `AND`, `IN`, `NOT IN`)
 - **Custom legends** with template variables
 - **Dashboard variables** and templating
 - **Grafana Explore** integration
-- **All visualization types** (graphs, tables, stat panels, etc.)
+- **All visualization types** (graphs, tables, stat panels, logs panels, etc.)
+- **Logs volume histograms** for time-series visualization
 
 ### ❌ Not Supported
-- **Logs** - Use official Datadog plugin or Loki
 - **Traces** - Use official Datadog plugin or Jaeger/Tempo
-- **Events** - Metrics only
+- **Events** - Metrics and logs only
 - **Synthetic monitoring** - Use official Datadog plugin
 
 ## 📚 Documentation
@@ -60,17 +63,28 @@ An **unofficial** Grafana datasource plugin for Datadog metrics with advanced qu
 - [Getting Started](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/getting-started.md) - Your first queries
 - [Migration Guide](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/migration.md) - Upgrade from older versions
 
+### Metrics
+- [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/query-editor.md) - Advanced query capabilities
+- [Autocomplete](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/autocomplete.md) - Smart suggestions system
+- [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/formulas.md) - Mathematical operations
+- [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/metrics/legends.md) - Custom series naming
+
+### Logs
+- [Getting Started](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/getting-started.md) - Your first logs queries
+- [Query Syntax](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/query-syntax.md) - Complete syntax reference
+- [Autocomplete](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/autocomplete.md) - Context-aware suggestions
+- [Correlation](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/correlation.md) - Linking logs with metrics
+
 ### Features
-- [Query Editor](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/query-editor.md) - Advanced query capabilities
-- [Autocomplete](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/autocomplete.md) - Smart suggestions system
-- [Formulas & Expressions](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/formulas.md) - Mathematical operations
-- [Legend Configuration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/legends.md) - Custom series naming
 - [Variables](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/variables.md) - Dashboard templating
 - [Explore Integration](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/features/explore.md) - Ad-hoc exploration
 
+### Examples
+- [Metrics Queries](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/metrics-queries.md) - Real-world metrics patterns
+- [Logs Queries](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/logs-queries.md) - Common logs search patterns
+- [Logs Dashboards](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/logs-dashboards.md) - Complete logs dashboard setups
+
 ### Advanced Usage
-- [Query Examples](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/queries.md) - Real-world query patterns
-- [Dashboard Examples](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/examples/dashboards.md) - Complete dashboard setups
 - [Performance Tuning](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/performance.md) - Optimization tips
 - [Troubleshooting](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/advanced/troubleshooting.md) - Common issues and solutions
 
@@ -92,6 +106,7 @@ GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
 
 ## 📊 Example Queries
 
+### Metrics Queries
 ```bash
 # Basic CPU usage
 avg:system.cpu.user{*} by {host}
@@ -108,12 +123,28 @@ avg:system.load.1{env IN (prod,staging) AND service:web} by {host}
 CPU: {{host}} ({{availability_zone}})
 ```
 
+### Logs Queries
+```bash
+# Basic error logs
+status:ERROR
+
+# Service-specific logs with level filtering
+service:web-app AND (status:ERROR OR status:WARN)
+
+# Complex boolean operations
+service:(web-app OR api-service) AND NOT host:test-*
+
+# Facet filtering with wildcards
+source:nginx AND @env:prod* AND message:"timeout"
+```
+
 ## 🏆 Why Choose This Plugin?
 
 | Advantage | This Plugin | Official Plugin |
 |-----------|-------------|-----------------|
 | **Cost** | Free & Open Source | Grafana Enterprise Required |
-| **Autocomplete** | Advanced context-aware | Basic |
+| **Logs Support** | Full logs search with autocomplete | Available |
+| **Autocomplete** | Advanced context-aware (metrics & logs) | Basic |
 | **Formulas** | Full mathematical expressions | Limited |
 | **Query Editor** | Modern with validation | Basic |
 | **Variables** | Complete support | Limited |
