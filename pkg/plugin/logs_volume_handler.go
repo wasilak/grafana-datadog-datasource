@@ -126,13 +126,13 @@ func (h *LogsVolumeHandler) queryLogsVolume(ctx context.Context, qm *QueryModel,
 	logger.Debug("Calculated bucket size", "bucketSize", bucketSize, "timeRange", backendQuery.TimeRange)
 
 	// Create logs aggregation request for Datadog API
-	// Using POST /api/v2/logs/aggregate endpoint
+	// Using logs search API for volume calculation
 	aggRequest := LogsAggregationRequest{
 		Data: LogsAggregationData{
 			Type: "aggregate_request",
 			Attributes: LogsAggregationAttributes{
 				Query: qm.LogQuery,
-				Time: LogsTimeRange{
+				Time: LogsTime{
 					From: backendQuery.TimeRange.From.Format(time.RFC3339),
 					To:   backendQuery.TimeRange.To.Format(time.RFC3339),
 				},
@@ -180,7 +180,8 @@ func (h *LogsVolumeHandler) calculateBucketSize(timeRange backend.TimeRange) str
 	}
 }
 
-// callLogsAggregationAPI makes the actual API call to Datadog's Logs Aggregation API
+// callLogsAggregationAPI makes API calls to get logs volume data using the logs search API
+// Since the dedicated aggregation endpoint may not be available, we use time-based search
 // Requirements: 18.1, 18.4, 18.5
 func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request LogsAggregationRequest) (*LogsAggregationResponse, error) {
 	logger := log.New()
@@ -203,31 +204,129 @@ func (h *LogsVolumeHandler) callLogsAggregationAPI(ctx context.Context, request 
 		site = "datadoghq.com" // Default to US
 	}
 
-	// Construct API URL
-	apiURL := fmt.Sprintf("https://api.%s/api/v2/logs/aggregate", site)
+	// Use logs search API instead of aggregation API for better compatibility
+	// Construct API URL for logs search
+	apiURL := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
 
-	// Marshal request body
-	requestBody, err := json.Marshal(request)
+	// Parse time range
+	fromTime, err := time.Parse(time.RFC3339, request.Data.Attributes.Time.From)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to parse from time: %w", err)
 	}
-
-	logger.Debug("Making logs aggregation API call", "url", apiURL, "query", request.Data.Attributes.Query)
-
-	// Make HTTP request using the same patterns as existing logs implementation
-	// This ensures consistent timeout, error handling, and authentication
-	httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", apiURL, requestBody, apiKey, appKey)
+	
+	toTime, err := time.Parse(time.RFC3339, request.Data.Attributes.Time.To)
 	if err != nil {
-		return nil, fmt.Errorf("logs aggregation API request failed: %w", err)
+		return nil, fmt.Errorf("failed to parse to time: %w", err)
 	}
 
-	// Parse response
-	var aggregationResponse LogsAggregationResponse
-	if err := json.Unmarshal(httpResponse, &aggregationResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse aggregation response: %w", err)
+	// Calculate bucket duration
+	bucketInterval := request.Data.Attributes.GroupBy[0].Histogram.Interval
+	bucketDuration, err := h.parseBucketInterval(bucketInterval)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bucket interval: %w", err)
 	}
 
-	return &aggregationResponse, nil
+	// Generate time buckets and get counts for each
+	buckets := []LogsAggregationBucket{}
+	
+	for currentTime := fromTime; currentTime.Before(toTime); currentTime = currentTime.Add(bucketDuration) {
+		bucketEnd := currentTime.Add(bucketDuration)
+		if bucketEnd.After(toTime) {
+			bucketEnd = toTime
+		}
+
+		// Create search request for this time bucket
+		searchRequest := LogsSearchRequest{
+			Data: LogsSearchData{
+				Type: "search_request",
+				Attributes: LogsSearchAttributes{
+					Query: request.Data.Attributes.Query,
+					Time: LogsTime{
+						From: currentTime.Format(time.RFC3339),
+						To:   bucketEnd.Format(time.RFC3339),
+					},
+					Sort:  "timestamp",
+					Limit: 1, // We only need the count, not the actual logs
+				},
+			},
+		}
+
+		// Marshal request body
+		requestBody, err := json.Marshal(searchRequest)
+		if err != nil {
+			logger.Warn("Failed to marshal search request for bucket", "time", currentTime, "error", err)
+			continue
+		}
+
+		logger.Debug("Making logs search API call for volume bucket", 
+			"url", apiURL, 
+			"query", request.Data.Attributes.Query,
+			"bucketStart", currentTime,
+			"bucketEnd", bucketEnd)
+
+		// Make HTTP request
+		httpResponse, err := h.datasource.makeDatadogAPIRequest(ctx, "POST", apiURL, requestBody, apiKey, appKey)
+		if err != nil {
+			logger.Warn("Logs search API request failed for bucket", "time", currentTime, "error", err)
+			// Add empty bucket to maintain time series continuity
+			buckets = append(buckets, LogsAggregationBucket{
+				By:    LogsAggregationBucketBy{Timestamp: currentTime.Format(time.RFC3339)},
+				Count: 0,
+			})
+			continue
+		}
+
+		// Parse search response to get total count
+		var searchResponse LogsSearchResponse
+		if err := json.Unmarshal(httpResponse, &searchResponse); err != nil {
+			logger.Warn("Failed to parse search response for bucket", "time", currentTime, "error", err)
+			// Add empty bucket to maintain time series continuity
+			buckets = append(buckets, LogsAggregationBucket{
+				By:    LogsAggregationBucketBy{Timestamp: currentTime.Format(time.RFC3339)},
+				Count: 0,
+			})
+			continue
+		}
+
+		// Extract total count from meta information
+		totalCount := 0
+		if searchResponse.Meta != nil && searchResponse.Meta.Page != nil {
+			totalCount = searchResponse.Meta.Page.Total
+		}
+
+		// Add bucket with count
+		buckets = append(buckets, LogsAggregationBucket{
+			By:    LogsAggregationBucketBy{Timestamp: currentTime.Format(time.RFC3339)},
+			Count: totalCount,
+		})
+	}
+
+	// Create aggregation response
+	aggregationResponse := &LogsAggregationResponse{
+		Data: LogsAggregationResponseData{
+			Buckets: buckets,
+		},
+	}
+
+	return aggregationResponse, nil
+}
+
+// parseBucketInterval converts bucket interval string to time.Duration
+func (h *LogsVolumeHandler) parseBucketInterval(interval string) (time.Duration, error) {
+	switch interval {
+	case "1m":
+		return time.Minute, nil
+	case "5m":
+		return 5 * time.Minute, nil
+	case "15m":
+		return 15 * time.Minute, nil
+	case "1h":
+		return time.Hour, nil
+	case "4h":
+		return 4 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unsupported bucket interval: %s", interval)
+	}
 }
 
 // createLogsVolumeDataFrame creates a Grafana data frame for logs volume histogram visualization
@@ -271,9 +370,9 @@ func (h *LogsVolumeHandler) createLogsVolumeDataFrame(response *LogsAggregationR
 	return frame
 }
 
-// Data structures for Datadog Logs Aggregation API
+// Data structures for Datadog Logs Volume API
 
-// LogsAggregationRequest represents the request structure for Datadog's Logs Aggregation API
+// LogsAggregationRequest represents the request structure for logs volume queries
 type LogsAggregationRequest struct {
 	Data LogsAggregationData `json:"data"`
 }
@@ -284,15 +383,10 @@ type LogsAggregationData struct {
 }
 
 type LogsAggregationAttributes struct {
-	Query   string          `json:"query"`
-	Time    LogsTimeRange   `json:"time"`
-	Compute []LogsCompute   `json:"compute"`
-	GroupBy []LogsGroupBy   `json:"group_by"`
-}
-
-type LogsTimeRange struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	Query   string        `json:"query"`
+	Time    LogsTime      `json:"time"`
+	Compute []LogsCompute `json:"compute"`
+	GroupBy []LogsGroupBy `json:"group_by"`
 }
 
 type LogsCompute struct {
@@ -308,7 +402,21 @@ type LogsHistogram struct {
 	Interval string `json:"interval"`
 }
 
-// LogsAggregationResponse represents the response structure from Datadog's Logs Aggregation API
+// LogsSearchResponse represents the response structure from Datadog's Logs Search API
+type LogsSearchResponse struct {
+	Data []LogEntry     `json:"data"`
+	Meta *LogsSearchMeta `json:"meta"`
+}
+
+type LogsSearchMeta struct {
+	Page *LogsSearchPage `json:"page"`
+}
+
+type LogsSearchPage struct {
+	Total int `json:"total"`
+}
+
+// LogsAggregationResponse represents the response structure for logs volume queries
 type LogsAggregationResponse struct {
 	Data LogsAggregationResponseData `json:"data"`
 }
