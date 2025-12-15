@@ -116,6 +116,240 @@ func (config *JSONParsingConfig) Validate() error {
 	return nil
 }
 
+// JSONParser handles dynamic JSON parsing using interface{} for flexible JSON structures
+// Implements core JSON parsing functionality with error handling and performance safeguards
+// Requirements: 2.2, 2.3, 5.1, 5.2, 6.4, 6.5
+type JSONParser struct {
+	config JSONParsingConfig
+	logger log.Logger
+}
+
+// NewJSONParser creates a new JSONParser instance with the given configuration
+func NewJSONParser(config JSONParsingConfig) *JSONParser {
+	return &JSONParser{
+		config: config,
+		logger: log.New(),
+	}
+}
+
+// ParseJSONField parses a JSON string field and returns the parsed data as interface{}
+// Uses Go's json.Unmarshal with interface{} for dynamic JSON parsing
+// Implements size and timeout limits for parsing operations
+func (p *JSONParser) ParseJSONField(jsonString string) (interface{}, error) {
+	// Check if parsing is enabled
+	if !p.config.Enabled {
+		return nil, fmt.Errorf("JSON parsing is disabled")
+	}
+
+	// Validate input
+	if jsonString == "" {
+		return nil, fmt.Errorf("empty JSON string")
+	}
+
+	// Check size limits to prevent memory issues
+	if len(jsonString) > p.config.MaxSize {
+		p.logger.Warn("JSON string exceeds size limit",
+			"size", len(jsonString),
+			"maxSize", p.config.MaxSize)
+		return nil, fmt.Errorf("JSON string size (%d bytes) exceeds maximum allowed size (%d bytes)", 
+			len(jsonString), p.config.MaxSize)
+	}
+
+	// Create a context with timeout to prevent parsing from blocking
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Channel to receive parsing result
+	type parseResult struct {
+		data interface{}
+		err  error
+	}
+	resultChan := make(chan parseResult, 1)
+
+	// Parse JSON in a goroutine to enable timeout handling
+	go func() {
+		var data interface{}
+		err := json.Unmarshal([]byte(jsonString), &data)
+		resultChan <- parseResult{data: data, err: err}
+	}()
+
+	// Wait for parsing to complete or timeout
+	select {
+	case result := <-resultChan:
+		if result.err != nil {
+			p.logger.Debug("JSON parsing failed",
+				"error", result.err,
+				"jsonLength", len(jsonString),
+				"jsonPreview", p.truncateString(jsonString, 100))
+			return nil, fmt.Errorf("failed to parse JSON: %w", result.err)
+		}
+
+		p.logger.Debug("JSON parsing successful",
+			"jsonLength", len(jsonString),
+			"dataType", fmt.Sprintf("%T", result.data))
+
+		return result.data, nil
+
+	case <-ctx.Done():
+		p.logger.Warn("JSON parsing timeout",
+			"timeout", "5s",
+			"jsonLength", len(jsonString))
+		return nil, fmt.Errorf("JSON parsing timeout after 5 seconds")
+	}
+}
+
+// FlattenObject flattens a nested JSON object using dot notation for field names
+// Handles arrays by serializing them as JSON strings
+// Implements depth limiting to prevent performance issues
+// Requirements: 3.1, 3.2, 3.3, 6.3
+func (p *JSONParser) FlattenObject(obj interface{}, prefix string, currentDepth int) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Check depth limit to prevent performance issues with deeply nested objects
+	if currentDepth >= p.config.MaxDepth {
+		p.logger.Debug("Reached maximum flattening depth",
+			"currentDepth", currentDepth,
+			"maxDepth", p.config.MaxDepth,
+			"prefix", prefix)
+		
+		// Convert the remaining object to JSON string instead of continuing to flatten
+		if jsonBytes, err := json.Marshal(obj); err == nil {
+			result[prefix] = string(jsonBytes)
+		} else {
+			result[prefix] = fmt.Sprintf("%v", obj)
+		}
+		return result
+	}
+
+	switch v := obj.(type) {
+	case map[string]interface{}:
+		// Handle nested objects - flatten using dot notation
+		for key, value := range v {
+			var newKey string
+			if prefix == "" {
+				newKey = key
+			} else {
+				newKey = prefix + "." + key
+			}
+
+			// Recursively flatten nested objects
+			if nestedMap, ok := value.(map[string]interface{}); ok {
+				flattened := p.FlattenObject(nestedMap, newKey, currentDepth+1)
+				for flatKey, flatValue := range flattened {
+					result[flatKey] = flatValue
+				}
+			} else {
+				// Handle non-object values
+				result[newKey] = p.processValue(value)
+			}
+		}
+
+	case []interface{}:
+		// Handle arrays by serializing them as JSON strings
+		if jsonBytes, err := json.Marshal(v); err == nil {
+			result[prefix] = string(jsonBytes)
+		} else {
+			result[prefix] = fmt.Sprintf("%v", v)
+		}
+
+	default:
+		// Handle primitive values
+		result[prefix] = p.processValue(v)
+	}
+
+	return result
+}
+
+// processValue processes individual values, handling arrays by converting to JSON strings
+func (p *JSONParser) processValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case []interface{}:
+		// Convert arrays to JSON strings for display
+		if jsonBytes, err := json.Marshal(v); err == nil {
+			return string(jsonBytes)
+		}
+		return fmt.Sprintf("%v", v)
+	case map[string]interface{}:
+		// Convert nested objects to JSON strings if not already flattened
+		if jsonBytes, err := json.Marshal(v); err == nil {
+			return string(jsonBytes)
+		}
+		return fmt.Sprintf("%v", v)
+	default:
+		// Return primitive values as-is
+		return v
+	}
+}
+
+// truncateString truncates a string to the specified length for logging purposes
+func (p *JSONParser) truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// ValidateTargetField validates that the target field exists in the log entry
+func (p *JSONParser) ValidateTargetField(logData map[string]interface{}) error {
+	if !p.config.Enabled {
+		return nil
+	}
+
+	switch p.config.TargetField {
+	case "whole_log":
+		// For whole_log, we'll parse the entire log entry as JSON
+		return nil
+	case "message":
+		if _, exists := logData["message"]; !exists {
+			return fmt.Errorf("target field 'message' not found in log entry")
+		}
+	case "data":
+		if _, exists := logData["data"]; !exists {
+			return fmt.Errorf("target field 'data' not found in log entry")
+		}
+	case "attributes":
+		if _, exists := logData["attributes"]; !exists {
+			return fmt.Errorf("target field 'attributes' not found in log entry")
+		}
+	default:
+		return fmt.Errorf("unsupported target field: %s", p.config.TargetField)
+	}
+
+	return nil
+}
+
+// ExtractTargetFieldValue extracts the value of the target field from log data
+func (p *JSONParser) ExtractTargetFieldValue(logData map[string]interface{}) (string, error) {
+	if !p.config.Enabled {
+		return "", fmt.Errorf("JSON parsing is disabled")
+	}
+
+	switch p.config.TargetField {
+	case "whole_log":
+		// Convert entire log entry to JSON string
+		if jsonBytes, err := json.Marshal(logData); err == nil {
+			return string(jsonBytes), nil
+		}
+		return "", fmt.Errorf("failed to marshal whole log entry to JSON")
+
+	case "message", "data", "attributes":
+		if value, exists := logData[p.config.TargetField]; exists {
+			if strValue, ok := value.(string); ok {
+				return strValue, nil
+			}
+			// If not a string, convert to JSON
+			if jsonBytes, err := json.Marshal(value); err == nil {
+				return string(jsonBytes), nil
+			}
+			return fmt.Sprintf("%v", value), nil
+		}
+		return "", fmt.Errorf("target field '%s' not found in log entry", p.config.TargetField)
+
+	default:
+		return "", fmt.Errorf("unsupported target field: %s", p.config.TargetField)
+	}
+}
+
 // QueryModel represents a query from the frontend
 type QueryModel struct {
 	QueryText         string `json:"queryText"`
