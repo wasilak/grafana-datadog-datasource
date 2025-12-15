@@ -157,18 +157,17 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 		// Extract standard fields using the corrected structure
 		body, severity, labels := p.extractLogAttributes(attributes)
 		
-		// Extract individual attributes and tags for Grafana filtering
-		individualAttributes, individualTags := p.extractIndividualFields(attributes)
+		// Extract and flatten all attributes and tags for Grafana filtering
+		flattenedFields, _ := p.extractIndividualFields(attributes)
 
 		// Create log entry with corrected structure
 		entry := LogEntry{
-			ID:         logID,
-			Timestamp:  timestamp,
-			Body:       body,                 // ✅ CORRECT - Changed from Message
-			Severity:   severity,             // ✅ CORRECT - Changed from Level
-			Labels:     labels,               // ✅ CORRECT - All metadata as JSON
-			Attributes: individualAttributes, // Individual attributes for filtering
-			Tags:       individualTags,       // Individual tags for filtering
+			ID:              logID,
+			Timestamp:       timestamp,
+			Body:            body,            // ✅ CORRECT - Changed from Message
+			Severity:        severity,        // ✅ CORRECT - Changed from Level
+			Labels:          labels,          // ✅ CORRECT - All metadata as JSON
+			FlattenedFields: flattenedFields, // Flattened attributes and tags for filtering
 		}
 
 		// Apply JSON parsing if configuration is provided and enabled
@@ -308,32 +307,68 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 	return body, severity, labelsJSON
 }
 
-// extractIndividualFields extracts attributes and tags as individual fields for Grafana filtering/aggregation
-// This enables each attribute and tag to appear as a separate column in Grafana logs panel
+// extractIndividualFields extracts and flattens all attributes and tags as individual fields for Grafana filtering/aggregation
+// Uses dot notation for nested structures to enable each field to appear as a separate column in Grafana logs panel
 func (p *LogsResponseParser) extractIndividualFields(attributes map[string]interface{}) (map[string]interface{}, map[string]string) {
-	individualAttributes := make(map[string]interface{})
-	individualTags := make(map[string]string)
+	flattenedFields := make(map[string]interface{})
 	
-	// Extract all attributes as individual fields (except special ones we handle separately)
+	// Flatten all attributes using dot notation (except special ones we handle separately)
 	for key, value := range attributes {
-		if key != "message" && key != "status" && key != "tags" && key != "timestamp" {
-			individualAttributes[key] = value
-		}
-	}
-	
-	// Extract tags as individual fields (Datadog returns tags as array of "key:value" strings)
-	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
-		for _, tag := range tagsArray {
-			if tagStr, ok := tag.(string); ok {
-				parts := strings.SplitN(tagStr, ":", 2)
-				if len(parts) == 2 {
-					individualTags[parts[0]] = parts[1]
+		if key != "message" && key != "status" && key != "timestamp" {
+			if key == "tags" {
+				// Handle tags specially - convert array of "key:value" strings to individual fields
+				if tagsArray, ok := value.([]interface{}); ok {
+					for _, tag := range tagsArray {
+						if tagStr, ok := tag.(string); ok {
+							parts := strings.SplitN(tagStr, ":", 2)
+							if len(parts) == 2 {
+								// Create individual tag fields with "tags." prefix
+								flattenedFields["tags."+parts[0]] = parts[1]
+							}
+						}
+					}
 				}
+			} else {
+				// Flatten other attributes using dot notation
+				p.flattenValue(key, value, flattenedFields, 0, 5) // Max depth of 5 to prevent infinite recursion
 			}
 		}
 	}
 	
-	return individualAttributes, individualTags
+	// For backward compatibility, return empty tags map since we're now using flattened fields
+	return flattenedFields, make(map[string]string)
+}
+
+// flattenValue recursively flattens nested structures using dot notation
+func (p *LogsResponseParser) flattenValue(prefix string, value interface{}, result map[string]interface{}, depth int, maxDepth int) {
+	// Prevent infinite recursion
+	if depth > maxDepth {
+		result[prefix] = p.convertValueToString(value)
+		return
+	}
+	
+	switch v := value.(type) {
+	case map[string]interface{}:
+		// Flatten nested objects with dot notation
+		for key, nestedValue := range v {
+			newPrefix := prefix + "." + key
+			p.flattenValue(newPrefix, nestedValue, result, depth+1, maxDepth)
+		}
+	case []interface{}:
+		// For arrays, create indexed fields or serialize as JSON if too complex
+		if len(v) <= 10 { // Limit array flattening to prevent too many fields
+			for i, item := range v {
+				newPrefix := fmt.Sprintf("%s[%d]", prefix, i)
+				p.flattenValue(newPrefix, item, result, depth+1, maxDepth)
+			}
+		} else {
+			// For large arrays, serialize as JSON string
+			result[prefix] = p.convertValueToString(value)
+		}
+	default:
+		// For primitive values, store directly
+		result[prefix] = value
+	}
 }
 
 // createLogsDataFrames creates Grafana DataFrames from log entries using corrected structure
@@ -368,9 +403,8 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 	// Collect all unique parsed field names for dynamic column creation
 	parsedFieldNames := make(map[string]bool)
 	
-	// Collect all unique attribute and tag names for individual columns
-	attributeNames := make(map[string]bool)
-	tagNames := make(map[string]bool)
+	// Collect all unique flattened field names for individual columns
+	flattenedFieldNames := make(map[string]bool)
 	
 	for _, entry := range logEntries {
 		// Collect parsed fields from message parsing
@@ -380,17 +414,10 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			}
 		}
 		
-		// Collect attribute names directly from the entry
-		if entry.Attributes != nil {
-			for attrName := range entry.Attributes {
-				attributeNames[attrName] = true
-			}
-		}
-		
-		// Collect tag names directly from the entry
-		if entry.Tags != nil {
-			for tagName := range entry.Tags {
-				tagNames[tagName] = true
+		// Collect flattened field names (attributes and tags with dot notation)
+		if entry.FlattenedFields != nil {
+			for fieldName := range entry.FlattenedFields {
+				flattenedFieldNames[fieldName] = true
 			}
 		}
 	}
@@ -422,16 +449,10 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		parsedFieldData[fieldName] = make([]interface{}, entryCount)
 	}
 	
-	// Create slices for attribute fields (for individual columns)
-	attributeFieldData := make(map[string][]*string)
-	for attrName := range attributeNames {
-		attributeFieldData[attrName] = make([]*string, entryCount)
-	}
-	
-	// Create slices for tag fields (for individual columns)
-	tagFieldData := make(map[string][]*string)
-	for tagName := range tagNames {
-		tagFieldData[tagName] = make([]*string, entryCount)
+	// Create slices for flattened fields (for individual columns)
+	flattenedFieldData := make(map[string][]*string)
+	for fieldName := range flattenedFieldNames {
+		flattenedFieldData[fieldName] = make([]*string, entryCount)
 	}
 
 	// Populate data from sanitized log entries using corrected field structure
@@ -471,21 +492,12 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			}
 		}
 		
-		// Populate attribute data for individual columns
-		if entry.Attributes != nil {
-			for attrName, attrValue := range entry.Attributes {
-				if fieldData, exists := attributeFieldData[attrName]; exists {
-					strValue := p.convertValueToString(attrValue)
+		// Populate flattened field data for individual columns
+		if entry.FlattenedFields != nil {
+			for fieldName, fieldValue := range entry.FlattenedFields {
+				if fieldData, exists := flattenedFieldData[fieldName]; exists {
+					strValue := p.convertValueToString(fieldValue)
 					fieldData[i] = &strValue
-				}
-			}
-		}
-		
-		// Populate tag data for individual columns
-		if entry.Tags != nil {
-			for tagName, tagValue := range entry.Tags {
-				if fieldData, exists := tagFieldData[tagName]; exists {
-					fieldData[i] = &tagValue
 				}
 			}
 		}
@@ -531,30 +543,29 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
-	// Add attribute fields as separate columns (always available for filtering/aggregation)
-	for attrName, fieldData := range attributeFieldData {
-		attrField := data.NewField(attrName, nil, fieldData)
-		attrField.Config = &data.FieldConfig{
-			DisplayName: attrName,
+	// Add flattened fields as separate columns (always available for filtering/aggregation)
+	for fieldName, fieldData := range flattenedFieldData {
+		field := data.NewField(fieldName, nil, fieldData)
+		
+		// Determine field type based on name prefix
+		var fieldType, source string
+		if strings.HasPrefix(fieldName, "tags.") {
+			fieldType = "tag"
+			source = "datadog_tags"
+		} else {
+			fieldType = "attribute"
+			source = "datadog_attributes"
+		}
+		
+		field.Config = &data.FieldConfig{
+			DisplayName: fieldName,
 			Custom: map[string]interface{}{
-				"attributeField": true, // Mark as attribute field
-				"source":         "datadog_attributes",
+				"fieldType": fieldType,
+				"source":    source,
+				"flattened": true, // Mark as flattened field
 			},
 		}
-		frame.Fields = append(frame.Fields, attrField)
-	}
-	
-	// Add tag fields as separate columns (always available for filtering/aggregation)
-	for tagName, fieldData := range tagFieldData {
-		tagField := data.NewField(tagName, nil, fieldData)
-		tagField.Config = &data.FieldConfig{
-			DisplayName: tagName,
-			Custom: map[string]interface{}{
-				"tagField": true, // Mark as tag field
-				"source":   "datadog_tags",
-			},
-		}
-		frame.Fields = append(frame.Fields, tagField)
+		frame.Fields = append(frame.Fields, field)
 	}
 
 	// Add parsed fields as separate columns (from optional message parsing)
@@ -607,8 +618,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
 		"fieldCount", len(frame.Fields),
-		"attributeFieldCount", len(attributeFieldData),
-		"tagFieldCount", len(tagFieldData),
+		"flattenedFieldCount", len(flattenedFieldData),
 		"parsedFieldCount", len(parsedFieldNames),
 		"searchWords", searchWords)
 

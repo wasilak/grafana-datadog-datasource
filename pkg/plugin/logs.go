@@ -62,9 +62,8 @@ type LogEntry struct {
 	Severity     string                 `json:"severity"`     // ✅ CORRECT - Changed from Level to Severity
 	Labels       json.RawMessage        `json:"labels"`       // ✅ CORRECT - All metadata as JSON
 	
-	// Individual attribute fields for Grafana filtering/aggregation
-	Attributes   map[string]interface{} `json:"attributes,omitempty"`   // All attributes as individual fields
-	Tags         map[string]string      `json:"tags,omitempty"`         // All tags as individual fields
+	// Flattened fields for Grafana filtering/aggregation (uses dot notation for nested structures)
+	FlattenedFields map[string]interface{} `json:"flattenedFields,omitempty"` // All attributes and tags flattened with dot notation
 	
 	ParsedFields map[string]interface{} `json:"parsedFields,omitempty"` // JSON parsing results
 	ParseErrors  []string               `json:"parseErrors,omitempty"`  // JSON parsing error messages
