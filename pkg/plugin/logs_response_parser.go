@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,20 +28,20 @@ func NewLogsResponseParser(datasource *Datasource) *LogsResponseParser {
 
 // ParseResponse parses Datadog Logs API response and converts to Grafana data frames
 // Handles both structured and unstructured response formats
-func (p *LogsResponseParser) ParseResponse(apiResponse interface{}, refID string) (data.Frames, error) {
+func (p *LogsResponseParser) ParseResponse(apiResponse interface{}, refID string, query string) (data.Frames, error) {
 	logger := log.New()
 
 	// Handle different response formats
 	switch resp := apiResponse.(type) {
 	case LogsResponse:
 		// Structured response format
-		return p.parseStructuredResponse(resp, refID)
+		return p.parseStructuredResponse(resp, refID, query)
 	case map[string]interface{}:
 		// Map response format
-		return p.parseMapResponse(resp, refID)
+		return p.parseMapResponse(resp, refID, query)
 	case []map[string]interface{}:
 		// Direct data array format
-		return p.parseDataArray(resp, refID)
+		return p.parseDataArray(resp, refID, query)
 	default:
 		logger.Error("Unsupported response format", "type", fmt.Sprintf("%T", apiResponse))
 		return nil, fmt.Errorf("unsupported response format: %T", apiResponse)
@@ -48,7 +49,7 @@ func (p *LogsResponseParser) ParseResponse(apiResponse interface{}, refID string
 }
 
 // parseStructuredResponse parses LogsResponse struct format
-func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refID string) (data.Frames, error) {
+func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refID string, query string) (data.Frames, error) {
 	logger := log.New()
 	logger.Debug("Parsing structured logs response", "entryCount", len(response.Data))
 
@@ -59,7 +60,7 @@ func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refI
 	}
 
 	// Create data frames using the corrected structure
-	frames := p.createLogsDataFrames(logEntries, refID)
+	frames := p.createLogsDataFrames(logEntries, refID, query)
 	
 	// Add pagination metadata if available
 	if response.Meta.Page.After != "" {
@@ -70,7 +71,7 @@ func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refI
 }
 
 // parseMapResponse parses map[string]interface{} response format
-func (p *LogsResponseParser) parseMapResponse(responseMap map[string]interface{}, refID string) (data.Frames, error) {
+func (p *LogsResponseParser) parseMapResponse(responseMap map[string]interface{}, refID string, query string) (data.Frames, error) {
 	logger := log.New()
 
 	// Extract data array from response map
@@ -96,11 +97,11 @@ func (p *LogsResponseParser) parseMapResponse(responseMap map[string]interface{}
 		}
 	}
 
-	return p.parseDataArray(mapArray, refID)
+	return p.parseDataArray(mapArray, refID, query)
 }
 
 // parseDataArray parses []map[string]interface{} data array format
-func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, refID string) (data.Frames, error) {
+func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, refID string, query string) (data.Frames, error) {
 	logger := log.New()
 	logger.Debug("Parsing logs data array", "entryCount", len(dataArray))
 
@@ -111,7 +112,7 @@ func (p *LogsResponseParser) parseDataArray(dataArray []map[string]interface{}, 
 	}
 
 	// Create data frames using the corrected structure
-	return p.createLogsDataFrames(logEntries, refID), nil
+	return p.createLogsDataFrames(logEntries, refID, query), nil
 }
 
 // convertDataArrayToLogEntries converts Datadog API data array to LogEntry structs
@@ -288,7 +289,7 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 
 // createLogsDataFrames creates Grafana DataFrames from log entries using corrected structure
 // Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 13.1
-func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID string) data.Frames {
+func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID string, query string) data.Frames {
 	logger := log.New()
 
 	// Validate input parameters
@@ -401,6 +402,9 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		labelsField,   // ✅ CORRECT - labels as JSON
 	)
 
+	// Extract search terms from the query for highlighting
+	searchWords := p.extractSearchTerms(query)
+
 	// ✅ CORRECT - Set appropriate metadata for Grafana's logs panel recognition
 	frame.Meta = &data.FrameMeta{
 		Type: data.FrameTypeLogLines, // Critical: This tells Grafana this is log data
@@ -408,8 +412,8 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		PreferredVisualization: "logs",
 		Custom: map[string]interface{}{
 			// Enhanced metadata for search highlighting and filtering
-			"searchWords": []string{}, // For search term highlighting
-			"limit":       entryCount, // For pagination info
+			"searchWords": searchWords,  // For search term highlighting
+			"limit":       entryCount,   // For pagination info
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
@@ -420,7 +424,8 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		"entryCount", entryCount,
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
-		"fieldCount", len(frame.Fields))
+		"fieldCount", len(frame.Fields),
+		"searchWords", searchWords)
 
 	return data.Frames{frame}
 }
@@ -580,4 +585,81 @@ func (p *LogsResponseParser) sanitizeLogEntry(entry LogEntry) LogEntry {
 	}
 
 	return entry
+}
+// extractSearchTerms extracts search terms from a Datadog logs query for highlighting purposes.
+// This function identifies text search terms while excluding facet filters.
+func (p *LogsResponseParser) extractSearchTerms(query string) []string {
+	if query == "" {
+		return []string{}
+	}
+
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return []string{}
+	}
+
+	searchTerms := []string{}
+
+	// Remove facet filters (service:, source:, status:, host:, env:, etc.)
+	// Facet pattern: word followed by colon and value (with optional quotes)
+	facetPattern := regexp.MustCompile(`\b\w+:\s*(?:"[^"]*"|[^\s]+)`)
+	queryWithoutFacets := facetPattern.ReplaceAllString(trimmedQuery, "")
+
+	// Remove boolean operators (AND, OR, NOT) as they're not search terms
+	booleanPattern := regexp.MustCompile(`(?i)\b(AND|OR|NOT)\b`)
+	queryWithoutFacets = booleanPattern.ReplaceAllString(queryWithoutFacets, " ")
+
+	// Remove parentheses used for grouping
+	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, "(", " ")
+	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, ")", " ")
+
+	// Extract quoted strings first (preserve spaces within quotes)
+	quotedPattern := regexp.MustCompile(`"([^"]*)"`)
+	quotedMatches := quotedPattern.FindAllStringSubmatch(queryWithoutFacets, -1)
+	for _, match := range quotedMatches {
+		if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
+			searchTerms = append(searchTerms, strings.TrimSpace(match[1]))
+		}
+	}
+
+	// Remove quoted strings from the query to process remaining words
+	queryWithoutQuotes := quotedPattern.ReplaceAllString(queryWithoutFacets, " ")
+
+	// Split remaining words by whitespace and filter out empty strings
+	words := strings.Fields(queryWithoutQuotes)
+
+	// Process individual words
+	for _, word := range words {
+		// Clean up the word by removing quotes and special characters at boundaries
+		cleanWord := strings.Trim(word, `"'`)
+
+		// Skip if the word is empty after cleaning
+		if cleanWord == "" {
+			continue
+		}
+
+		// Handle wildcard patterns - extract the base term without wildcards
+		if strings.Contains(cleanWord, "*") {
+			// For patterns like "error*" or "*error*", extract "error"
+			baseWord := strings.ReplaceAll(cleanWord, "*", "")
+			if baseWord != "" {
+				searchTerms = append(searchTerms, baseWord)
+			}
+		} else {
+			// Regular search term
+			searchTerms = append(searchTerms, cleanWord)
+		}
+	}
+
+	// Remove duplicates
+	seen := make(map[string]bool)
+	uniqueTerms := []string{}
+	for _, term := range searchTerms {
+		if !seen[term] {
+			seen[term] = true
+			uniqueTerms = append(uniqueTerms, term)
+		}
+	}
+
+	return uniqueTerms
 }

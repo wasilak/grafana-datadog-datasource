@@ -1,4 +1,4 @@
-import { validateLogsQuery, getQuerySuggestions } from '../logsQueryValidator';
+import { validateLogsQuery, getQuerySuggestions, extractSearchTerms } from '../logsQueryValidator';
 
 describe('logsQueryValidator', () => {
   describe('validateLogsQuery', () => {
@@ -145,3 +145,65 @@ describe('logsQueryValidator', () => {
     });
   });
 });
+
+  describe('extractSearchTerms', () => {
+    it('should extract simple search terms', () => {
+      const result = extractSearchTerms('error message');
+      expect(result).toEqual(['error', 'message']);
+    });
+
+    it('should exclude facet filters', () => {
+      const result = extractSearchTerms('error service:web-app status:error');
+      expect(result).toEqual(['error']);
+    });
+
+    it('should exclude quoted facet filters', () => {
+      const result = extractSearchTerms('error service:"web-app-production" message');
+      expect(result).toEqual(['error', 'message']);
+    });
+
+    it('should handle boolean operators', () => {
+      const result = extractSearchTerms('error AND warning OR info');
+      expect(result).toEqual(['error', 'warning', 'info']);
+    });
+
+    it('should handle parentheses', () => {
+      const result = extractSearchTerms('(error OR warning) AND message');
+      expect(result).toEqual(['error', 'warning', 'message']);
+    });
+
+    it('should handle wildcard patterns', () => {
+      const result = extractSearchTerms('error* *warning* test*');
+      expect(result).toEqual(['error', 'warning', 'test']);
+    });
+
+    it('should handle quoted search terms', () => {
+      const result = extractSearchTerms('"error message" AND "warning text"');
+      expect(result).toEqual(['error message', 'warning text']);
+    });
+
+    it('should handle complex queries', () => {
+      const result = extractSearchTerms('(error OR warning) AND service:web-app AND "database connection" AND timeout*');
+      expect(result).toEqual(['database connection', 'error', 'warning', 'timeout']);
+    });
+
+    it('should return empty array for empty query', () => {
+      const result = extractSearchTerms('');
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array for query with only facets', () => {
+      const result = extractSearchTerms('service:web-app status:error host:server1');
+      expect(result).toEqual([]);
+    });
+
+    it('should remove duplicates', () => {
+      const result = extractSearchTerms('error error message error');
+      expect(result).toEqual(['error', 'message']);
+    });
+
+    it('should handle mixed case boolean operators', () => {
+      const result = extractSearchTerms('error and warning or info');
+      expect(result).toEqual(['error', 'warning', 'info']);
+    });
+  });

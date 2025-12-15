@@ -12,6 +12,80 @@ export interface LogsValidationResult {
 }
 
 /**
+ * Extracts search terms from a Datadog logs query for highlighting purposes.
+ * This function identifies text search terms while excluding facet filters.
+ * 
+ * @param query - The Datadog logs query string
+ * @returns Array of search terms that should be highlighted in log messages
+ */
+export function extractSearchTerms(query: string): string[] {
+  if (!query || query.trim().length === 0) {
+    return [];
+  }
+
+  const trimmedQuery = query.trim();
+  const searchTerms: string[] = [];
+
+  // Remove facet filters (service:, source:, status:, host:, env:, etc.)
+  // Facet pattern: word followed by colon and value (with optional quotes)
+  const facetPattern = /\b\w+:\s*(?:"[^"]*"|[^\s]+)/g;
+  let queryWithoutFacets = trimmedQuery.replace(facetPattern, '');
+
+  // Remove boolean operators (AND, OR, NOT) as they're not search terms
+  queryWithoutFacets = queryWithoutFacets.replace(/\b(AND|OR|NOT)\b/gi, ' ');
+
+  // Remove parentheses used for grouping
+  queryWithoutFacets = queryWithoutFacets.replace(/[()]/g, ' ');
+
+  // Extract quoted strings first (preserve spaces within quotes)
+  const quotedStrings: string[] = [];
+  const quotedPattern = /"([^"]*)"/g;
+  let match;
+  while ((match = quotedPattern.exec(queryWithoutFacets)) !== null) {
+    if (match[1].trim().length > 0) {
+      quotedStrings.push(match[1].trim());
+    }
+  }
+
+  // Remove quoted strings from the query to process remaining words
+  let queryWithoutQuotes = queryWithoutFacets.replace(quotedPattern, ' ');
+
+  // Split remaining words by whitespace and filter out empty strings
+  const words = queryWithoutQuotes.split(/\s+/).filter(word => word.length > 0);
+
+  // Process quoted strings
+  for (const quotedString of quotedStrings) {
+    searchTerms.push(quotedString);
+  }
+
+  // Process individual words
+  for (const word of words) {
+    // Clean up the word by removing quotes and special characters at boundaries
+    let cleanWord = word.replace(/^["']+|["']+$/g, '');
+    
+    // Skip if the word is empty after cleaning
+    if (cleanWord.length === 0) {
+      continue;
+    }
+
+    // Handle wildcard patterns - extract the base term without wildcards
+    if (cleanWord.includes('*')) {
+      // For patterns like "error*" or "*error*", extract "error"
+      const baseWord = cleanWord.replace(/\*+/g, '');
+      if (baseWord.length > 0) {
+        searchTerms.push(baseWord);
+      }
+    } else {
+      // Regular search term
+      searchTerms.push(cleanWord);
+    }
+  }
+
+  // Remove duplicates and return
+  return [...new Set(searchTerms)];
+}
+
+/**
  * Validates a Datadog logs query for syntax errors and provides suggestions
  */
 export function validateLogsQuery(query: string): LogsValidationResult {
