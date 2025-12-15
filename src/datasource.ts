@@ -1,10 +1,11 @@
-import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue } from '@grafana/data';
+import { DataSourceInstanceSettings, CoreApp, ScopedVars, MetricFindValue, QueryFixAction, QueryFixType } from '@grafana/data';
 import { DataSourceWithBackend, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
+import { DataSourceWithQueryModificationSupport } from '@grafana/data';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
 
-export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
+export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery> {
   // Enable annotation support
   annotations = {};
   private templateSrv = getTemplateSrv();
@@ -82,7 +83,105 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     return 'metrics';
   }
 
+  /**
+   * Modifies a query based on the provided action for click-to-filter functionality
+   * Supports ADD_FILTER and ADD_FILTER_OUT operations for logs queries
+   * Requirements: 4.2, 4.3
+   */
+  modifyQuery(query: MyQuery, action: QueryFixAction): MyQuery {
+    // Only handle logs queries
+    if (this.detectQueryType(query) !== 'logs') {
+      return query;
+    }
 
+    const { type, options } = action;
+    const currentLogQuery = query.logQuery || '';
+
+    let modifiedLogQuery = currentLogQuery;
+
+    switch (type) {
+      case 'ADD_FILTER':
+        if (options?.key && options?.value) {
+          modifiedLogQuery = this.addFilterToLogsQuery(currentLogQuery, options.key, options.value, false);
+        }
+        break;
+
+      case 'ADD_FILTER_OUT':
+        if (options?.key && options?.value) {
+          modifiedLogQuery = this.addFilterToLogsQuery(currentLogQuery, options.key, options.value, true);
+        }
+        break;
+
+      default:
+        // Return original query for unsupported actions
+        return query;
+    }
+
+    return {
+      ...query,
+      logQuery: modifiedLogQuery,
+      queryType: 'logs' as const,
+    };
+  }
+
+  /**
+   * Returns the list of supported query modification types
+   * Requirements: 4.2, 4.3
+   */
+  getSupportedQueryModifications(): Array<QueryFixType | string> {
+    return ['ADD_FILTER', 'ADD_FILTER_OUT'];
+  }
+
+  /**
+   * Adds a filter to a logs query string using Datadog logs search syntax
+   * Handles both positive and negative filters with proper boolean logic
+   * Requirements: 7.1, 7.2, 8.1, 8.2
+   */
+  private addFilterToLogsQuery(currentQuery: string, key: string, value: string, isNegative: boolean): string {
+    // Sanitize the key and value to prevent injection
+    const sanitizedKey = this.sanitizeLogsQueryPart(key);
+    const sanitizedValue = this.sanitizeLogsQueryPart(value);
+
+    // Create the filter string
+    const filterPrefix = isNegative ? '-' : '';
+    const filterString = `${filterPrefix}${sanitizedKey}:${sanitizedValue}`;
+
+    // If the current query is empty, just return the filter
+    if (!currentQuery.trim()) {
+      return filterString;
+    }
+
+    // Check if this exact filter already exists to avoid duplicates
+    const existingFilterPattern = new RegExp(`\\b${filterPrefix}${sanitizedKey}:${sanitizedValue}\\b`);
+    if (existingFilterPattern.test(currentQuery)) {
+      return currentQuery; // Filter already exists
+    }
+
+    // Add the filter with proper boolean logic
+    // Use AND to combine with existing query
+    return `${currentQuery.trim()} AND ${filterString}`;
+  }
+
+  /**
+   * Sanitizes query parts to prevent injection and ensure valid Datadog logs syntax
+   * Requirements: 9.1 (security consideration)
+   */
+  private sanitizeLogsQueryPart(part: string): string {
+    // Remove or escape potentially dangerous characters
+    let sanitized = part.trim();
+
+    // Escape special Datadog logs search characters
+    sanitized = sanitized.replace(/[+&|!(){}[\]^"~*?:\\]/g, '\\$&');
+
+    // If the value contains spaces or special characters, wrap in quotes
+    if (sanitized.includes(' ') || /[+&|!(){}[\]^"~*?:\\]/.test(sanitized)) {
+      // Remove existing quotes to avoid double-quoting
+      sanitized = sanitized.replace(/^"|"$/g, '');
+      sanitized = `"${sanitized}"`;
+    }
+
+    return sanitized;
+  }
 
   /**
    * This method is called when a template variable query is executed.
