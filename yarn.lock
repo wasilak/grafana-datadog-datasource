@@ -332,9 +332,9 @@
   integrity sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==
 
 "@datadog/datadog-api-client@^1.21.0":
-  version "1.48.0"
-  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.48.0.tgz#a1363f0352c6d7c6afda62e6324096891c7242ea"
-  integrity sha512-S35450sfE8Q3My7rfWLg5LFDkNCkgStShJ3q7XyeR4AxmL9DAhd57XW8LZYDpdOePjnzRcT7Gzk+Oc+kea7rag==
+  version "1.49.0"
+  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.49.0.tgz#3cf689f7a27b447d6c0e2135b7f2cf8c5e435115"
+  integrity sha512-ybHGk8nZoxxFShk+VQOvPVOk232afe4Qf3dRIXkDhYqUTrIJQsaOphwMVTmi02b3t/ST2TkdOq0WlIJpvFj5Tw==
   dependencies:
     "@types/buffer-from" "^1.1.0"
     "@types/node" "*"
@@ -2128,14 +2128,7 @@
   resolved "https://registry.yarnpkg.com/@types/lodash/-/lodash-4.17.21.tgz#b806831543d696b14f8112db600ea9d3a1df6ea4"
   integrity sha512-FOvQ0YPD5NOfPgMzJihoT+Za5pdkDJWcbpuj1DjaKZIr/gxodQjY/uWEFlTNqW2ugXHUiL8lRQgw63dzKHZdeQ==
 
-"@types/node@*":
-  version "25.0.2"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.0.2.tgz#411f9dd6cb2bf5ee46aed7199a9f85ca6b068b4e"
-  integrity sha512-gWEkeiyYE4vqjON/+Obqcoeffmk0NF15WSBwSs7zwVA2bAbTaE0SJ7P0WNGoJn8uE7fiaV5a7dKYIJriEqOrmA==
-  dependencies:
-    undici-types "~7.16.0"
-
-"@types/node@>=13.7.0":
+"@types/node@*", "@types/node@>=13.7.0":
   version "25.0.3"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-25.0.3.tgz#79b9ac8318f373fbfaaf6e2784893efa9701f269"
   integrity sha512-W609buLVRVmeW693xKfzHeIV6nJGGz98uCPfeXI1ELMLXVeKYZ9m15fAMSaUPBHYLGFsVRcMmSCksQOrZV9BYA==
