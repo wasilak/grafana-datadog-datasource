@@ -3,7 +3,7 @@ module github.com/wasilak/grafana-datadog-datasource
 go 1.25
 
 require (
-	github.com/DataDog/datadog-api-client-go/v2 v2.51.0
+	github.com/DataDog/datadog-api-client-go/v2 v2.52.0
 	github.com/grafana/grafana-plugin-sdk-go v0.284.0
 	github.com/stretchr/testify v1.11.1
 )
