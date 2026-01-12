@@ -5,6 +5,7 @@
 - *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.52.0 (#492)
 - *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.53.0 (#506)
 - Remove broken semaphore causing plugin deadlock and restarts
+- Resolve security vulnerability and fix broken documentation links
 ## [0.5.1] - 2025-12-15
 
 ### 📚 Documentation
