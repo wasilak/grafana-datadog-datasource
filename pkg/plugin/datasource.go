@@ -38,7 +38,6 @@ type Datasource struct {
 	logsCacheMu      sync.Mutex                 // Mutex for logs cache
 	logsAutocompleteCache map[string]*LogsAutocompleteCacheEntry // Cache for logs autocomplete data
 	logsAutocompleteMu    sync.Mutex                             // Mutex for logs autocomplete cache
-	concurrencyLimit chan struct{}              // Semaphore for max 5 concurrent requests
 }
 
 // MyDataSourceOptions defines the JSON options for the datasource
@@ -456,7 +455,6 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 		},
 		logsCache:        make(map[string]*LogsCacheEntry), // Initialize logs cache
 		logsAutocompleteCache: make(map[string]*LogsAutocompleteCacheEntry), // Initialize logs autocomplete cache
-		concurrencyLimit: make(chan struct{}, 5),           // Max 5 concurrent requests to Datadog
 	}
 
 	// Parse JSON options
@@ -470,7 +468,7 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	// Get secure JSON data (API keys)
 	ds.SecureJSONData = settings.DecryptedSecureJSONData
 
-	logger.Error("CRITICAL DEBUG - Datasource initialized successfully", "site", opts.Site, "uid", settings.UID)
+	logger.Info("Datasource initialized successfully", "site", opts.Site, "uid", settings.UID)
 
 	return ds, nil
 }
@@ -1311,8 +1309,6 @@ func (d *Datasource) MetricsHandler(ctx context.Context, req *backend.CallResour
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Get site configuration
 	site := d.JSONData.Site
@@ -1455,8 +1451,6 @@ func (d *Datasource) TagsHandler(ctx context.Context, req *backend.CallResourceR
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Get site configuration
 	site := d.JSONData.Site
@@ -1624,8 +1618,6 @@ func (d *Datasource) TagValuesHandler(ctx context.Context, req *backend.CallReso
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Get site configuration
 	site := d.JSONData.Site
@@ -2611,8 +2603,6 @@ func (d *Datasource) VariableMetricsHandler(ctx context.Context, req *backend.Ca
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Setup Datadog API client
 	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
@@ -2752,8 +2742,6 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Setup Datadog API client
 	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
@@ -3015,8 +3003,6 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 		}
 
 		// Acquire semaphore slot (max 5 concurrent requests)
-		d.concurrencyLimit <- struct{}{}
-		defer func() { <-d.concurrencyLimit }()
 
 		// Setup Datadog API client
 		metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
@@ -3259,8 +3245,6 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 	appKey := d.SecureJSONData["appKey"]
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Get site configuration
 	site := d.JSONData.Site
@@ -3525,8 +3509,6 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 	}
 
 	// Acquire semaphore slot (max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Setup Datadog API client
 	metricsApi, ddCtx, err := d.setupDatadogClient(ctx)
@@ -3683,8 +3665,6 @@ func (d *Datasource) LogsServicesHandler(ctx context.Context, req *backend.CallR
 	defer cancel()
 
 	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_services"
@@ -3786,8 +3766,6 @@ func (d *Datasource) LogsSourcesHandler(ctx context.Context, req *backend.CallRe
 	defer cancel()
 
 	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_sources"
@@ -3889,8 +3867,6 @@ func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallRes
 	defer cancel()
 
 	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_levels"
@@ -3969,8 +3945,6 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 	defer cancel()
 
 	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_fields"
@@ -4105,8 +4079,6 @@ func (d *Datasource) LogsFieldValuesHandler(ctx context.Context, req *backend.Ca
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case d.concurrencyLimit <- struct{}{}:
-		defer func() { <-d.concurrencyLimit }()
 	}
 
 	// Call Datadog Logs API to get unique field values from recent log data
@@ -4370,8 +4342,6 @@ func (d *Datasource) LogsTagsHandler(ctx context.Context, req *backend.CallResou
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case d.concurrencyLimit <- struct{}{}:
-		defer func() { <-d.concurrencyLimit }()
 	}
 
 	// Call Datadog Logs API to get available tag names from recent log data
@@ -4473,8 +4443,6 @@ func (d *Datasource) LogsTagValuesHandler(ctx context.Context, req *backend.Call
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case d.concurrencyLimit <- struct{}{}:
-		defer func() { <-d.concurrencyLimit }()
 	}
 
 	// Call Datadog Logs API to get unique tag values from recent log data

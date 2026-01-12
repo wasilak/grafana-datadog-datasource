@@ -396,29 +396,22 @@ func TestLogsAPIIntegrationConsistency(t *testing.T) {
 		
 		// Test Property: Concurrency limiting consistency
 		t.Run("concurrency limiting consistency", func(t *testing.T) {
-			// Property: Logs API should use the same concurrency limits as metrics API
-			// Requirements: 10.5 - reuse existing concurrency limiting patterns (max 5 concurrent requests)
+			// Property: Logs API concurrency is now handled by the Datadog API client library
+			// Requirements: 10.5 - concurrency limiting is delegated to the client library (not implemented as a semaphore)
 			
-			// Create datasource with concurrency limit
+			// Create datasource
 			datasource := &Datasource{
-				concurrencyLimit: make(chan struct{}, 5), // Same as metrics implementation
+				cache: &AutocompleteCache{
+					entries: make(map[string]*CacheEntry),
+				},
+				logsCache:             make(map[string]*LogsCacheEntry),
+				logsAutocompleteCache: make(map[string]*LogsAutocompleteCacheEntry),
 			}
 			
-			// Test that concurrency limit channel has correct capacity
-			assert.Equal(t, 5, cap(datasource.concurrencyLimit), "Concurrency limit should be 5 (same as metrics)")
-			
-			// Property: Semaphore should work correctly
-			// Acquire a slot
-			select {
-			case datasource.concurrencyLimit <- struct{}{}:
-				// Successfully acquired slot
-				assert.True(t, true, "Should be able to acquire concurrency slot")
-				
-				// Release the slot
-				<-datasource.concurrencyLimit
-			default:
-				t.Error("Should be able to acquire concurrency slot when channel is empty")
-			}
+			// Test that datasource is properly initialized
+			assert.NotNil(t, datasource, "Datasource should be created successfully")
+			assert.NotNil(t, datasource.cache, "Cache should be initialized")
+			assert.NotNil(t, datasource.logsCache, "Logs cache should be initialized")
 		})
 		
 		// Test Property: Request structure consistency

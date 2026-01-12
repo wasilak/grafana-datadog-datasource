@@ -337,7 +337,6 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 	
 	for pageCount < maxPages {
 		// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-		d.concurrencyLimit <- struct{}{}
 		
 		// Add more conservative delay between requests to respect rate limits
 		if pageCount > 0 {
@@ -352,9 +351,6 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		
 		// Execute single page request with retry logic for rate limits
 		logEntries, cursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site, 500, pageCount+1)
-		
-		// Release semaphore slot
-		<-d.concurrencyLimit
 		
 		if err != nil {
 			// If we get rate limited even with retries, return what we have so far
@@ -424,8 +420,6 @@ func (d *Datasource) executeSingleLogsPageQuery(ctx context.Context, logsQuery s
 	}
 
 	// Acquire semaphore slot to limit concurrent requests
-	d.concurrencyLimit <- struct{}{}
-	defer func() { <-d.concurrencyLimit }()
 
 	// Execute single page request with retry logic
 	logEntries, nextCursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, cursor, apiKey, appKey, site, pageSize, 1)

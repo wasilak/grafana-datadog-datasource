@@ -11,7 +11,7 @@ import (
 var logger = log.New()
 
 func main() {
-	logger.Error("CRITICAL DEBUG - Plugin main() starting", "pluginId", "wasilak-datadog-datasource")
+	logger.Info("Plugin main() starting", "pluginId", "wasilak-datadog-datasource")
 	
 	// Start the datasource backend with instance manager
 	if err := datasource.Manage("wasilak-datadog-datasource", plugin.NewDatasource, datasource.ManageOpts{}); err != nil {
@@ -19,5 +19,5 @@ func main() {
 		os.Exit(1)
 	}
 	
-	logger.Error("CRITICAL DEBUG - Plugin main() completed successfully")
+	logger.Info("Plugin main() completed successfully")
 }
