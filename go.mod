@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/DataDog/datadog-api-client-go/v2 v2.54.0
-	github.com/grafana/grafana-plugin-sdk-go v0.285.0
+	github.com/grafana/grafana-plugin-sdk-go v0.286.0
 	github.com/stretchr/testify v1.11.1
 )
 
