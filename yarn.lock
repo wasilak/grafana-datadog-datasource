@@ -2395,12 +2395,12 @@
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-8.52.0.tgz#1eb0a16b324824bc23b89d109a267c38c9213c4a"
   integrity sha512-LWQV1V4q9V4cT4H5JCIx3481iIFxH1UkVk+ZkGGAV1ZGcjGI9IoFOfg3O6ywz8QqCDEp7Inlg6kovMofsNRaGg==
 
-"@typescript-eslint/types@8.55.0", "@typescript-eslint/types@^8.52.0", "@typescript-eslint/types@^8.54.0", "@typescript-eslint/types@^8.55.0":
+"@typescript-eslint/types@8.55.0", "@typescript-eslint/types@^8.52.0", "@typescript-eslint/types@^8.55.0":
   version "8.55.0"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-8.55.0.tgz#8449c5a7adac61184cac92dbf6315733569708c2"
   integrity sha512-ujT0Je8GI5BJWi+/mMoR0wxwVEQaxM+pi30xuMiJETlX80OPovb2p9E8ss87gnSVtYXtJoU9U1Cowcr6w2FE0w==
 
-"@typescript-eslint/types@8.56.0", "@typescript-eslint/types@^8.56.0":
+"@typescript-eslint/types@8.56.0", "@typescript-eslint/types@^8.54.0", "@typescript-eslint/types@^8.56.0":
   version "8.56.0"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-8.56.0.tgz#a2444011b9a98ca13d70411d2cbfed5443b3526a"
   integrity sha512-DBsLPs3GsWhX5HylbP9HNG15U0bnwut55Lx12bHB9MpXxQ+R5GC8MwQe+N1UFXxAeQDvEsEDY6ZYwX03K7Z6HQ==
@@ -4196,9 +4196,9 @@ eslint-plugin-deprecation@~3:
     tslib "^2.3.1"
 
 eslint-plugin-jsdoc@~62.6.0:
-  version "62.6.0"
-  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-62.6.0.tgz#74c65e02fe67aa0a0328d3efbb17480b9d0157d8"
-  integrity sha512-Z18zZD1Q2m9usqFbAzb30z+lF8bzE4WiUy+dfOXljJlZ1Jm5uhkuAWfGV97FYyh+WlKfrvpDYs+s1z45eZWMfA==
+  version "62.6.1"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-62.6.1.tgz#79ee8f023f95948e8dbbf6192f5e691660decbd7"
+  integrity sha512-zfz4lMIKDkidkqZniIieZujwZAtpaSNM0WXwilToKoR2UWEw0JE/QevQI2k6YN4ZSy3YhXB3Vs1ab62GZu8Wug==
   dependencies:
     "@es-joy/jsdoccomment" "~0.84.0"
     "@es-joy/resolve.exports" "1.2.0"
