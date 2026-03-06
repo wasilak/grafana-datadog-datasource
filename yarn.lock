@@ -767,9 +767,9 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.4.1"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.1.tgz#622a0b9d4d26390718d4537845da9df0b818aef8"
-  integrity sha512-pXnpeu1x1Sq70lxB8no5+9E6IyZJKrp8tNAlfTpFQ33+thi1H8izNUJ7FuAviiefMGL9OsBb0j/H1yePQtle3A==
+  version "3.4.2"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.2.tgz#fae1659e5ddc35a6374c8a90ee5333e446647ae9"
+  integrity sha512-qSsLSjv9tWO+msxASK0gQksvHMcQEHiOeeGi8MjkMXndza9i/SjUNJmnbSu/P9RL0zQeC/BtS9ye14zW5PSlUw==
   dependencies:
     "@grafana/e2e-selectors" "13.0.0-22358195095"
     semver "^7.5.4"
