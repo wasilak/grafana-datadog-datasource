@@ -702,10 +702,10 @@
     tslib "2.8.1"
     typescript "5.9.2"
 
-"@grafana/e2e-selectors@13.0.0-22898798261":
-  version "13.0.0-22898798261"
-  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-22898798261.tgz#ec4ea68be9a54a915f41b4cae7659beb1315bcf8"
-  integrity sha512-/kPWZRwVZdBv86ls/RqqpBcsHZpGxUd7pUk2CMm78Jz39rag07NxjURRRaivhQtuf8ZNaJ7fD0Z1O0Aei2XvNA==
+"@grafana/e2e-selectors@13.0.0-22967232448":
+  version "13.0.0-22967232448"
+  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-22967232448.tgz#f8e6ae2b33c748ecc5256ecb27812b03d5f82f9b"
+  integrity sha512-OQMfOIjj4HKVCR6f7a+ZS9sJbiiFsnHhGLI5LycJPJFwtGVLzGeDxislb9fd+a8WRBxvpdxGkxqedYGY+gQ17A==
   dependencies:
     semver "^7.7.0"
     tslib "2.8.1"
@@ -748,11 +748,11 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.4.5"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.5.tgz#728a5748f56109a545b623775f3725bacf9a08b2"
-  integrity sha512-Quj097tGVDWb0zVLLFrEmOs6oqre5fBEqrEoQtY3XyWwwJG1jMMVaEFzs/kWmlp9DY19XwUGtfbD4KbM0jQpZg==
+  version "3.4.7"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.7.tgz#58cda6e0bc734805fa15326d50593a25dfe2c933"
+  integrity sha512-95el6IU992aX+5Jn5nUS7rlwov86bxXGJuWjpoJQwgsM214VHyW3G4rnsKqaJlbBDz9bMPxJSUSGBOSGjSeEAg==
   dependencies:
-    "@grafana/e2e-selectors" "13.0.0-22898798261"
+    "@grafana/e2e-selectors" "13.0.0-22967232448"
     semver "^7.5.4"
     uuid "^13.0.0"
     yaml "^2.3.4"
