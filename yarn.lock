@@ -702,10 +702,10 @@
     tslib "2.8.1"
     typescript "5.9.2"
 
-"@grafana/e2e-selectors@13.0.0-23251034887":
-  version "13.0.0-23251034887"
-  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-23251034887.tgz#2ad048a520f7237b6976dc529e5f35b991194bbc"
-  integrity sha512-wMY9N0iPySlKYId2nTQUkyoQscNIPGLi6zqFxbpZCAieNMrrNkHEJGP5m8FtPunpWjNc7WYeDGhDlY23qxMjeQ==
+"@grafana/e2e-selectors@13.0.0-23499763764":
+  version "13.0.0-23499763764"
+  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-23499763764.tgz#9aa8d2bfbb23b7b5e34ed5214b3fb1197ea74291"
+  integrity sha512-lQ3Z3j36o218Fjgsfvygwj+wlkOejMq8np+TRCxbaTEluV/063a2vHkZK9jiMsUB1kESzobneLh21T6v1wTp+Q==
   dependencies:
     semver "^7.7.0"
     tslib "2.8.1"
@@ -748,11 +748,11 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.4.8"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.8.tgz#de0fe41e86b651988201810e1e2cb3d76bbbcc5e"
-  integrity sha512-HymTDWhbnzwXAvnYrET9SXypV6yjFV/lNe3CL1orCora7ZoGnxuX0q8aIAb1g6bAd7WidkZkH9V5CDxCMzBO2Q==
+  version "3.4.9"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.9.tgz#6b6d8f962485ef8405132ca26e38a9b64fd08985"
+  integrity sha512-35bwb/+l75drXJpZyAQ/uUSHqI6vTvD6fAcbzJneoBKkzrGfKj7s+5txSrSasrJACN5z1t+sRELjnN8luyhClA==
   dependencies:
-    "@grafana/e2e-selectors" "13.0.0-23251034887"
+    "@grafana/e2e-selectors" "13.0.0-23499763764"
     semver "^7.5.4"
     uuid "^13.0.0"
     yaml "^2.3.4"
@@ -8818,9 +8818,9 @@ yaml@^1.10.0:
   integrity sha512-r3vXyErRCYJ7wg28yvBY5VSoAF8ZvlcW9/BwUzEtUsjvX/DKs24dIkuwjtuprwJJHsbyUbLApepYTR1BN4uHrg==
 
 yaml@^2.3.4:
-  version "2.8.2"
-  resolved "https://registry.yarnpkg.com/yaml/-/yaml-2.8.2.tgz#5694f25eca0ce9c3e7a9d9e00ce0ddabbd9e35c5"
-  integrity sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A==
+  version "2.8.3"
+  resolved "https://registry.yarnpkg.com/yaml/-/yaml-2.8.3.tgz#a0d6bd2efb3dd03c59370223701834e60409bd7d"
+  integrity sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==
 
 yargs-parser@^21.1.1:
   version "21.1.1"
