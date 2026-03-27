@@ -9,7 +9,6 @@ import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter'
 import { LogsQueryEditorHelp } from './LogsQueryEditorHelp';
 import { validateLogsQuery } from './utils/logsQueryValidator';
 
-
 type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
 /**
@@ -27,20 +26,29 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   };
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
-  
+
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
-
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
 
+  // Ref to collect Monaco disposables for cleanup on unmount
+  const disposablesRef = useRef<monacoType.IDisposable[]>([]);
+
+  // Cleanup Monaco event listeners and editor on unmount
+  useEffect(() => {
+    return () => {
+      disposablesRef.current.forEach((d) => d.dispose());
+      disposablesRef.current = [];
+      editorRef.current = null;
+    };
+  }, []);
+
   // Define handleItemSelect for logs-specific autocomplete
   const handleItemSelect = async (item: CompletionItem) => {
-    console.log('=== LogsQueryEditor handleItemSelect START ===');
-    
     // Get CURRENT values from Monaco editor
     let currentValue = '';
     let currentCursorPosition = 0;
@@ -53,13 +61,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       }
     }
 
-    console.log('LogsQueryEditor handleItemSelect called:', {
-      itemKind: item.kind,
-      itemLabel: item.label,
-      currentValue,
-      currentCursorPosition,
-    });
-
     // For logs queries, we handle different types of suggestions
     let insertValue = item.insertText || item.label;
     let start = currentCursorPosition;
@@ -70,7 +71,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
       // For facet filters like service:web-app, source:nginx, status:ERROR
       const facetType = item.kind.replace('logs_', ''); // Remove logs_ prefix
       insertValue = `${facetType}:${insertValue}`;
-      
+
       // Find token boundaries for replacement
       while (start > 0 && /[a-zA-Z0-9_.-]/.test(currentValue[start - 1])) {
         start--;
@@ -81,7 +82,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     } else if (item.kind === 'logs_facet') {
       // For facet names like service:, source:, status:
       insertValue = item.insertText || item.label; // Should already include the colon
-      
+
       // Find token boundaries for replacement
       while (start > 0 && /[a-zA-Z0-9_.-]/.test(currentValue[start - 1])) {
         start--;
@@ -103,21 +104,11 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     const newValue = currentValue.substring(0, start) + insertValue + currentValue.substring(end);
     const newCursorPos = start + insertValue.length;
 
-    console.log('LogsQueryEditor token replacement:', {
-      original: currentValue,
-      start,
-      end,
-      replacing: currentValue.substring(start, end),
-      insertValue,
-      result: newValue,
-      itemKind: item.kind,
-    });
-
     // Update the logs query
-    onChange({ 
-      ...query, 
+    onChange({
+      ...query,
       logQuery: newValue,
-      queryType: 'logs' // Ensure query type is set to logs
+      queryType: 'logs', // Ensure query type is set to logs
     });
 
     // Set focus back to editor with new cursor position
@@ -140,7 +131,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   const autocomplete = useQueryAutocomplete({
     datasourceUid: datasource.uid || '',
     queryType: 'logs', // CRITICAL FIX: Specify logs query type
-    onSelect: handleItemSelect
+    onSelect: handleItemSelect,
   });
 
   // Keep the ref updated with current autocomplete state
@@ -159,10 +150,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     setValidationWarnings(validation.warnings || []);
 
     // Update the logs query state
-    onChange({ 
-      ...query, 
+    onChange({
+      ...query,
       logQuery: newValue,
-      queryType: 'logs' // Ensure query type is set to logs
+      queryType: 'logs', // Ensure query type is set to logs
     });
 
     // Get cursor position and trigger autocomplete
@@ -189,7 +180,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
   // Handle example selection from help component
   const handleExampleClick = (exampleQuery: any) => {
     const newValue = exampleQuery.logQuery || '';
-    
+
     // Update editor content
     if (editorRef.current) {
       const model = editorRef.current.getModel();
@@ -197,15 +188,13 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
         model.setValue(newValue);
       }
     }
-    
+
     // Trigger change handler
     onLogQueryChange(newValue);
-    
+
     // Close help panel
     setShowHelp(false);
   };
-
-
 
   // Enhanced validation that prevents query execution with invalid configuration
   const canExecuteQuery = () => {
@@ -217,8 +206,6 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
     return true;
   };
-
-
 
   // Helper function to calculate suggestions dropdown position
   const updateSuggestionsPositionFromEditor = (
@@ -261,7 +248,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     // Add keyboard event listener for Cmd+Enter with validation
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       autocomplete.onClose();
-      
+
       // Validate configuration before executing query
       if (canExecuteQuery()) {
         onRunQuery();
@@ -273,7 +260,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
           }
         }, 0);
       }
-      
+
       setTimeout(() => {
         if (editorRef.current) {
           editorRef.current.focus();
@@ -282,7 +269,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
     });
 
     // Intercept keyboard events for autocomplete navigation
-    editor.onKeyDown((e) => {
+    const keyDownDisposable = editor.onKeyDown((e) => {
       if (!autocompleteStateRef.current.isOpen) {
         return;
       }
@@ -317,49 +304,51 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
           break;
       }
     });
+    disposablesRef.current.push(keyDownDisposable);
 
     // Track cursor position changes
-    editor.onDidChangeCursorPosition((e) => {
+    const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
       const model = editor.getModel();
       if (model) {
         const offset = model.getOffsetAt(e.position);
         updateSuggestionsPositionFromEditor(editor, offset);
       }
     });
+    disposablesRef.current.push(cursorDisposable);
   };
 
   const { logQuery = '' } = query;
-
-
 
   return (
     <Stack gap={2} direction="column">
       {/* Logs Query field */}
       <InlineFieldRow>
-        <InlineField 
-          label="Logs Query" 
+        <InlineField
+          label="Logs Query"
           labelWidth={14}
           grow
           tooltip="Enter your Datadog logs search query (e.g., service:web-app status:error)"
         >
           <div style={{ position: 'relative', width: '100%' }}>
             {/* Help button positioned next to query field */}
-            <div style={{ 
-              position: 'absolute', 
-              top: '-2px', 
-              right: '0px', 
-              zIndex: 10 
-            }}>
+            <div
+              style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '0px',
+                zIndex: 10,
+              }}
+            >
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowHelp(!showHelp)}
-                icon={showHelp ? "angle-up" : "question-circle"}
+                icon={showHelp ? 'angle-up' : 'question-circle'}
               >
                 {showHelp ? 'Hide Help' : 'Logs Syntax Help'}
               </Button>
             </div>
-            
+
             <CodeEditor
               value={logQuery}
               language="datadog"
@@ -368,10 +357,10 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                 autocomplete.onClose();
               }}
               onSave={(value) => {
-                onChange({ 
-                  ...query, 
+                onChange({
+                  ...query,
                   logQuery: value,
-                  queryType: 'logs'
+                  queryType: 'logs',
                 });
               }}
               onChange={onLogQueryChange}
@@ -545,13 +534,15 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
 
             {/* Loading indicator */}
             {autocomplete.state.isLoading && (
-              <div style={{
-                position: 'absolute',
-                right: '10px',
-                top: '10px',
-                fontSize: theme.typography.size.sm,
-                color: theme.colors.text.secondary
-              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '10px',
+                  fontSize: theme.typography.size.sm,
+                  color: theme.colors.text.secondary,
+                }}
+              >
                 Loading...
               </div>
             )}
@@ -559,12 +550,8 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
         </InlineField>
       </InlineFieldRow>
 
-
-
       {/* Logs Help Component */}
-      {showHelp && (
-        <LogsQueryEditorHelp onClickExample={handleExampleClick} />
-      )}
+      {showHelp && <LogsQueryEditorHelp onClickExample={handleExampleClick} />}
     </Stack>
   );
 }

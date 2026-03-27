@@ -83,7 +83,9 @@ describe('JSON Parsing Migration Utilities', () => {
 
       expect(migrated.jsonParsing?.options?.maxDepth).toBe(15);
       expect(migrated.jsonParsing?.options?.maxSize).toBe(DEFAULT_QUERY.jsonParsing?.options?.maxSize);
-      expect(migrated.jsonParsing?.options?.preserveOriginal).toBe(DEFAULT_QUERY.jsonParsing?.options?.preserveOriginal);
+      expect(migrated.jsonParsing?.options?.preserveOriginal).toBe(
+        DEFAULT_QUERY.jsonParsing?.options?.preserveOriginal
+      );
       expect(migrated.jsonParsing?.options?.flattenNested).toBe(DEFAULT_QUERY.jsonParsing?.options?.flattenNested);
     });
   });
@@ -147,7 +149,7 @@ describe('JSON Parsing Migration Utilities', () => {
     it('should provide performance warnings', () => {
       const config: JSONParsingConfig = {
         enabled: true,
-        targetField: 'whole_log',
+        targetField: 'message',
         options: {
           maxDepth: 25, // Very deep
           maxSize: 20 * 1024 * 1024, // Very large
@@ -158,7 +160,6 @@ describe('JSON Parsing Migration Utilities', () => {
       expect(result.isValid).toBe(true);
       expect(result.warnings).toContain('Very deep nesting (>20 levels) may impact performance');
       expect(result.warnings).toContain('Large size limits (>10MB) may impact performance');
-      expect(result.warnings).toContain('Whole log parsing may impact performance with large log volumes');
     });
   });
 

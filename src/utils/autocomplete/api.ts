@@ -59,7 +59,6 @@ export async function fetchMetricsFromDatadog(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.warn(`Failed to fetch metrics: ${response.status}`);
       return [];
     }
 
@@ -74,7 +73,6 @@ export async function fetchMetricsFromDatadog(
 
     return metricNames;
   } catch (error) {
-    console.warn('Failed to fetch metrics from Datadog:', error);
     return [];
   } finally {
     concurrentRequests--;
@@ -133,7 +131,6 @@ export async function fetchTagsForMetric(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.warn(`Failed to fetch tags: ${response.status}`);
       return [];
     }
 
@@ -154,7 +151,6 @@ export async function fetchTagsForMetric(
 
     return tags;
   } catch (error) {
-    console.warn('Failed to fetch tags from Datadog:', error);
     return [];
   } finally {
     concurrentRequests--;
@@ -204,7 +200,6 @@ export async function fetchLogsTagNames(datasource: any): Promise<string[]> {
 
     return tagNames;
   } catch (error) {
-    console.warn('Failed to fetch logs tag names:', error);
     return [];
   } finally {
     concurrentRequests--;
@@ -254,7 +249,6 @@ export async function fetchLogsTagValues(tagName: string, datasource: any): Prom
 
     return tagValues;
   } catch (error) {
-    console.warn(`Failed to fetch logs tag values for ${tagName}:`, error);
     return [];
   } finally {
     concurrentRequests--;

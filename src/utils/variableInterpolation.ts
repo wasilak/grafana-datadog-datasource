@@ -39,7 +39,6 @@ export class VariableInterpolationService {
 
       return result;
     } catch (error) {
-      console.error('Variable interpolation failed:', error);
       // Return original query as fallback
       return {
         ...query,
@@ -95,7 +94,6 @@ export class VariableInterpolationService {
 
       return interpolated;
     } catch (error) {
-      console.error('Logs query interpolation failed:', error);
       return logQuery; // Return original query on error to prevent injection
     }
   }
@@ -194,7 +192,6 @@ export class VariableInterpolationService {
     try {
       return this.interpolateString(label, scopedVars);
     } catch (error) {
-      console.error('Label interpolation failed:', error);
       return label; // Fallback to original label
     }
   }
@@ -226,7 +223,6 @@ export class VariableInterpolationService {
         return this.templateSrv.replace(match, scopedVars);
       });
     } catch (error) {
-      console.error('String interpolation failed:', error);
       return text;
     }
   }

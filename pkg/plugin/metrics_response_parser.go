@@ -59,7 +59,7 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 	times := resp.GetData().Attributes.GetTimes()
 	values := resp.GetData().Attributes.GetValues()
 
-	logger.Info("Processing Datadog series", 
+	logger.Info("Processing Datadog series",
 		"seriesCount", len(series.Attributes.Series),
 		"timesCount", len(times),
 		"valuesCount", len(values))
@@ -76,10 +76,15 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 
 	for i := range series.Attributes.GetSeries() {
 		s := &series.Attributes.Series[i]
-		
+
 		// Get the query index to determine which refID this belongs to
+		// Use safe accessor pattern - QueryIndex can be nil in some responses
+		if s.QueryIndex == nil {
+			logger.Warn("QueryIndex is nil, skipping series", "seriesIndex", i)
+			continue
+		}
 		queryIndex := int(*s.QueryIndex)
-		
+
 		// Check if we have data for this series index
 		if i >= len(values) {
 			logger.Warn("Series index out of bounds", "seriesIndex", i, "valuesCount", len(values))
@@ -116,7 +121,7 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 		// Build series name and labels
 		labels := map[string]string{}
 		tagSet := s.GetGroupTags()
-		
+
 		if len(tagSet) > 0 {
 			for _, tag := range tagSet {
 				parts := strings.SplitN(tag, ":", 2)
@@ -136,7 +141,7 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 
 		// Build series name using legend configuration
 		seriesName := p.buildSeriesName(qm, labels)
-		
+
 		// Create data frame
 		frame := data.NewFrame(
 			seriesName,
@@ -176,7 +181,7 @@ func (p *MetricsResponseParser) buildSeriesName(qm QueryModel, labels map[string
 	// Build series name using legend configuration (same logic as original)
 	metric := qm.QueryText // Default to the query text if no custom legend
 	seriesName := metric
-	
+
 	// Determine legend template based on legend mode
 	var legendTemplate string
 	if qm.LegendMode == "custom" && qm.LegendTemplate != "" {
@@ -192,7 +197,7 @@ func (p *MetricsResponseParser) buildSeriesName(qm QueryModel, labels map[string
 		}
 	}
 	// If LegendMode is "auto" or empty, legendTemplate remains empty and we use auto format
-	
+
 	if legendTemplate != "" {
 		// Use the legend template, replacing template variables with label values
 		seriesName = p.replaceTemplateVariables(legendTemplate, labels)
@@ -204,7 +209,7 @@ func (p *MetricsResponseParser) buildSeriesName(qm QueryModel, labels map[string
 		}
 		seriesName = metric + " {" + strings.Join(labelStrings, ", ") + "}"
 	}
-	
+
 	return seriesName
 }
 
@@ -217,8 +222,6 @@ func (p *MetricsResponseParser) replaceTemplateVariables(template string, labels
 	}
 	return result
 }
-
-
 
 // ParseError parses Datadog API errors and returns user-friendly error messages
 // Reuses existing error handling patterns for consistency
@@ -246,7 +249,7 @@ func (p *MetricsResponseParser) ValidateResponse(resp *datadogV2.TimeseriesFormu
 		expectedLength := len(times)
 		for i, column := range values {
 			if len(column) != expectedLength {
-				return fmt.Errorf("series %d length mismatch: expected %d, got %d", 
+				return fmt.Errorf("series %d length mismatch: expected %d, got %d",
 					i, expectedLength, len(column))
 			}
 		}
@@ -258,7 +261,7 @@ func (p *MetricsResponseParser) ValidateResponse(resp *datadogV2.TimeseriesFormu
 // CreateEmptyResponse creates an empty metrics response for error cases
 func (p *MetricsResponseParser) CreateEmptyResponse(queryModels map[string]QueryModel) *backend.QueryDataResponse {
 	response := backend.NewQueryDataResponse()
-	
+
 	for refID, qm := range queryModels {
 		if qm.Hide {
 			response.Responses[refID] = backend.DataResponse{}
@@ -271,7 +274,7 @@ func (p *MetricsResponseParser) CreateEmptyResponse(queryModels map[string]Query
 			}
 		}
 	}
-	
+
 	return response
 }
 
@@ -279,31 +282,31 @@ func (p *MetricsResponseParser) CreateEmptyResponse(queryModels map[string]Query
 func (p *MetricsResponseParser) SanitizeMetricName(name string) string {
 	// Remove leading/trailing whitespace
 	name = strings.TrimSpace(name)
-	
+
 	// Return empty if name is empty or too long
 	if name == "" || len(name) > 200 {
 		return ""
 	}
-	
+
 	// Replace invalid characters with underscores
 	// Keep alphanumeric, underscore, hyphen, dot, and colon
 	var result strings.Builder
 	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
-		   (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == ':' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == ':' {
 			result.WriteRune(r)
 		} else {
 			result.WriteRune('_')
 		}
 	}
-	
+
 	sanitized := result.String()
-	
+
 	// Ensure it doesn't start with a number
 	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
 		sanitized = "metric_" + sanitized
 	}
-	
+
 	return sanitized
 }
 
@@ -312,18 +315,18 @@ func (p *MetricsResponseParser) FormatMetricValue(value *float64) string {
 	if value == nil {
 		return "null"
 	}
-	
+
 	// Handle special float values
 	if *value != *value { // NaN check
 		return "NaN"
 	}
-	
+
 	// Format with appropriate precision
 	if *value == float64(int64(*value)) {
 		// Integer value
 		return strconv.FormatInt(int64(*value), 10)
 	}
-	
+
 	// Float value with reasonable precision
 	return strconv.FormatFloat(*value, 'g', 6, 64)
 }

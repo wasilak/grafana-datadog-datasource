@@ -12,6 +12,12 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
+// Compiled once at package init — avoids per-call regexp compilation overhead.
+// Note: reLogFacetFilter, reLogBooleanOps, and reLogQuotedStrings are declared in logs.go (same package).
+var (
+	reLogKVPairs = regexp.MustCompile(`(\w+):\s*"([^"]*)"`)
+)
+
 // LogsResponseParser handles conversion from Datadog Logs API response to Grafana data frames
 // Implements proper field mapping (body, severity, labels structure)
 // Follows OpenSearch's separation of concerns pattern
@@ -63,7 +69,7 @@ func (p *LogsResponseParser) parseStructuredResponse(response LogsResponse, refI
 
 	// Create data frames using the corrected structure
 	frames := p.createLogsDataFrames(logEntries, refID, query)
-	
+
 	// Add pagination metadata if available
 	if response.Meta.Page.After != "" {
 		p.addPaginationMetadata(frames, response.Meta.Page.After)
@@ -154,7 +160,7 @@ func (p *LogsResponseParser) convertDataArrayToLogEntries(dataArray []map[string
 
 		// Extract standard fields using the corrected structure
 		body, severity, labels := p.extractLogAttributes(attributes)
-		
+
 		// Always extract and flatten all attributes and tags for Grafana filtering
 		// This enables individual filterable columns in Grafana UI without user configuration
 		flattenedFields, _ := p.extractIndividualFields(attributes)
@@ -305,7 +311,7 @@ func (p *LogsResponseParser) extractLogAttributes(attributes map[string]interfac
 // Uses dot notation for nested structures to enable each field to appear as a separate column in Grafana logs panel
 func (p *LogsResponseParser) extractIndividualFields(attributes map[string]interface{}) (map[string]interface{}, map[string]string) {
 	flattenedFields := make(map[string]interface{})
-	
+
 	// Flatten all attributes using dot notation (except special ones we handle separately)
 	for key, value := range attributes {
 		if key != "message" && key != "status" && key != "timestamp" {
@@ -328,7 +334,7 @@ func (p *LogsResponseParser) extractIndividualFields(attributes map[string]inter
 			}
 		}
 	}
-	
+
 	// For backward compatibility, return empty tags map since we're now using flattened fields
 	return flattenedFields, make(map[string]string)
 }
@@ -340,7 +346,7 @@ func (p *LogsResponseParser) flattenValue(prefix string, value interface{}, resu
 		result[prefix] = p.convertValueToString(value)
 		return
 	}
-	
+
 	switch v := value.(type) {
 	case map[string]interface{}:
 		// Flatten nested objects with dot notation
@@ -389,17 +395,17 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 	// Prepare slices for each field with proper capacity
 	entryCount := len(logEntries)
 	timestamps := make([]time.Time, entryCount)
-	bodies := make([]string, entryCount)           // ✅ CORRECT - Changed from messages
-	severities := make([]string, entryCount)       // ✅ CORRECT - Changed from levels
-	ids := make([]string, entryCount)              // ✅ CORRECT - Added ID field
-	labels := make([]json.RawMessage, entryCount)  // ✅ CORRECT - Single labels field with JSON
+	bodies := make([]string, entryCount)          // ✅ CORRECT - Changed from messages
+	severities := make([]string, entryCount)      // ✅ CORRECT - Changed from levels
+	ids := make([]string, entryCount)             // ✅ CORRECT - Added ID field
+	labels := make([]json.RawMessage, entryCount) // ✅ CORRECT - Single labels field with JSON
 
 	// Collect all unique parsed field names for dynamic column creation
 	parsedFieldNames := make(map[string]bool)
-	
+
 	// Collect all unique flattened field names for individual columns
 	flattenedFieldNames := make(map[string]bool)
-	
+
 	for _, entry := range logEntries {
 		// Collect parsed fields from message parsing
 		if entry.ParsedFields != nil {
@@ -407,7 +413,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 				parsedFieldNames[fieldName] = true
 			}
 		}
-		
+
 		// Collect flattened field names (attributes and tags with dot notation)
 		if entry.FlattenedFields != nil {
 			for fieldName := range entry.FlattenedFields {
@@ -442,7 +448,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 	for fieldName := range parsedFieldNames {
 		parsedFieldData[fieldName] = make([]interface{}, entryCount)
 	}
-	
+
 	// Create slices for flattened fields (for individual columns)
 	flattenedFieldData := make(map[string][]*string)
 	for fieldName := range flattenedFieldNames {
@@ -485,7 +491,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 				parsedFieldData[fieldName][i] = nil
 			}
 		}
-		
+
 		// Populate flattened field data for individual columns
 		if entry.FlattenedFields != nil {
 			for fieldName, fieldValue := range entry.FlattenedFields {
@@ -540,7 +546,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 	// Add flattened fields as separate columns (always available for filtering/aggregation)
 	for fieldName, fieldData := range flattenedFieldData {
 		field := data.NewField(fieldName, nil, fieldData)
-		
+
 		// Determine field type based on name prefix
 		var fieldType, source string
 		if strings.HasPrefix(fieldName, "tags.") {
@@ -550,7 +556,7 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 			fieldType = "attribute"
 			source = "datadog_attributes"
 		}
-		
+
 		field.Config = &data.FieldConfig{
 			DisplayName: fieldName,
 			Custom: map[string]interface{}{
@@ -599,8 +605,8 @@ func (p *LogsResponseParser) createLogsDataFrames(logEntries []LogEntry, refID s
 		PreferredVisualization: "logs",
 		Custom: map[string]interface{}{
 			// Enhanced metadata for search highlighting and filtering
-			"searchWords": searchWords,  // For search term highlighting
-			"limit":       entryCount,   // For pagination info
+			"searchWords": searchWords, // For search term highlighting
+			"limit":       entryCount,  // For pagination info
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
@@ -673,7 +679,7 @@ func (p *LogsResponseParser) createEmptyLogsDataFrame(refID string) data.Frames 
 	}
 
 	logger.Debug("Created empty corrected logs data frame", "refID", refID)
-	
+
 	return data.Frames{frame}
 }
 
@@ -781,6 +787,7 @@ func (p *LogsResponseParser) sanitizeLogEntry(entry LogEntry) LogEntry {
 
 	return entry
 }
+
 // extractSearchTerms extracts search terms from a Datadog logs query for highlighting purposes.
 // This function identifies text search terms while excluding facet filters.
 func (p *LogsResponseParser) extractSearchTerms(query string) []string {
@@ -797,20 +804,17 @@ func (p *LogsResponseParser) extractSearchTerms(query string) []string {
 
 	// Remove facet filters (service:, source:, status:, host:, env:, etc.)
 	// Facet pattern: word followed by colon and value (with optional quotes)
-	facetPattern := regexp.MustCompile(`\b\w+:\s*(?:"[^"]*"|[^\s]+)`)
-	queryWithoutFacets := facetPattern.ReplaceAllString(trimmedQuery, "")
+	queryWithoutFacets := reLogFacetFilter.ReplaceAllString(trimmedQuery, "")
 
 	// Remove boolean operators (AND, OR, NOT) as they're not search terms
-	booleanPattern := regexp.MustCompile(`(?i)\b(AND|OR|NOT)\b`)
-	queryWithoutFacets = booleanPattern.ReplaceAllString(queryWithoutFacets, " ")
+	queryWithoutFacets = reLogBooleanOps.ReplaceAllString(queryWithoutFacets, " ")
 
 	// Remove parentheses used for grouping
 	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, "(", " ")
 	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, ")", " ")
 
 	// Extract quoted strings first (preserve spaces within quotes)
-	quotedPattern := regexp.MustCompile(`"([^"]*)"`)
-	quotedMatches := quotedPattern.FindAllStringSubmatch(queryWithoutFacets, -1)
+	quotedMatches := reLogQuotedStrings.FindAllStringSubmatch(queryWithoutFacets, -1)
 	for _, match := range quotedMatches {
 		if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
 			searchTerms = append(searchTerms, strings.TrimSpace(match[1]))
@@ -818,7 +822,7 @@ func (p *LogsResponseParser) extractSearchTerms(query string) []string {
 	}
 
 	// Remove quoted strings from the query to process remaining words
-	queryWithoutQuotes := quotedPattern.ReplaceAllString(queryWithoutFacets, " ")
+	queryWithoutQuotes := reLogQuotedStrings.ReplaceAllString(queryWithoutFacets, " ")
 
 	// Split remaining words by whitespace and filter out empty strings
 	words := strings.Fields(queryWithoutQuotes)
@@ -859,7 +863,6 @@ func (p *LogsResponseParser) extractSearchTerms(query string) []string {
 	return uniqueTerms
 }
 
-
 // createLogsVolumeFrame creates a histogram data frame from log entries
 // This calculates volume data points by counting logs in time buckets
 // The frame structure follows Grafana's logs volume conventions used by Loki/OpenSearch
@@ -883,10 +886,10 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 
 	// Create time buckets and count logs in each
 	buckets := make(map[time.Time]int)
-	
+
 	// Align bucket start to bucket boundaries
 	bucketStart := minTime.Truncate(bucketDuration)
-	
+
 	// Initialize all buckets in the range with 0
 	for t := bucketStart; !t.After(maxTime); t = t.Add(bucketDuration) {
 		buckets[t] = 0
@@ -906,7 +909,7 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 	for t := range buckets {
 		sortedTimes = append(sortedTimes, t)
 	}
-	
+
 	// Sort by time (bubble sort for simplicity, small dataset)
 	for i := 0; i < len(sortedTimes)-1; i++ {
 		for j := i + 1; j < len(sortedTimes); j++ {
@@ -932,7 +935,7 @@ func (p *LogsResponseParser) createLogsVolumeFrame(logEntries []LogEntry, refID 
 		data.NewField(data.TimeSeriesTimeFieldName, nil, timeValues),
 		data.NewField(data.TimeSeriesValueFieldName, data.Labels{"level": "logs"}, countValues),
 	)
-	
+
 	// Set frame metadata - just TimeSeriesMulti type, no PreferredVisualization
 	// This matches how OpenSearch creates histogram frames
 	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
@@ -955,7 +958,7 @@ func (p *LogsResponseParser) createEmptyVolumeFrame(refID string) *data.Frame {
 		data.NewField(data.TimeSeriesTimeFieldName, nil, []*time.Time{}),
 		data.NewField(data.TimeSeriesValueFieldName, data.Labels{"level": "logs"}, []*float64{}),
 	)
-	
+
 	frame.RefID = fmt.Sprintf("log-volume-%s", refID)
 	frame.Meta = &data.FrameMeta{
 		Type: data.FrameTypeTimeSeriesMulti,
@@ -983,22 +986,23 @@ func (p *LogsResponseParser) calculateBucketDuration(duration time.Duration) tim
 		return 4 * time.Hour
 	}
 }
+
 // applyJSONParsing applies JSON parsing to a log entry based on the provided configuration
 // Handles field name conflicts by prefixing with "parsed_" and preserves original field values
 // Implements comprehensive error handling to gracefully handle invalid JSON without failing entire query
 // Requirements: 5.1, 5.2, 5.3, 5.5
 func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[string]interface{}, config *JSONParsingConfig) {
 	logger := log.New()
-	
+
 	// Early return if JSON parsing is disabled - skip parsing logic entirely for performance
 	if !config.Enabled {
 		logger.Debug("JSON parsing is disabled, skipping", "logID", entry.ID)
 		return
 	}
-	
+
 	// Create JSON parser with the provided configuration
 	parser := NewJSONParser(*config)
-	
+
 	// Initialize ParsedFields and ParseErrors if not already done
 	if entry.ParsedFields == nil {
 		entry.ParsedFields = make(map[string]interface{})
@@ -1006,11 +1010,11 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 	if entry.ParseErrors == nil {
 		entry.ParseErrors = []string{}
 	}
-	
+
 	// Determine the target field value to parse
 	var targetValue string
 	var err error
-	
+
 	// Only support parsing the message/body field since attributes and tags are always parsed automatically
 	switch config.TargetField {
 	case "message", "body", "":
@@ -1020,7 +1024,7 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 			logger.Debug("Body field is empty, skipping JSON parsing", "logID", entry.ID)
 			return
 		}
-		
+
 	default:
 		// Attributes and tags are now always parsed automatically, no user configuration needed
 		errorMsg := fmt.Sprintf("Unsupported target field: %s. Only 'message' field parsing is configurable. Attributes and tags are always parsed automatically.", config.TargetField)
@@ -1028,28 +1032,28 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 		logger.Warn("Unsupported target field for JSON parsing", "logID", entry.ID, "targetField", config.TargetField)
 		return
 	}
-	
+
 	// Skip parsing if target value is empty or only whitespace
 	if strings.TrimSpace(targetValue) == "" {
 		logger.Debug("Target field is empty or whitespace, skipping JSON parsing", "logID", entry.ID, "field", config.TargetField)
 		return
 	}
-	
+
 	// Attempt to parse the JSON content with comprehensive error handling
 	parsedData, err := parser.ParseJSONField(targetValue)
 	if err != nil {
 		// Handle invalid JSON syntax gracefully - preserve original field value and log detailed error
 		errorMsg := fmt.Sprintf("JSON parsing failed for field '%s': %v", config.TargetField, err)
 		entry.ParseErrors = append(entry.ParseErrors, errorMsg)
-		
+
 		// Log detailed error information for debugging purposes
-		logger.Debug("JSON parsing failed - preserving original data", 
+		logger.Debug("JSON parsing failed - preserving original data",
 			"logID", entry.ID,
-			"field", config.TargetField, 
+			"field", config.TargetField,
 			"error", err,
 			"jsonLength", len(targetValue),
 			"jsonPreview", p.truncateForLogging(targetValue, 100))
-		
+
 		// Try partial parsing for mixed valid/invalid content
 		partialData := p.attemptPartialParsing(targetValue, config.TargetField, entry.ID)
 		if partialData != nil {
@@ -1066,10 +1070,10 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 			return
 		}
 	}
-	
+
 	// Flatten the parsed JSON object with depth limiting
 	flattenedFields := parser.FlattenObject(parsedData, "", 0)
-	
+
 	// Add flattened fields to the log entry, handling conflicts by prefixing with "parsed_"
 	conflictCount := 0
 	for fieldName, fieldValue := range flattenedFields {
@@ -1079,19 +1083,19 @@ func (p *LogsResponseParser) applyJSONParsing(entry *LogEntry, attributes map[st
 			finalFieldName = "parsed_" + fieldName
 			conflictCount++
 		}
-		
+
 		// Ensure we don't overwrite existing parsed fields
 		if _, exists := entry.ParsedFields[finalFieldName]; exists {
 			finalFieldName = fmt.Sprintf("%s_%d", finalFieldName, len(entry.ParsedFields))
 		}
-		
+
 		entry.ParsedFields[finalFieldName] = fieldValue
 	}
-	
+
 	// Log successful parsing with detailed information for debugging
-	logger.Debug("Successfully applied JSON parsing", 
-		"logID", entry.ID, 
-		"targetField", config.TargetField, 
+	logger.Debug("Successfully applied JSON parsing",
+		"logID", entry.ID,
+		"targetField", config.TargetField,
 		"parsedFieldCount", len(flattenedFields),
 		"conflictCount", conflictCount,
 		"totalParsedFields", len(entry.ParsedFields))
@@ -1108,9 +1112,10 @@ func (p *LogsResponseParser) hasFieldConflict(fieldName string) bool {
 		"parsedFields": true,
 		"parseErrors":  true,
 	}
-	
+
 	return standardFields[fieldName]
 }
+
 // convertValueToString converts any value to a string representation for display in Grafana
 func (p *LogsResponseParser) convertValueToString(value interface{}) string {
 	if value == nil {
@@ -1151,6 +1156,7 @@ func (p *LogsResponseParser) convertValueToString(value interface{}) string {
 		return string(jsonBytes)
 	}
 }
+
 // truncateForLogging truncates a string for logging purposes to prevent log spam
 func (p *LogsResponseParser) truncateForLogging(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -1164,38 +1170,37 @@ func (p *LogsResponseParser) truncateForLogging(s string, maxLen int) string {
 // Requirements: 5.3 - Implement partial parsing for mixed valid/invalid content
 func (p *LogsResponseParser) attemptPartialParsing(content string, fieldName string, logID string) interface{} {
 	logger := log.New()
-	
+
 	// Try to find JSON objects or arrays within the content
 	jsonPatterns := []string{
-		`\{[^{}]*\}`,           // Simple objects
-		`\[[^\[\]]*\]`,         // Simple arrays
-		`\{.*?\}`,              // Objects with nested content (non-greedy)
-		`\[.*?\]`,              // Arrays with nested content (non-greedy)
+		`\{[^{}]*\}`,   // Simple objects
+		`\[[^\[\]]*\]`, // Simple arrays
+		`\{.*?\}`,      // Objects with nested content (non-greedy)
+		`\[.*?\]`,      // Arrays with nested content (non-greedy)
 	}
-	
+
 	for _, pattern := range jsonPatterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			continue
 		}
-		
+
 		matches := re.FindAllString(content, -1)
 		for _, match := range matches {
 			// Try to parse each potential JSON match
 			var data interface{}
 			if err := json.Unmarshal([]byte(match), &data); err == nil {
-				logger.Debug("Partial JSON parsing succeeded", 
-					"logID", logID, 
+				logger.Debug("Partial JSON parsing succeeded",
+					"logID", logID,
 					"field", fieldName,
 					"extractedJSON", match[:min(len(match), 100)])
 				return data
 			}
 		}
 	}
-	
+
 	// If no valid JSON found, try to extract key-value pairs
-	kvPattern := regexp.MustCompile(`(\w+):\s*"([^"]*)"`)
-	matches := kvPattern.FindAllStringSubmatch(content, -1)
+	matches := reLogKVPairs.FindAllStringSubmatch(content, -1)
 	if len(matches) > 0 {
 		result := make(map[string]interface{})
 		for _, match := range matches {
@@ -1204,14 +1209,14 @@ func (p *LogsResponseParser) attemptPartialParsing(content string, fieldName str
 			}
 		}
 		if len(result) > 0 {
-			logger.Debug("Extracted key-value pairs from mixed content", 
-				"logID", logID, 
+			logger.Debug("Extracted key-value pairs from mixed content",
+				"logID", logID,
 				"field", fieldName,
 				"extractedPairs", len(result))
 			return result
 		}
 	}
-	
+
 	return nil
 }
 

@@ -63,12 +63,10 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       import('./utils/logsQueryValidator').then(({ validateLogsQuery }) => {
         const validation = validateLogsQuery(query.logQuery!);
         if (!validation.isValid) {
-          console.warn('Logs query validation failed:', validation.error);
           // Note: We still allow the query to proceed as validation errors 
           // will be shown in the UI, but the query might fail at runtime
         }
       }).catch(err => {
-        console.warn('Failed to load logs query validator:', err);
       });
     }
     
@@ -121,15 +119,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       case SupplementaryQueryType.LogsVolume:
         // Only generate volume queries for logs queries
         const queryType = this.detectQueryType(query);
-        console.log('getSupplementaryQuery called', { 
-          queryType, 
-          logQuery: query.logQuery, 
-          refId: query.refId,
-          optionsType: options.type 
-        });
         
         if (queryType !== 'logs' || !query.logQuery) {
-          console.log('Skipping logs volume query generation', { queryType, logQuery: query.logQuery });
           return undefined;
         }
 
@@ -150,7 +141,6 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
           nextCursor: '',
         };
         
-        console.log('Generated logs volume query', volumeQuery);
         return volumeQuery;
 
       default:
@@ -167,15 +157,10 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     type: SupplementaryQueryType,
     request: DataQueryRequest<MyQuery>
   ): DataQueryRequest<MyQuery> | undefined {
-    console.log('getSupplementaryRequest called', { type, requestTargets: request.targets.length });
     
     switch (type) {
       case SupplementaryQueryType.LogsVolume:
         const result = this.getLogsVolumeDataProvider(request);
-        console.log('getLogsVolumeDataProvider result', { 
-          hasResult: !!result, 
-          targetCount: result?.targets?.length || 0 
-        });
         return result;
       default:
         return undefined;
@@ -308,24 +293,19 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
    */
   async metricFindQuery(query: MyVariableQuery | string): Promise<MetricFindValue[]> {
     try {
-      console.log('metricFindQuery called with:', query);
-      console.log('metricFindQuery query type:', typeof query, typeof query === 'object' ? Object.keys(query) : 'N/A');
       
       // Handle string queries (legacy format)
       if (typeof query === 'string') {
-        console.log('Received string query, attempting to parse:', query);
         try {
           const parsedQuery = JSON.parse(query) as MyVariableQuery;
           query = parsedQuery;
         } catch (e) {
-          console.error('Failed to parse string query as JSON:', e);
           return [];
         }
       }
       
       // Ensure we have a valid query object
       if (!query || typeof query !== 'object' || !query.queryType) {
-        console.error('Invalid query object:', query);
         return [];
       }
       
@@ -343,19 +323,16 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       switch (query.queryType) {
         case 'metrics':
           if (isFieldEmpty(query.metricName)) {
-            console.log('Metrics query has empty metricName field, returning empty results');
             return [];
           }
           break;
         case 'tag_keys':
           if (isFieldEmpty(query.metricName)) {
-            console.log('Tag keys query has empty metricName field, returning empty results');
             return [];
           }
           break;
         case 'tag_values':
           if (isFieldEmpty(query.metricName) || isFieldEmpty(query.tagKey)) {
-            console.log('Tag values query has empty required fields, returning empty results');
             return [];
           }
           break;
@@ -399,13 +376,9 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       // Build URL without query parameters (backend expects POST with JSON body)
       const url = `/api/datasources/uid/${this.uid}/resources/${resourcePath}`;
 
-      console.log('Making request to:', url, 'with params:', params);
-
       // Make the request to the backend resource handler
       // Backend expects POST requests with JSON body for variable resource handlers
       const response = await getBackendSrv().post(url, params);
-
-      console.log('Response received:', response);
 
       // Handle the response - backend should return { values: string[] }
       if (response && Array.isArray(response.values)) {
@@ -425,7 +398,6 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
 
       return [];
     } catch (error) {
-      console.error('Variable query failed:', error);
       
       // Return empty array on error to prevent Grafana from showing error dialogs
       // The error will be logged but won't break the variable functionality

@@ -26,8 +26,6 @@ const QUERY_TYPE_OPTIONS: Array<SelectableValue<MyVariableQuery['queryType']>> =
 export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQueryEditorProps) => {
   const theme = useTheme2();
   
-  console.log('VariableQueryEditor rendered with query:', query);
-  console.log('VariableQueryEditor onChange function:', typeof onChange);
   
   // Handle different query formats that Grafana might pass
   const parseQuery = (q: any): MyVariableQuery => {
@@ -57,7 +55,6 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
           rawQuery: parsed.rawQuery || '',
         };
       } catch (e) {
-        console.warn('Failed to parse query string, using defaults:', e);
         return {
           queryType: 'metrics',
           namespace: '',
@@ -238,7 +235,6 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
 
   // Save query changes and generate definition string
   const saveQuery = (newState: MyVariableQuery) => {
-    console.log('VariableQueryEditor saveQuery called with:', newState);
     setState(newState);
     
     // Validate the query and show warning if needed
@@ -262,7 +258,6 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
     }
     
     // Call onChange with both the query object and definition string
-    console.log('VariableQueryEditor calling onChange with:', newState, definition);
     onChange(newState, definition);
   };
 

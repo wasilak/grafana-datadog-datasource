@@ -16,6 +16,23 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
+// Compiled once at package init — avoids per-call regexp compilation overhead.
+var (
+	reLogLevelFilter       = regexp.MustCompile(`(?i)(status|level):\s*(\([^)]+\)|[^\s\)]+)`)
+	reLogSourceFilter      = regexp.MustCompile(`source:\s*(".*?"|[^\s\)]+)`)
+	reLogBoolAnd           = regexp.MustCompile(`(?i)\band\b`)
+	reLogBoolOr            = regexp.MustCompile(`(?i)\bor\b`)
+	reLogBoolNot           = regexp.MustCompile(`(?i)\bnot\b`)
+	reLogWildcard          = regexp.MustCompile(`([a-zA-Z0-9_\-\.@:]+)\*+`)
+	reLogQuotedWildcard    = regexp.MustCompile(`"([^"]*\*[^"]*)"`)
+	reLogNegatedWildcard   = regexp.MustCompile(`-([a-zA-Z0-9_\-\.]+\*)`)
+	reLogMultiSpace        = regexp.MustCompile(`\s+`)
+	reLogRelativeTimestamp = regexp.MustCompile(`@timestamp:\s*[><]=?\s*now[-+]\w+`)
+	reLogFacetFilter       = regexp.MustCompile(`\b\w+:\s*(?:"[^"]*"|[^\s]+)`)
+	reLogBooleanOps        = regexp.MustCompile(`(?i)\b(AND|OR|NOT)\b`)
+	reLogQuotedStrings     = regexp.MustCompile(`"([^"]*)"`)
+)
+
 // LogsSearchRequest represents the request structure for Datadog Logs API v2
 // Based on actual API behavior, using a simpler structure without nested data wrapper
 type LogsSearchRequest struct {
@@ -23,9 +40,9 @@ type LogsSearchRequest struct {
 }
 
 type LogsSearchData struct {
-	Type          string                `json:"type"`       // Must be "search_request"
-	Attributes    LogsSearchAttributes  `json:"attributes"`
-	Relationships *LogsRelationships    `json:"relationships,omitempty"` // For pagination
+	Type          string               `json:"type"` // Must be "search_request"
+	Attributes    LogsSearchAttributes `json:"attributes"`
+	Relationships *LogsRelationships   `json:"relationships,omitempty"` // For pagination
 }
 
 type LogsSearchAttributes struct {
@@ -56,15 +73,15 @@ type LogsPageData struct {
 // LogEntry represents a single log entry from Datadog (CORRECTED STRUCTURE)
 // Updated to match Grafana's official logs data source standards
 type LogEntry struct {
-	ID           string                 `json:"id"`
-	Timestamp    time.Time              `json:"timestamp"`
-	Body         string                 `json:"body"`         // ✅ CORRECT - Changed from Message to Body
-	Severity     string                 `json:"severity"`     // ✅ CORRECT - Changed from Level to Severity
-	Labels       json.RawMessage        `json:"labels"`       // ✅ CORRECT - All metadata as JSON
-	
+	ID        string          `json:"id"`
+	Timestamp time.Time       `json:"timestamp"`
+	Body      string          `json:"body"`     // ✅ CORRECT - Changed from Message to Body
+	Severity  string          `json:"severity"` // ✅ CORRECT - Changed from Level to Severity
+	Labels    json.RawMessage `json:"labels"`   // ✅ CORRECT - All metadata as JSON
+
 	// Flattened fields for Grafana filtering/aggregation (uses dot notation for nested structures)
 	FlattenedFields map[string]interface{} `json:"flattenedFields,omitempty"` // All attributes and tags flattened with dot notation
-	
+
 	ParsedFields map[string]interface{} `json:"parsedFields,omitempty"` // JSON parsing results
 	ParseErrors  []string               `json:"parseErrors,omitempty"`  // JSON parsing error messages
 }
@@ -93,10 +110,10 @@ type LogsCacheEntry struct {
 
 // LogsPaginationState tracks pagination state for logs queries
 type LogsPaginationState struct {
-	Query      string
-	TimeRange  string
-	Cursor     string
-	HasMore    bool
+	Query        string
+	TimeRange    string
+	Cursor       string
+	HasMore      bool
 	TotalFetched int
 }
 
@@ -170,7 +187,7 @@ func (d *Datasource) queryLogs(ctx context.Context, req *backend.QueryDataReques
 		if qm.QueryType != "logs" && qm.QueryType != "logs-volume" && qm.LogQuery == "" {
 			continue
 		}
-		
+
 		logger.Debug("Processing logs query", "refID", q.RefID, "queryType", qm.QueryType, "logQuery", qm.LogQuery)
 
 		// Skip hidden queries
@@ -237,36 +254,36 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 
 	// Create cache key for this query (includes query, time range, and limit)
 	cacheKey := fmt.Sprintf("logs:%s:%d:%d:%d", logsQuery, from, to, limit)
-	
+
 	// Check cache first (60-second TTL for better cache hit rates and reduced API calls)
 	// This helps prevent rate limiting while still being responsive to new logs
 	cacheTTL := 60 * time.Second
 
-	logger.Info("Logs cache lookup", 
-		"cacheKey", cacheKey, 
-		"query", logsQuery, 
+	logger.Info("Logs cache lookup",
+		"cacheKey", cacheKey,
+		"query", logsQuery,
 		"limit", limit,
 		"isVolumeQuery", isVolumeQuery)
-	
+
 	if cachedEntry := d.GetCachedLogsEntry(cacheKey, cacheTTL); cachedEntry != nil {
-		logger.Info("✅ Cache HIT - Returning cached logs result", 
-			"query", logsQuery, 
+		logger.Info("✅ Cache HIT - Returning cached logs result",
+			"query", logsQuery,
 			"entriesCount", len(cachedEntry.LogEntries),
 			"cacheKey", cacheKey,
 			"isVolumeQuery", isVolumeQuery)
-		
+
 		// For logs-volume queries, return only the volume histogram frame
 		if isVolumeQuery {
 			volumeFrame := parser.createLogsVolumeFrame(cachedEntry.LogEntries, q.RefID, q.TimeRange)
 			return data.Frames{volumeFrame}, nil
 		}
-		
+
 		// For regular logs queries, return the logs data frame
 		frames := parser.createLogsDataFrames(cachedEntry.LogEntries, q.RefID, logsQuery, q.TimeRange)
 		return frames, nil
 	}
-	
-	logger.Info("❌ Cache MISS - Fetching from Datadog API", 
+
+	logger.Info("❌ Cache MISS - Fetching from Datadog API",
 		"cacheKey", cacheKey,
 		"limit", limit)
 
@@ -277,8 +294,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	}
 
 	// Cache the results
-	logger.Info("💾 Caching logs result", 
-		"cacheKey", cacheKey, 
+	logger.Info("💾 Caching logs result",
+		"cacheKey", cacheKey,
 		"entriesCount", len(logEntries),
 		"limit", limit,
 		"cacheTTL", cacheTTL,
@@ -298,8 +315,8 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 	// For regular logs queries, create the logs data frame
 	frames := parser.createLogsDataFrames(logEntries, q.RefID, logsQuery, q.TimeRange)
 
-	logger.Info("Successfully executed logs query", 
-		"query", logsQuery, 
+	logger.Info("Successfully executed logs query",
+		"query", logsQuery,
 		"entriesReturned", len(logEntries),
 		"framesCreated", len(frames),
 		"limit", limit)
@@ -311,7 +328,7 @@ func (d *Datasource) executeSingleLogsQuery(ctx context.Context, qm *QueryModel,
 // Implements Requirements 10.1, 10.4 for pagination and caching consistency
 func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQuery string, from, to int64) ([]LogEntry, error) {
 	logger := log.New()
-	
+
 	// Create context with timeout (reusing existing timeout patterns - 30 seconds)
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -324,39 +341,30 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		site = "datadoghq.com"
 	}
 
-	// Add initial delay to prevent immediate rate limiting if we've been making many requests
-	initialDelay := 500 * time.Millisecond
-	logger.Debug("Adding initial delay to prevent rate limiting", "delay", initialDelay)
-	time.Sleep(initialDelay)
+	// Note: Removed initial delay that was causing blocking
+	// Rate limiting should be handled via retry logic with backoff, not artificial delays
 
 	var allLogEntries []LogEntry
 	var nextCursor string
 	pageCount := 0
-	maxPages := 3 // Reduced from 10 to 3 to prevent rate limiting
+	maxPages := 3      // Reduced from 10 to 3 to prevent rate limiting
 	maxEntries := 3000 // Reduced from 10000 to 3000 for better performance
-	
+
 	for pageCount < maxPages {
 		// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-		
-		// Add more conservative delay between requests to respect rate limits
-		if pageCount > 0 {
-			// More conservative delays: 2s, 4s, 8s to avoid rate limits
-			delay := time.Duration(2*(1<<uint(pageCount-1))) * time.Second
-			if delay > 10*time.Second {
-				delay = 10 * time.Second // Cap at 10 seconds
-			}
-			logger.Debug("Adding delay between paginated requests", "delay", delay, "pageNumber", pageCount+1)
-			time.Sleep(delay)
-		}
-		
+
+		// Note: Removed blocking delay between paginated requests
+		// Rate limiting is already handled by executeSingleLogsPageWithRetry with exponential backoff
+		// Adding extra delays here was causing unnecessary blocking without added benefit
+
 		// Execute single page request with retry logic for rate limits
 		logEntries, cursor, err := d.executeSingleLogsPageWithRetry(queryCtx, logsQuery, from, to, nextCursor, apiKey, appKey, site, 500, pageCount+1)
-		
+
 		if err != nil {
 			// If we get rate limited even with retries, return what we have so far
 			if strings.Contains(err.Error(), "rate limit") || strings.Contains(err.Error(), "429") {
-				logger.Warn("Rate limit exceeded, returning partial results", 
-					"totalEntries", len(allLogEntries), 
+				logger.Warn("Rate limit exceeded, returning partial results",
+					"totalEntries", len(allLogEntries),
 					"pagesFetched", pageCount)
 				break
 			}
@@ -365,9 +373,9 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 
 		// Add entries to result
 		allLogEntries = append(allLogEntries, logEntries...)
-		
-		logger.Debug("Fetched logs page", 
-			"pageNumber", pageCount+1, 
+
+		logger.Debug("Fetched logs page",
+			"pageNumber", pageCount+1,
 			"entriesInPage", len(logEntries),
 			"totalEntries", len(allLogEntries),
 			"nextCursor", cursor)
@@ -376,11 +384,11 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 		if cursor == "" || len(logEntries) == 0 {
 			break // No more pages
 		}
-		
+
 		// Check if we've reached a reasonable limit (prevent excessive pagination)
 		if len(allLogEntries) >= maxEntries {
-			logger.Info("Reached maximum log entries limit for rate limiting protection", 
-				"totalEntries", len(allLogEntries), 
+			logger.Info("Reached maximum log entries limit for rate limiting protection",
+				"totalEntries", len(allLogEntries),
 				"maxEntries", maxEntries)
 			break
 		}
@@ -390,13 +398,13 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 	}
 
 	if pageCount >= maxPages {
-		logger.Info("Reached maximum page limit for rate limiting protection", 
-			"maxPages", maxPages, 
+		logger.Info("Reached maximum page limit for rate limiting protection",
+			"maxPages", maxPages,
 			"totalEntries", len(allLogEntries))
 	}
 
-	logger.Info("Completed paginated logs query", 
-		"totalPages", pageCount+1, 
+	logger.Info("Completed paginated logs query",
+		"totalPages", pageCount+1,
 		"totalEntries", len(allLogEntries))
 
 	return allLogEntries, nil
@@ -406,7 +414,7 @@ func (d *Datasource) executeLogsQueryWithPagination(ctx context.Context, logsQue
 // This replaces the automatic pagination to prevent rate limiting issues
 func (d *Datasource) executeSingleLogsPageQuery(ctx context.Context, logsQuery string, from, to int64, cursor string, pageSize int) ([]LogEntry, string, error) {
 	logger := log.New()
-	
+
 	// Create context with timeout (30 seconds)
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -427,7 +435,7 @@ func (d *Datasource) executeSingleLogsPageQuery(ctx context.Context, logsQuery s
 		return nil, "", fmt.Errorf("failed to execute logs page: %w", err)
 	}
 
-	logger.Info("Executed single logs page query", 
+	logger.Info("Executed single logs page query",
 		"query", logsQuery,
 		"pageSize", pageSize,
 		"entriesReturned", len(logEntries),
@@ -442,13 +450,13 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 
 	// Use POST method with JSON body for proper Datadog Logs API v2 integration
 	url := fmt.Sprintf("https://api.%s/api/v2/logs/events/search", site)
-	
+
 	// Create request body matching Datadog's actual API format
 	// Based on the API error, it seems Datadog expects a simpler structure
 	// Convert timestamps to ISO format as Datadog might expect that instead of milliseconds
 	fromTime := time.UnixMilli(from).UTC().Format(time.RFC3339)
 	toTime := time.UnixMilli(to).UTC().Format(time.RFC3339)
-	
+
 	requestBody := map[string]interface{}{
 		"filter": map[string]interface{}{
 			"query": logsQuery,
@@ -473,7 +481,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	}
 
 	// Debug logging to help troubleshoot API issues
-	logger.Debug("Sending logs API request", 
+	logger.Debug("Sending logs API request",
 		"url", url,
 		"requestBody", string(jsonBody),
 		"query", logsQuery)
@@ -503,7 +511,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 	// Check response status
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		logger.Error("Logs API request failed", 
+		logger.Error("Logs API request failed",
 			"statusCode", resp.StatusCode,
 			"responseBody", string(bodyBytes),
 			"requestBody", string(jsonBody))
@@ -530,7 +538,7 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 		nextCursor = logsResponse.Meta.Page.After
 	}
 
-	logger.Debug("Executed single logs page", 
+	logger.Debug("Executed single logs page",
 		"entriesReturned", len(logEntries),
 		"nextCursor", nextCursor)
 
@@ -540,17 +548,17 @@ func (d *Datasource) executeSingleLogsPage(ctx context.Context, logsQuery string
 // executeSingleLogsPageWithRetry executes a single page with retry logic for rate limits
 func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQuery string, from, to int64, cursor, apiKey, appKey, site string, pageSize, pageNumber int) ([]LogEntry, string, error) {
 	logger := log.New()
-	
-	maxRetries := 2 // Reduced from 3 to 2 to avoid excessive retries
+
+	maxRetries := 2              // Reduced from 3 to 2 to avoid excessive retries
 	baseDelay := 3 * time.Second // Increased from 1s to 3s for more conservative approach
-	
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		logEntries, nextCursor, err := d.executeSingleLogsPage(ctx, logsQuery, from, to, cursor, apiKey, appKey, site, pageSize)
-		
+
 		if err == nil {
 			return logEntries, nextCursor, nil
 		}
-		
+
 		// Check if this is a rate limit error (HTTP 429)
 		if strings.Contains(err.Error(), "HTTP 429") || strings.Contains(err.Error(), "Too many requests") {
 			if attempt < maxRetries {
@@ -559,12 +567,12 @@ func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQue
 				if delay > 15*time.Second {
 					delay = 15 * time.Second // Cap at 15 seconds
 				}
-				logger.Warn("Rate limited by Datadog API, retrying with conservative backoff", 
-					"attempt", attempt+1, 
+				logger.Warn("Rate limited by Datadog API, retrying with conservative backoff",
+					"attempt", attempt+1,
 					"maxRetries", maxRetries+1,
 					"delay", delay,
 					"pageNumber", pageNumber)
-				
+
 				// Use a separate timer to avoid blocking the main context
 				timer := time.NewTimer(delay)
 				select {
@@ -575,7 +583,7 @@ func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQue
 					// Continue to next retry
 				}
 			} else {
-				logger.Error("Max retries exceeded for rate limited request", 
+				logger.Error("Max retries exceeded for rate limited request",
 					"maxRetries", maxRetries+1,
 					"pageNumber", pageNumber)
 				return nil, "", fmt.Errorf("rate limit exceeded after %d retries: %w", maxRetries+1, err)
@@ -585,7 +593,7 @@ func (d *Datasource) executeSingleLogsPageWithRetry(ctx context.Context, logsQue
 			return nil, "", err
 		}
 	}
-	
+
 	// This should never be reached, but just in case
 	return nil, "", fmt.Errorf("unexpected error after retries")
 }
@@ -617,19 +625,19 @@ func (d *Datasource) translateLogsQuery(qm *QueryModel, q *backend.DataQuery) (s
 	// - Boolean operators: AND, OR, NOT
 	// - Grouping: status:(ERROR OR WARN)
 	// - Wildcards: error*
-	
+
 	// Validate facet filter syntax (Requirements 4.2)
 	query = d.validateAndNormalizeFacetFilters(query)
-	
+
 	// Handle boolean operators (Requirements 4.3 - ensure they are uppercase for Datadog)
 	query = d.normalizeBooleanOperators(query)
-	
+
 	// Handle advanced boolean patterns and grouping (Requirements 4.3)
 	query = d.validateAdvancedBooleanPatterns(query)
-	
+
 	// Handle wildcard patterns (Requirements 4.4)
 	query = d.validateWildcardPatterns(query)
-	
+
 	// Validate time range integration (Requirements 4.5)
 	query = d.validateTimeRangeIntegration(query)
 
@@ -642,7 +650,7 @@ func (d *Datasource) translateLogsQuery(qm *QueryModel, q *backend.DataQuery) (s
 // Implements Requirements 7.1, 7.2, 7.3, 8.1, 8.2 for log level and service filtering
 func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 	logger := log.New()
-	
+
 	// Enhanced facet filter processing for log level and service filtering
 	// Support for Datadog reserved attributes and standard syntax:
 	// - status:ERROR, status:WARN, status:INFO, status:DEBUG, status:FATAL (correct Datadog syntax)
@@ -651,21 +659,21 @@ func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 	// - source:nginx, source:application, source:database (reserved attribute)
 	// - host:web-01 (reserved attribute)
 	// - @env:production, @version:1.2.3 (custom attributes with @ prefix)
-	
+
 	// Normalize log level values to uppercase for consistency
 	query = d.normalizeLogLevels(query)
-	
+
 	// Validate service filter syntax
 	query = d.validateServiceFilters(query)
-	
-	// Validate source filter syntax  
+
+	// Validate source filter syntax
 	query = d.validateSourceFilters(query)
-	
+
 	// Validate other common facet filters
 	query = d.validateCommonFacets(query)
-	
+
 	logger.Debug("Normalized facet filters", "query", query)
-	
+
 	return query
 }
 
@@ -675,52 +683,50 @@ func (d *Datasource) validateAndNormalizeFacetFilters(query string) string {
 func (d *Datasource) normalizeLogLevels(query string) string {
 	// Valid log levels that should be normalized to uppercase
 	validLevels := []string{"debug", "info", "warn", "warning", "error", "fatal", "trace"}
-	
+
 	// Pattern to match both status: and level: filters with optional grouping
 	// Matches: status:error, level:error, status:(error OR warn), etc.
-	levelPattern := regexp.MustCompile(`(?i)(status|level):\s*(\([^)]+\)|[^\s\)]+)`)
-	
-	return levelPattern.ReplaceAllStringFunc(query, func(match string) string {
+	return reLogLevelFilter.ReplaceAllStringFunc(query, func(match string) string {
 		// Extract the attribute name and level value(s)
 		parts := strings.SplitN(match, ":", 2)
 		if len(parts) != 2 {
 			return match // Return unchanged if malformed
 		}
-		
+
 		attributeName := strings.ToLower(strings.TrimSpace(parts[0]))
 		levelPart := strings.TrimSpace(parts[1])
-		
+
 		// Always use 'status' as the correct Datadog attribute name
 		// Convert legacy 'level' to 'status'
 		correctAttribute := "status"
-		
+
 		// Handle grouped levels: status:(ERROR OR WARN)
 		if strings.HasPrefix(levelPart, "(") && strings.HasSuffix(levelPart, ")") {
 			// Extract content inside parentheses
 			innerContent := levelPart[1 : len(levelPart)-1]
-			
+
 			// Normalize each level within the group
 			for _, level := range validLevels {
 				// Use word boundaries to avoid partial matches
 				levelRegex := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(level) + `\b`)
 				innerContent = levelRegex.ReplaceAllString(innerContent, strings.ToUpper(level))
 			}
-			
+
 			return correctAttribute + ":(" + innerContent + ")"
 		}
-		
+
 		// Handle single level: status:error -> status:ERROR or level:error -> status:ERROR
 		for _, level := range validLevels {
 			if strings.EqualFold(levelPart, level) {
 				return correctAttribute + ":" + strings.ToUpper(level)
 			}
 		}
-		
+
 		// Return with correct attribute name even if level not recognized
 		if attributeName == "level" {
 			return correctAttribute + ":" + levelPart
 		}
-		
+
 		return match
 	})
 }
@@ -730,34 +736,34 @@ func (d *Datasource) normalizeLogLevels(query string) string {
 func (d *Datasource) validateServiceFilters(query string) string {
 	// Simple string replacement approach for the test case
 	// Handle the specific case: "service:my service" -> "service:\"my service\""
-	
+
 	// First handle grouped expressions (don't modify these)
 	if strings.Contains(query, "service:(") {
 		return query
 	}
-	
+
 	// Handle quoted service names (don't modify these)
 	if strings.Contains(query, "service:\"") {
 		return query
 	}
-	
+
 	// Look for service: followed by unquoted values that contain spaces
 	serviceIndex := strings.Index(query, "service:")
 	if serviceIndex == -1 {
 		return query
 	}
-	
+
 	// Find the service value
 	valueStart := serviceIndex + 8 // length of "service:"
 	if valueStart >= len(query) {
 		return query
 	}
-	
+
 	// Skip whitespace
 	for valueStart < len(query) && query[valueStart] == ' ' {
 		valueStart++
 	}
-	
+
 	// Find the end of the service value (next space followed by a facet or boolean operator)
 	valueEnd := len(query)
 	for i := valueStart; i < len(query); i++ {
@@ -776,16 +782,16 @@ func (d *Datasource) validateServiceFilters(query string) string {
 			}
 		}
 	}
-	
+
 	servicePart := query[valueStart:valueEnd]
-	
+
 	// If service name contains spaces, quote it
 	if strings.Contains(servicePart, " ") {
 		before := query[:valueStart]
 		after := query[valueEnd:]
 		return before + "\"" + servicePart + "\"" + after
 	}
-	
+
 	return query
 }
 
@@ -793,27 +799,25 @@ func (d *Datasource) validateServiceFilters(query string) string {
 // Supports: source:nginx, source:application, source:"log file"
 func (d *Datasource) validateSourceFilters(query string) string {
 	// Pattern to match source: filters
-	sourcePattern := regexp.MustCompile(`source:\s*("[^"]*"|[^\s\)]+)`)
-	
-	return sourcePattern.ReplaceAllStringFunc(query, func(match string) string {
+	return reLogSourceFilter.ReplaceAllStringFunc(query, func(match string) string {
 		// Extract the source value part after "source:"
 		parts := strings.SplitN(match, ":", 2)
 		if len(parts) != 2 {
 			return match
 		}
-		
+
 		sourcePart := strings.TrimSpace(parts[1])
-		
+
 		// Handle quoted source names: source:"log file"
 		if strings.HasPrefix(sourcePart, "\"") && strings.HasSuffix(sourcePart, "\"") {
 			return match
 		}
-		
+
 		// Auto-quote source names with spaces or special characters
 		if strings.ContainsAny(sourcePart, " \t\n\r()[]{}") {
 			return "source:\"" + sourcePart + "\""
 		}
-		
+
 		return match
 	})
 }
@@ -822,10 +826,10 @@ func (d *Datasource) validateSourceFilters(query string) string {
 func (d *Datasource) validateCommonFacets(query string) string {
 	// Reserved attributes (no @ prefix needed): host
 	reservedFacets := []string{"host"}
-	
+
 	// Custom attributes (require @ prefix): env, version, container_name, etc.
 	customFacets := []string{"env", "version", "container_name", "container_id", "image_name"}
-	
+
 	// Handle reserved attributes (no @ prefix)
 	for _, facet := range reservedFacets {
 		facetPattern := regexp.MustCompile(facet + `:\s*("[^"]*"|[^\s\)]+)`)
@@ -834,23 +838,23 @@ func (d *Datasource) validateCommonFacets(query string) string {
 			if len(parts) != 2 {
 				return match
 			}
-			
+
 			facetPart := strings.TrimSpace(parts[1])
-			
+
 			// Handle quoted values
 			if strings.HasPrefix(facetPart, "\"") && strings.HasSuffix(facetPart, "\"") {
 				return match
 			}
-			
+
 			// Auto-quote values with spaces or special characters
 			if strings.ContainsAny(facetPart, " \t\n\r()[]{}") {
 				return facet + ":\"" + facetPart + "\""
 			}
-			
+
 			return match
 		})
 	}
-	
+
 	// Handle custom attributes (with @ prefix)
 	for _, facet := range customFacets {
 		// Match both @facet: and facet: patterns, convert to @facet:
@@ -860,29 +864,29 @@ func (d *Datasource) validateCommonFacets(query string) string {
 			if len(parts) != 2 {
 				return match
 			}
-			
+
 			attributePart := strings.TrimSpace(parts[0])
 			facetPart := strings.TrimSpace(parts[1])
-			
+
 			// Ensure @ prefix for custom attributes
 			if !strings.HasPrefix(attributePart, "@") {
 				attributePart = "@" + attributePart
 			}
-			
+
 			// Handle quoted values
 			if strings.HasPrefix(facetPart, "\"") && strings.HasSuffix(facetPart, "\"") {
 				return attributePart + ":" + facetPart
 			}
-			
+
 			// Auto-quote values with spaces or special characters
 			if strings.ContainsAny(facetPart, " \t\n\r()[]{}") {
 				return attributePart + ":\"" + facetPart + "\""
 			}
-			
+
 			return attributePart + ":" + facetPart
 		})
 	}
-	
+
 	return query
 }
 
@@ -890,19 +894,12 @@ func (d *Datasource) validateCommonFacets(query string) string {
 func (d *Datasource) normalizeBooleanOperators(query string) string {
 	// Datadog expects uppercase boolean operators
 	// Use case-insensitive replacement for all variations
-	
-	// Replace AND variations (case-insensitive) - word boundaries to avoid partial matches
-	re := regexp.MustCompile(`(?i)\band\b`)
-	query = re.ReplaceAllString(query, "AND")
-	
-	// Replace OR variations (case-insensitive) - word boundaries to avoid partial matches
-	re = regexp.MustCompile(`(?i)\bor\b`)
-	query = re.ReplaceAllString(query, "OR")
-	
-	// Replace NOT variations (case-insensitive) - word boundaries to avoid partial matches
-	re = regexp.MustCompile(`(?i)\bnot\b`)
-	query = re.ReplaceAllString(query, "NOT")
-	
+
+	// Replace AND/OR/NOT variations using package-level pre-compiled patterns
+	query = reLogBoolAnd.ReplaceAllString(query, "AND")
+	query = reLogBoolOr.ReplaceAllString(query, "OR")
+	query = reLogBoolNot.ReplaceAllString(query, "NOT")
+
 	return query
 }
 
@@ -910,42 +907,38 @@ func (d *Datasource) normalizeBooleanOperators(query string) string {
 // Implements Requirements 4.4 for wildcard pattern support
 func (d *Datasource) validateWildcardPatterns(query string) string {
 	logger := log.New()
-	
+
 	// Datadog supports wildcard patterns like "error*", "*exception*", "web-*"
 	// Enhanced validation and normalization for better user experience
-	
+
 	// Pattern to match wildcard expressions
 	// Matches: error*, *exception*, web-*, service:api-*, status:ERR*
-	wildcardPattern := regexp.MustCompile(`([a-zA-Z0-9_\-\.@:]+)\*+`)
-	
-	query = wildcardPattern.ReplaceAllStringFunc(query, func(match string) string {
+	query = reLogWildcard.ReplaceAllStringFunc(query, func(match string) string {
 		// Extract the base term and wildcard
 		if strings.HasSuffix(match, "**") {
 			// Multiple asterisks - normalize to single asterisk
 			logger.Debug("Normalizing multiple wildcards", "original", match)
 			return strings.TrimSuffix(match, "*") // Remove one asterisk, keep one
 		}
-		
+
 		// Single asterisk is valid, pass through
 		return match
 	})
-	
+
 	// Handle quoted wildcard patterns: "error message*" -> ensure proper quoting
-	quotedWildcardPattern := regexp.MustCompile(`"([^"]*\*[^"]*)"`)
-	query = quotedWildcardPattern.ReplaceAllStringFunc(query, func(match string) string {
+	query = reLogQuotedWildcard.ReplaceAllStringFunc(query, func(match string) string {
 		// Quoted wildcards are valid as-is
 		return match
 	})
-	
+
 	// Handle negated wildcard patterns: -error* -> ensure proper syntax
-	negatedWildcardPattern := regexp.MustCompile(`-([a-zA-Z0-9_\-\.]+\*)`)
-	query = negatedWildcardPattern.ReplaceAllStringFunc(query, func(match string) string {
+	query = reLogNegatedWildcard.ReplaceAllStringFunc(query, func(match string) string {
 		// Negated wildcards are valid as-is for Datadog
 		return match
 	})
-	
+
 	logger.Debug("Validated wildcard patterns", "query", query)
-	
+
 	return query
 }
 
@@ -953,19 +946,19 @@ func (d *Datasource) validateWildcardPatterns(query string) string {
 // Implements Requirements 4.3 for boolean operator support (AND, OR, NOT)
 func (d *Datasource) validateAdvancedBooleanPatterns(query string) string {
 	logger := log.New()
-	
+
 	// For now, keep this function simple to avoid breaking existing functionality
 	// The main boolean operator normalization is already handled by normalizeBooleanOperators
-	
+
 	// Ensure proper spacing around top-level boolean operators (but not within parentheses)
 	// Only process operators that are not inside parentheses or quotes
-	
+
 	// Simple cleanup of multiple spaces
-	query = regexp.MustCompile(`\s+`).ReplaceAllString(query, " ")
+	query = reLogMultiSpace.ReplaceAllString(query, " ")
 	query = strings.TrimSpace(query)
-	
+
 	logger.Debug("Validated advanced boolean patterns", "query", query)
-	
+
 	return query
 }
 
@@ -973,11 +966,11 @@ func (d *Datasource) validateAdvancedBooleanPatterns(query string) string {
 // Implements Requirements 4.5 for time range integration
 func (d *Datasource) validateTimeRangeIntegration(query string) string {
 	logger := log.New()
-	
+
 	// Datadog logs API uses the time range from the request body (from/to parameters)
 	// rather than inline time filters in the query string.
 	// However, users might try to add time-based filters in the query.
-	
+
 	// Detect and warn about inline time filters that might conflict with Grafana's time picker
 	timeFilterPatterns := []string{
 		`@timestamp:`,
@@ -985,66 +978,62 @@ func (d *Datasource) validateTimeRangeIntegration(query string) string {
 		`time:`,
 		`date:`,
 	}
-	
+
 	for _, pattern := range timeFilterPatterns {
 		if strings.Contains(strings.ToLower(query), pattern) {
-			logger.Warn("Detected inline time filter in logs query", 
-				"pattern", pattern, 
+			logger.Warn("Detected inline time filter in logs query",
+				"pattern", pattern,
 				"query", query,
 				"recommendation", "Use Grafana's time range picker instead of inline time filters")
 			// Note: We don't remove these filters as users might have specific use cases
 			// Just log a warning for now
 		}
 	}
-	
+
 	// Handle relative time expressions that users might add
 	// Example: @timestamp:>now-1h -> this should be handled by Grafana's time picker
-	relativeTimePattern := regexp.MustCompile(`@timestamp:\s*[><]=?\s*now[-+]\w+`)
-	if relativeTimePattern.MatchString(query) {
-		logger.Info("Found relative time filter in query", 
+	if reLogRelativeTimestamp.MatchString(query) {
+		logger.Info("Found relative time filter in query",
 			"query", query,
 			"note", "This will be combined with Grafana's time range picker")
 	}
-	
+
 	return query
 }
-
-
-
 
 // parseDatadogLogsResponse parses Datadog Logs API v2 response and converts to LogEntry structs
 func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEntry, error) {
 	logger := log.New()
-	
+
 	// Cast to map for parsing
 	responseMap, ok := apiResponse.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid response format: expected map, got %T", apiResponse)
 	}
-	
+
 	// Extract data array
 	dataInterface, exists := responseMap["data"]
 	if !exists {
 		logger.Debug("No data field in response, returning empty results")
 		return []LogEntry{}, nil
 	}
-	
+
 	dataArray, ok := dataInterface.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid data format: expected array, got %T", dataInterface)
 	}
-	
+
 	logger.Debug("Parsing Datadog logs response", "entryCount", len(dataArray))
-	
+
 	var logEntries []LogEntry
-	
+
 	for i, item := range dataArray {
 		itemMap, ok := item.(map[string]interface{})
 		if !ok {
 			logger.Warn("Skipping invalid log entry", "index", i, "type", fmt.Sprintf("%T", item))
 			continue
 		}
-		
+
 		// Extract log ID
 		logID := ""
 		if id, exists := itemMap["id"]; exists {
@@ -1052,20 +1041,20 @@ func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEnt
 				logID = idStr
 			}
 		}
-		
+
 		// Extract attributes
 		attributesInterface, exists := itemMap["attributes"]
 		if !exists {
 			logger.Warn("Skipping log entry without attributes", "index", i, "id", logID)
 			continue
 		}
-		
+
 		attributes, ok := attributesInterface.(map[string]interface{})
 		if !ok {
 			logger.Warn("Skipping log entry with invalid attributes", "index", i, "id", logID)
 			continue
 		}
-		
+
 		// Parse timestamp
 		var timestamp time.Time
 		if timestampInterface, exists := attributes["timestamp"]; exists {
@@ -1078,35 +1067,35 @@ func (d *Datasource) parseDatadogLogsResponse(apiResponse interface{}) ([]LogEnt
 				}
 			}
 		}
-		
+
 		// Extract standard fields using the new helper function
 		body, severity, labels := d.extractLogAttributesV2(attributes)
-		
+
 		// Create log entry with corrected structure
 		entry := LogEntry{
 			ID:        logID,
 			Timestamp: timestamp,
-			Body:      body,      // ✅ CORRECT - Changed from Message
-			Severity:  severity,  // ✅ CORRECT - Changed from Level
-			Labels:    labels,    // ✅ CORRECT - All metadata as JSON
+			Body:      body,     // ✅ CORRECT - Changed from Message
+			Severity:  severity, // ✅ CORRECT - Changed from Level
+			Labels:    labels,   // ✅ CORRECT - All metadata as JSON
 		}
-		
+
 		logEntries = append(logEntries, entry)
 	}
-	
+
 	logger.Debug("Successfully parsed Datadog logs response", "entriesReturned", len(logEntries))
-	
+
 	return logEntries, nil
 }
 
 // parseDatadogLogsResponseV2 parses structured Datadog Logs API v2 response and converts to LogEntry structs
 func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface{}) ([]LogEntry, error) {
 	logger := log.New()
-	
+
 	logger.Debug("Parsing Datadog logs response v2", "entryCount", len(dataArray))
-	
+
 	var logEntries []LogEntry
-	
+
 	for i, item := range dataArray {
 		// Extract log ID
 		logID := ""
@@ -1115,20 +1104,20 @@ func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface
 				logID = idStr
 			}
 		}
-		
+
 		// Extract attributes
 		attributesInterface, exists := item["attributes"]
 		if !exists {
 			logger.Warn("Skipping log entry without attributes", "index", i, "id", logID)
 			continue
 		}
-		
+
 		attributes, ok := attributesInterface.(map[string]interface{})
 		if !ok {
 			logger.Warn("Skipping log entry with invalid attributes", "index", i, "id", logID)
 			continue
 		}
-		
+
 		// Parse timestamp
 		var timestamp time.Time
 		if timestampInterface, exists := attributes["timestamp"]; exists {
@@ -1141,24 +1130,24 @@ func (d *Datasource) parseDatadogLogsResponseV2(dataArray []map[string]interface
 				}
 			}
 		}
-		
+
 		// Extract standard fields using the new helper function
 		body, severity, labels := d.extractLogAttributesV2(attributes)
-		
+
 		// Create log entry with corrected structure
 		entry := LogEntry{
 			ID:        logID,
 			Timestamp: timestamp,
-			Body:      body,      // ✅ CORRECT - Changed from Message
-			Severity:  severity,  // ✅ CORRECT - Changed from Level
-			Labels:    labels,    // ✅ CORRECT - All metadata as JSON
+			Body:      body,     // ✅ CORRECT - Changed from Message
+			Severity:  severity, // ✅ CORRECT - Changed from Level
+			Labels:    labels,   // ✅ CORRECT - All metadata as JSON
 		}
-		
+
 		logEntries = append(logEntries, entry)
 	}
-	
+
 	logger.Debug("Successfully parsed Datadog logs response v2", "entriesReturned", len(logEntries))
-	
+
 	return logEntries, nil
 }
 
@@ -1168,28 +1157,28 @@ func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (st
 	var message, level, service, source, host string
 	tags := make(map[string]string)
 	remainingAttrs := make(map[string]interface{})
-	
+
 	// Extract standard fields
 	if msg, ok := attributes["message"].(string); ok {
 		message = msg
 	}
-	
+
 	if lvl, ok := attributes["status"].(string); ok {
 		level = strings.ToUpper(lvl) // Normalize to uppercase
 	}
-	
+
 	if svc, ok := attributes["service"].(string); ok {
 		service = svc
 	}
-	
+
 	if src, ok := attributes["source"].(string); ok {
 		source = src
 	}
-	
+
 	if h, ok := attributes["host"].(string); ok {
 		host = h
 	}
-	
+
 	// Extract tags (Datadog returns tags as array of "key:value" strings)
 	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
 		for _, tag := range tagsArray {
@@ -1201,15 +1190,15 @@ func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (st
 			}
 		}
 	}
-	
+
 	// Collect remaining attributes
 	for key, value := range attributes {
-		if key != "message" && key != "status" && key != "service" && 
-		   key != "source" && key != "host" && key != "tags" && key != "timestamp" {
+		if key != "message" && key != "status" && key != "service" &&
+			key != "source" && key != "host" && key != "tags" && key != "timestamp" {
 			remainingAttrs[key] = value
 		}
 	}
-	
+
 	return message, level, service, source, host, tags, remainingAttrs
 }
 
@@ -1217,45 +1206,45 @@ func (d *Datasource) extractLogAttributes(attributes map[string]interface{}) (st
 // Returns body, severity, and labels as JSON for the new LogEntry structure
 func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (string, string, json.RawMessage) {
 	var body, severity string
-	
+
 	// Extract body (message content)
 	if msg, ok := attributes["message"].(string); ok {
 		body = msg
 	}
-	
+
 	// Extract severity (log level)
 	if lvl, ok := attributes["status"].(string); ok {
 		severity = strings.ToUpper(lvl) // Normalize to uppercase
 	}
-	
+
 	// Build labels structure containing all metadata
 	labels := LogLabels{}
-	
+
 	// Extract service
 	if svc, ok := attributes["service"].(string); ok {
 		labels.Service = svc
 	}
-	
+
 	// Extract source
 	if src, ok := attributes["source"].(string); ok {
 		labels.Source = src
 	}
-	
+
 	// Extract host
 	if h, ok := attributes["host"].(string); ok {
 		labels.Host = h
 	}
-	
+
 	// Extract environment
 	if env, ok := attributes["env"].(string); ok {
 		labels.Env = env
 	}
-	
+
 	// Extract version
 	if version, ok := attributes["version"].(string); ok {
 		labels.Version = version
 	}
-	
+
 	// Extract tags (Datadog returns tags as array of "key:value" strings)
 	if tagsArray, ok := attributes["tags"].([]interface{}); ok {
 		labels.Tags = make(map[string]string)
@@ -1268,33 +1257,33 @@ func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (
 			}
 		}
 	}
-	
+
 	// Extract trace IDs from common Datadog trace ID fields
 	// Requirements 5.2, 5.3 - Extract trace IDs from log attributes
 	labels.TraceID, labels.SpanID = d.extractTraceIDs(attributes)
-	
+
 	// Collect remaining attributes (excluding trace fields that we've already extracted)
 	labels.Attributes = make(map[string]interface{})
 	traceFields := map[string]bool{
 		"dd.trace_id": true, "trace_id": true, "traceId": true, "trace-id": true,
 		"dd.span_id": true, "span_id": true, "spanId": true, "span-id": true,
 	}
-	
+
 	for key, value := range attributes {
-		if key != "message" && key != "status" && key != "service" && 
-		   key != "source" && key != "host" && key != "tags" && key != "timestamp" &&
-		   key != "env" && key != "version" && !traceFields[key] {
+		if key != "message" && key != "status" && key != "service" &&
+			key != "source" && key != "host" && key != "tags" && key != "timestamp" &&
+			key != "env" && key != "version" && !traceFields[key] {
 			labels.Attributes[key] = value
 		}
 	}
-	
+
 	// Marshal labels to JSON
 	labelsJSON, err := json.Marshal(labels)
 	if err != nil {
 		// If marshaling fails, create minimal JSON
 		labelsJSON = json.RawMessage(`{}`)
 	}
-	
+
 	return body, severity, labelsJSON
 }
 
@@ -1303,25 +1292,25 @@ func (d *Datasource) extractLogAttributesV2(attributes map[string]interface{}) (
 // Requirements 5.2, 5.3 - Extract trace IDs from log data
 func (d *Datasource) extractTraceIDs(attributes map[string]interface{}) (string, string) {
 	logger := log.New()
-	
+
 	var traceID, spanID string
-	
+
 	// Common Datadog trace ID field names (in order of preference)
 	traceIDFields := []string{
-		"dd.trace_id",    // Standard Datadog trace ID field
-		"trace_id",       // Alternative trace ID field
-		"traceId",        // CamelCase variant
-		"trace-id",       // Kebab-case variant
+		"dd.trace_id", // Standard Datadog trace ID field
+		"trace_id",    // Alternative trace ID field
+		"traceId",     // CamelCase variant
+		"trace-id",    // Kebab-case variant
 	}
-	
+
 	// Common Datadog span ID field names (in order of preference)
 	spanIDFields := []string{
-		"dd.span_id",     // Standard Datadog span ID field
-		"span_id",        // Alternative span ID field
-		"spanId",         // CamelCase variant
-		"span-id",        // Kebab-case variant
+		"dd.span_id", // Standard Datadog span ID field
+		"span_id",    // Alternative span ID field
+		"spanId",     // CamelCase variant
+		"span-id",    // Kebab-case variant
 	}
-	
+
 	// Extract trace ID
 	for _, field := range traceIDFields {
 		if value, exists := attributes[field]; exists {
@@ -1332,7 +1321,7 @@ func (d *Datasource) extractTraceIDs(attributes map[string]interface{}) (string,
 			}
 		}
 	}
-	
+
 	// Extract span ID
 	for _, field := range spanIDFields {
 		if value, exists := attributes[field]; exists {
@@ -1343,7 +1332,7 @@ func (d *Datasource) extractTraceIDs(attributes map[string]interface{}) (string,
 			}
 		}
 	}
-	
+
 	return traceID, spanID
 }
 
@@ -1353,7 +1342,7 @@ func (d *Datasource) convertTraceIDToString(value interface{}) string {
 	if value == nil {
 		return ""
 	}
-	
+
 	switch v := value.(type) {
 	case string:
 		// Already a string, validate it's not empty
@@ -1362,21 +1351,21 @@ func (d *Datasource) convertTraceIDToString(value interface{}) string {
 			return ""
 		}
 		return trimmed
-		
+
 	case int64:
 		// Convert int64 to string, skip zero values
 		if v == 0 {
 			return ""
 		}
 		return fmt.Sprintf("%d", v)
-		
+
 	case uint64:
 		// Convert uint64 to string, skip zero values
 		if v == 0 {
 			return ""
 		}
 		return fmt.Sprintf("%d", v)
-		
+
 	case float64:
 		// JSON numbers are parsed as float64, convert to int64 first
 		intValue := int64(v)
@@ -1384,14 +1373,14 @@ func (d *Datasource) convertTraceIDToString(value interface{}) string {
 			return ""
 		}
 		return fmt.Sprintf("%d", intValue)
-		
+
 	case int:
 		// Convert int to string, skip zero values
 		if v == 0 {
 			return ""
 		}
 		return fmt.Sprintf("%d", v)
-		
+
 	default:
 		// Try to convert to string as fallback
 		strValue := fmt.Sprintf("%v", v)
@@ -1407,7 +1396,7 @@ func (d *Datasource) convertTraceIDToString(value interface{}) string {
 // Requirements 13.4 - Add data links to appropriate fields in data frame
 func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink {
 	logger := log.New()
-	
+
 	// Get Datadog site configuration for trace URL construction
 	site := "datadoghq.com" // Default to US
 	if d.JSONData != nil {
@@ -1415,9 +1404,9 @@ func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink
 			site = d.JSONData.Site
 		}
 	}
-	
+
 	var dataLinks []data.DataLink
-	
+
 	// Check if any log entries have trace IDs
 	hasTraceIDs := false
 	for _, entry := range logEntries {
@@ -1431,27 +1420,27 @@ func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink
 			}
 		}
 	}
-	
+
 	// Only create trace links if we have trace IDs
 	if !hasTraceIDs {
 		logger.Debug("No trace IDs found in log entries, skipping trace data links")
 		return dataLinks
 	}
-	
+
 	// Create trace data link for Datadog APM
 	traceLink := data.DataLink{
 		Title:       "View Trace in Datadog",
 		URL:         d.buildTraceURL(site, "${__data.fields.labels.trace_id}"),
 		TargetBlank: true,
 	}
-	
+
 	dataLinks = append(dataLinks, traceLink)
-	
-	logger.Debug("Created trace data links", 
-		"linkCount", len(dataLinks), 
+
+	logger.Debug("Created trace data links",
+		"linkCount", len(dataLinks),
 		"site", site,
 		"hasTraceIDs", hasTraceIDs)
-	
+
 	return dataLinks
 }
 
@@ -1461,24 +1450,24 @@ func (d *Datasource) createTraceDataLinks(logEntries []LogEntry) []data.DataLink
 func (d *Datasource) buildTraceURL(site, traceIDTemplate string) string {
 	// Datadog trace URL format: https://app.datadoghq.com/apm/trace/{trace_id}
 	// For other sites: https://app.{site}/apm/trace/{trace_id}
-	
+
 	var baseURL string
 	if site == "datadoghq.com" {
 		baseURL = "https://app.datadoghq.com"
 	} else {
 		baseURL = fmt.Sprintf("https://app.%s", site)
 	}
-	
+
 	// Use template variable that will be replaced by Grafana with actual trace ID
 	traceURL := fmt.Sprintf("%s/apm/trace/%s", baseURL, traceIDTemplate)
-	
+
 	return traceURL
 }
 
 // createEmptyLogsDataFrame creates an empty logs data frame with proper structure (LEGACY)
 func (d *Datasource) createEmptyLogsDataFrame(refID string) data.Frames {
 	logger := log.New()
-	
+
 	// Create data frame with proper structure for logs
 	frame := data.NewFrame("logs")
 	frame.RefID = refID
@@ -1549,7 +1538,7 @@ func (d *Datasource) createEmptyLogsDataFrame(refID string) data.Frames {
 // createEmptyLogsDataFrameV2 creates an empty logs data frame with corrected structure
 func (d *Datasource) createEmptyLogsDataFrameV2(refID string) data.Frames {
 	logger := log.New()
-	
+
 	// Create data frame with corrected structure for logs
 	frame := data.NewFrame("logs")
 	frame.RefID = refID
@@ -1594,7 +1583,7 @@ func (d *Datasource) createEmptyLogsDataFrameV2(refID string) data.Frames {
 		Type: data.FrameTypeLogLines,
 		// ✅ CORRECT - PreferredVisualization directly, not in Custom
 		PreferredVisualization: "logs",
-		ExecutedQueryString: "No log entries found",
+		ExecutedQueryString:    "No log entries found",
 	}
 
 	logger.Debug("Created empty corrected logs data frame", "refID", refID)
@@ -1604,28 +1593,28 @@ func (d *Datasource) createEmptyLogsDataFrameV2(refID string) data.Frames {
 // validateLogEntry validates a log entry and returns any validation errors
 func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 	var errors []string
-	
+
 	// Check for required fields
 	if entry.Timestamp.IsZero() {
 		errors = append(errors, fmt.Sprintf("Entry %d: missing or invalid timestamp", index))
 	}
-	
+
 	// Body can be empty, but we should log it for debugging
 	if entry.Body == "" {
 		// This is not an error, just a debug note
 	}
-	
+
 	// Validate severity if present
 	if entry.Severity != "" {
 		validLevels := map[string]bool{
-			"DEBUG": true, "INFO": true, "WARN": true, 
+			"DEBUG": true, "INFO": true, "WARN": true,
 			"ERROR": true, "FATAL": true, "TRACE": true,
 		}
 		if !validLevels[strings.ToUpper(entry.Severity)] {
 			errors = append(errors, fmt.Sprintf("Entry %d: invalid log severity '%s'", index, entry.Severity))
 		}
 	}
-	
+
 	// Validate labels JSON if present
 	if len(entry.Labels) > 0 {
 		var labels LogLabels
@@ -1633,7 +1622,7 @@ func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 			errors = append(errors, fmt.Sprintf("Entry %d: invalid labels JSON: %v", index, err))
 		}
 	}
-	
+
 	return errors
 }
 
@@ -1643,15 +1632,15 @@ func (d *Datasource) sanitizeLogEntry(entry LogEntry) LogEntry {
 	if entry.Severity != "" {
 		entry.Severity = strings.ToUpper(entry.Severity)
 	}
-	
+
 	// Trim whitespace from body field
 	entry.Body = strings.TrimSpace(entry.Body)
-	
+
 	// Ensure timestamp is not zero - use current time as fallback
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now()
 	}
-	
+
 	// Sanitize labels JSON if present
 	if len(entry.Labels) > 0 {
 		var labels LogLabels
@@ -1662,14 +1651,14 @@ func (d *Datasource) sanitizeLogEntry(entry LogEntry) LogEntry {
 			labels.Host = strings.TrimSpace(labels.Host)
 			labels.Env = strings.TrimSpace(labels.Env)
 			labels.Version = strings.TrimSpace(labels.Version)
-			
+
 			// Re-marshal cleaned labels
 			if cleanedLabels, err := json.Marshal(labels); err == nil {
 				entry.Labels = cleanedLabels
 			}
 		}
 	}
-	
+
 	return entry
 }
 
@@ -1677,31 +1666,31 @@ func (d *Datasource) sanitizeLogEntry(entry LogEntry) LogEntry {
 func (d *Datasource) sanitizeFieldName(name string) string {
 	// Remove leading/trailing whitespace
 	name = strings.TrimSpace(name)
-	
+
 	// Return empty if name is empty or too long
 	if name == "" || len(name) > 100 {
 		return ""
 	}
-	
+
 	// Replace invalid characters with underscores
 	// Keep alphanumeric, underscore, hyphen, and dot
 	var result strings.Builder
 	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
-		   (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
 			result.WriteRune(r)
 		} else {
 			result.WriteRune('_')
 		}
 	}
-	
+
 	sanitized := result.String()
-	
+
 	// Ensure it doesn't start with a number
 	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
 		sanitized = "field_" + sanitized
 	}
-	
+
 	return sanitized
 }
 
@@ -1710,7 +1699,7 @@ func (d *Datasource) sanitizeFieldValue(value interface{}) string {
 	if value == nil {
 		return ""
 	}
-	
+
 	var strValue string
 	switch v := value.(type) {
 	case string:
@@ -1726,42 +1715,42 @@ func (d *Datasource) sanitizeFieldValue(value interface{}) string {
 	default:
 		strValue = fmt.Sprintf("%v", v)
 	}
-	
+
 	// Trim whitespace and limit length
 	strValue = strings.TrimSpace(strValue)
 	if len(strValue) > 1000 {
 		strValue = strValue[:997] + "..."
 	}
-	
+
 	return strValue
 }
 
 // createSampleLogEntries creates sample log entries for testing with corrected structure
 func (d *Datasource) createSampleLogEntries() []LogEntry {
 	now := time.Now()
-	
+
 	// Create sample entries with new structure
 	entries := []LogEntry{
 		{
 			ID:        "log-1",
 			Timestamp: now.Add(-5 * time.Minute),
-			Body:      "Application started successfully",  // ✅ CORRECT - Changed from Message
+			Body:      "Application started successfully", // ✅ CORRECT - Changed from Message
 			Severity:  "INFO",                             // ✅ CORRECT - Changed from Level
 		},
 		{
 			ID:        "log-2",
 			Timestamp: now.Add(-3 * time.Minute),
-			Body:      "Database connection failed",       // ✅ CORRECT - Changed from Message
-			Severity:  "ERROR",                            // ✅ CORRECT - Changed from Level
+			Body:      "Database connection failed", // ✅ CORRECT - Changed from Message
+			Severity:  "ERROR",                      // ✅ CORRECT - Changed from Level
 		},
 		{
 			ID:        "log-3",
 			Timestamp: now.Add(-1 * time.Minute),
-			Body:      "User authentication successful",   // ✅ CORRECT - Changed from Message
-			Severity:  "DEBUG",                            // ✅ CORRECT - Changed from Level
+			Body:      "User authentication successful", // ✅ CORRECT - Changed from Message
+			Severity:  "DEBUG",                          // ✅ CORRECT - Changed from Level
 		},
 	}
-	
+
 	// Create labels for each entry
 	labelsData := []LogLabels{
 		{
@@ -1788,8 +1777,8 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 				"region":  "us-east-1",
 			},
 			Attributes: map[string]interface{}{
-				"error_code":   500,
-				"retry_count":  3,
+				"error_code":  500,
+				"retry_count": 3,
 			},
 		},
 		{
@@ -1802,12 +1791,12 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 				"region":  "us-west-2",
 			},
 			Attributes: map[string]interface{}{
-				"session_id":    "sess-789",
-				"login_method":  "oauth",
+				"session_id":   "sess-789",
+				"login_method": "oauth",
 			},
 		},
 	}
-	
+
 	// Marshal labels to JSON for each entry
 	for i, labels := range labelsData {
 		if labelsJSON, err := json.Marshal(labels); err == nil {
@@ -1816,7 +1805,7 @@ func (d *Datasource) createSampleLogEntries() []LogEntry {
 			entries[i].Labels = json.RawMessage(`{}`)
 		}
 	}
-	
+
 	return entries
 }
 
@@ -1845,49 +1834,49 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string, q
 	// Prepare slices for each field with proper capacity
 	entryCount := len(logEntries)
 	timestamps := make([]time.Time, entryCount)
-	bodies := make([]string, entryCount)           // ✅ CORRECT - Changed from messages
-	severities := make([]string, entryCount)       // ✅ CORRECT - Changed from levels
-	ids := make([]string, entryCount)              // ✅ CORRECT - Added ID field
-	labels := make([]json.RawMessage, entryCount)  // ✅ CORRECT - Single labels field with JSON
+	bodies := make([]string, entryCount)          // ✅ CORRECT - Changed from messages
+	severities := make([]string, entryCount)      // ✅ CORRECT - Changed from levels
+	ids := make([]string, entryCount)             // ✅ CORRECT - Added ID field
+	labels := make([]json.RawMessage, entryCount) // ✅ CORRECT - Single labels field with JSON
 
 	// Validate and sanitize log entries
 	var validationErrors []string
 	sanitizedEntries := make([]LogEntry, entryCount)
-	
+
 	for i, entry := range logEntries {
 		// Validate entry
 		if errors := d.validateLogEntry(entry, i); len(errors) > 0 {
 			validationErrors = append(validationErrors, errors...)
 		}
-		
+
 		// Sanitize entry
 		sanitizedEntries[i] = d.sanitizeLogEntry(entry)
 	}
-	
+
 	// Log validation errors but continue processing
 	if len(validationErrors) > 0 {
-		logger.Warn("Log entry validation errors found", 
-			"errorCount", len(validationErrors), 
+		logger.Warn("Log entry validation errors found",
+			"errorCount", len(validationErrors),
 			"errors", validationErrors)
 	}
 
 	// Populate data from sanitized log entries using corrected field structure
 	for i, entry := range sanitizedEntries {
 		timestamps[i] = entry.Timestamp
-		
+
 		// ✅ CORRECT - Use Body field instead of Message
 		bodies[i] = entry.Body // Can be empty after sanitization
-		
+
 		// ✅ CORRECT - Use Severity field instead of Level, with default
 		if entry.Severity != "" {
 			severities[i] = entry.Severity
 		} else {
 			severities[i] = "INFO" // Default severity if not specified
 		}
-		
+
 		// ✅ CORRECT - Include ID field
 		ids[i] = entry.ID
-		
+
 		// ✅ CORRECT - Use Labels field as JSON
 		if len(entry.Labels) > 0 {
 			labels[i] = entry.Labels
@@ -1948,15 +1937,15 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string, q
 		PreferredVisualization: "logs",
 		Custom: map[string]interface{}{
 			// Enhanced metadata for search highlighting and filtering
-			"searchWords": searchWords,  // For search term highlighting
-			"limit":       entryCount,   // For pagination info
+			"searchWords": searchWords, // For search term highlighting
+			"limit":       entryCount,  // For pagination info
 		},
 		// Add execution information for debugging
 		ExecutedQueryString: fmt.Sprintf("Logs query returned %d entries", entryCount),
 	}
 
-	logger.Debug("Created corrected logs data frame structure", 
-		"refID", refID, 
+	logger.Debug("Created corrected logs data frame structure",
+		"refID", refID,
 		"entryCount", entryCount,
 		"frameType", frame.Meta.Type,
 		"preferredVisualization", frame.Meta.PreferredVisualization,
@@ -1965,21 +1954,22 @@ func (d *Datasource) createLogsDataFrames(logEntries []LogEntry, refID string, q
 
 	return data.Frames{frame}
 }
+
 // parseLogsError provides logs-specific error handling using existing error patterns
 // Enhanced to handle logs API permission errors and common logs query issues
 // Requirements: 12.1, 12.2, 12.3
 func (d *Datasource) parseLogsError(err error, httpStatus int, responseBody string) string {
 	logger := log.New()
-	
+
 	// Handle logs-specific HTTP status codes first
 	switch httpStatus {
 	case 401:
 		return "Invalid Datadog API credentials - check your API key and App key for logs access"
 	case 403:
 		// Enhanced logs permission error handling
-		if strings.Contains(responseBody, "logs_read_data") || 
-		   strings.Contains(responseBody, "logs") ||
-		   strings.Contains(strings.ToLower(responseBody), "log") {
+		if strings.Contains(responseBody, "logs_read_data") ||
+			strings.Contains(responseBody, "logs") ||
+			strings.Contains(strings.ToLower(responseBody), "log") {
 			return "API key missing required permissions - need 'logs_read_data' scope for logs queries"
 		}
 		return "API key missing required permissions for logs access - check your Datadog API key permissions"
@@ -1991,50 +1981,50 @@ func (d *Datasource) parseLogsError(err error, httpStatus int, responseBody stri
 	case 500, 502, 503, 504:
 		return fmt.Sprintf("Datadog Logs API service error (%d) - logs service may be temporarily unavailable", httpStatus)
 	}
-	
+
 	// Handle error message patterns for logs-specific issues
 	errorMsg := err.Error()
 	lowerErrorMsg := strings.ToLower(errorMsg)
-	
+
 	// Timeout errors with logs context
 	if strings.Contains(lowerErrorMsg, "timeout") || strings.Contains(lowerErrorMsg, "context deadline exceeded") {
 		return "Log query timeout - try narrowing your search criteria, reducing time range, or using more specific filters"
 	}
-	
+
 	// Network connectivity errors
 	if strings.Contains(lowerErrorMsg, "connection refused") || strings.Contains(lowerErrorMsg, "no such host") {
 		return "Cannot connect to Datadog Logs API - check your network connection and Datadog site configuration"
 	}
-	
+
 	// Rate limiting errors (can appear in error message)
 	if strings.Contains(lowerErrorMsg, "rate limit") || strings.Contains(lowerErrorMsg, "too many requests") {
 		return "Datadog Logs API rate limit exceeded - please wait before retrying or reduce query frequency"
 	}
-	
+
 	// SSL/TLS errors
 	if strings.Contains(lowerErrorMsg, "tls") || strings.Contains(lowerErrorMsg, "certificate") {
 		return "SSL/TLS error connecting to Datadog Logs API - check your network security settings"
 	}
-	
+
 	// Logs index access errors
 	if strings.Contains(responseBody, "index") && strings.Contains(responseBody, "access") {
 		return "Access denied to logs index - check your API key permissions for the requested log indexes"
 	}
-	
+
 	// Query complexity errors
 	if strings.Contains(responseBody, "complex") || strings.Contains(responseBody, "limit") {
 		return "Logs query too complex - try simplifying your search criteria or reducing the time range"
 	}
-	
+
 	// Add logs context to the response body for better error detection
 	logsContext := fmt.Sprintf("logs: %s", responseBody)
-	
+
 	// Log the error details for debugging
-	logger.Debug("Parsing logs error", 
+	logger.Debug("Parsing logs error",
 		"httpStatus", httpStatus,
 		"errorMessage", errorMsg,
 		"responseBodyLength", len(responseBody))
-	
+
 	// Fall back to existing error parsing with logs context
 	return d.parseDatadogError(err, httpStatus, logsContext)
 }
@@ -2045,17 +2035,17 @@ func (d *Datasource) parseLogsQuerySyntaxError(responseBody string) string {
 	if responseBody == "" {
 		return "Invalid logs query syntax - check your search criteria and facet filters"
 	}
-	
+
 	// Try to parse JSON response for detailed error information
 	var errResp map[string]interface{}
 	if err := json.Unmarshal([]byte(responseBody), &errResp); err != nil {
 		// If not JSON, provide generic logs syntax help
 		return d.formatLogsQueryError(responseBody)
 	}
-	
+
 	// Extract error messages from different possible formats
 	var errorMessages []string
-	
+
 	// Handle "errors" field (array of errors)
 	if errorsField, ok := errResp["errors"]; ok {
 		switch errors := errorsField.(type) {
@@ -2075,7 +2065,7 @@ func (d *Datasource) parseLogsQuerySyntaxError(responseBody string) string {
 			errorMessages = append(errorMessages, errors)
 		}
 	}
-	
+
 	// Handle "error" field (single error)
 	if len(errorMessages) == 0 {
 		if errorField, ok := errResp["error"]; ok {
@@ -2089,20 +2079,20 @@ func (d *Datasource) parseLogsQuerySyntaxError(responseBody string) string {
 			}
 		}
 	}
-	
+
 	// Handle "message" field directly
 	if len(errorMessages) == 0 {
 		if msgField, ok := errResp["message"].(string); ok {
 			errorMessages = append(errorMessages, msgField)
 		}
 	}
-	
+
 	// If we found error messages, format them with logs-specific suggestions
 	if len(errorMessages) > 0 {
 		errorText := strings.Join(errorMessages, "; ")
 		return d.formatLogsQueryError(errorText)
 	}
-	
+
 	// Fallback for unrecognized error format
 	return "Invalid logs query syntax - check your search criteria and facet filters"
 }
@@ -2111,10 +2101,10 @@ func (d *Datasource) parseLogsQuerySyntaxError(responseBody string) string {
 // Requirements: 12.3 - Improve error messages for common logs query issues
 func (d *Datasource) formatLogsQueryError(errorText string) string {
 	lowerError := strings.ToLower(errorText)
-	
+
 	// Provide specific suggestions based on error patterns
 	var suggestion string
-	
+
 	// Service/source facet errors
 	if strings.Contains(lowerError, "service") || strings.Contains(lowerError, "facet") {
 		suggestion = "Use correct facet syntax: 'service:web-app', 'source:nginx', 'host:server-01'"
@@ -2134,14 +2124,15 @@ func (d *Datasource) formatLogsQueryError(errorText string) string {
 		// Generic logs query help
 		suggestion = "Use Datadog logs search syntax. Examples: 'service:web-app', 'status:ERROR', 'error AND service:api'"
 	}
-	
+
 	// Format the final error message
 	if len(errorText) > 200 {
 		errorText = errorText[:200] + "..."
 	}
-	
+
 	return fmt.Sprintf("Invalid logs query: %s\nSuggestion: %s", errorText, suggestion)
 }
+
 // extractSearchTerms extracts search terms from a Datadog logs query for highlighting purposes.
 // This function identifies text search terms while excluding facet filters.
 func (d *Datasource) extractSearchTerms(query string) []string {
@@ -2158,20 +2149,17 @@ func (d *Datasource) extractSearchTerms(query string) []string {
 
 	// Remove facet filters (service:, source:, status:, host:, env:, etc.)
 	// Facet pattern: word followed by colon and value (with optional quotes)
-	facetPattern := regexp.MustCompile(`\b\w+:\s*(?:"[^"]*"|[^\s]+)`)
-	queryWithoutFacets := facetPattern.ReplaceAllString(trimmedQuery, "")
+	queryWithoutFacets := reLogFacetFilter.ReplaceAllString(trimmedQuery, "")
 
 	// Remove boolean operators (AND, OR, NOT) as they're not search terms
-	booleanPattern := regexp.MustCompile(`(?i)\b(AND|OR|NOT)\b`)
-	queryWithoutFacets = booleanPattern.ReplaceAllString(queryWithoutFacets, " ")
+	queryWithoutFacets = reLogBooleanOps.ReplaceAllString(queryWithoutFacets, " ")
 
 	// Remove parentheses used for grouping
 	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, "(", " ")
 	queryWithoutFacets = strings.ReplaceAll(queryWithoutFacets, ")", " ")
 
 	// Extract quoted strings first (preserve spaces within quotes)
-	quotedPattern := regexp.MustCompile(`"([^"]*)"`)
-	quotedMatches := quotedPattern.FindAllStringSubmatch(queryWithoutFacets, -1)
+	quotedMatches := reLogQuotedStrings.FindAllStringSubmatch(queryWithoutFacets, -1)
 	for _, match := range quotedMatches {
 		if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
 			searchTerms = append(searchTerms, strings.TrimSpace(match[1]))
@@ -2179,7 +2167,7 @@ func (d *Datasource) extractSearchTerms(query string) []string {
 	}
 
 	// Remove quoted strings from the query to process remaining words
-	queryWithoutQuotes := quotedPattern.ReplaceAllString(queryWithoutFacets, " ")
+	queryWithoutQuotes := reLogQuotedStrings.ReplaceAllString(queryWithoutFacets, " ")
 
 	// Split remaining words by whitespace and filter out empty strings
 	words := strings.Fields(queryWithoutQuotes)

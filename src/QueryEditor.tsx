@@ -1,6 +1,18 @@
 import React, { ChangeEvent, useRef, useState, useEffect } from 'react';
-import { Input, CodeEditor, Stack, Alert, useTheme2, Button, Icon, Select, InlineField, InlineFieldRow, Collapse } from '@grafana/ui';
-import { QueryEditorProps, SelectableValue } from '@grafana/data';
+import {
+  Input,
+  CodeEditor,
+  Stack,
+  Alert,
+  useTheme2,
+  Button,
+  Icon,
+  Select,
+  InlineField,
+  InlineFieldRow,
+  Collapse,
+} from '@grafana/ui';
+import { QueryEditorProps, SelectableValue, CoreApp } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
@@ -30,39 +42,37 @@ function hasVariablePlaceholders(queryText: string): boolean {
  */
 function extractVariableNames(queryText: string): string[] {
   if (!queryText) return [];
-  
+
   const variables: string[] = [];
-  
+
   // Extract from ${variable:format} patterns
   const formatMatches = queryText.match(/\$\{([^}:]+):[^}]+\}/g);
   if (formatMatches) {
-    formatMatches.forEach(match => {
+    formatMatches.forEach((match) => {
       const varName = match.match(/\$\{([^}:]+):/)?.[1];
       if (varName && !variables.includes(varName)) {
         variables.push(varName);
       }
     });
   }
-  
+
   // Extract from $variable patterns
   const simpleMatches = queryText.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g);
   if (simpleMatches) {
-    simpleMatches.forEach(match => {
+    simpleMatches.forEach((match) => {
       const varName = match.substring(1); // Remove the $
       if (!variables.includes(varName)) {
         variables.push(varName);
       }
     });
   }
-  
+
   return variables;
 }
 
-
-
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
   const theme = useTheme2();
-  
+
   // Query type options
   const queryTypeOptions: Array<SelectableValue<'metrics' | 'logs'>> = [
     { label: 'Metrics', value: 'metrics', description: 'Query Datadog metrics and time series data' },
@@ -74,11 +84,11 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
   const onQueryTypeChange = (option: SelectableValue<'metrics' | 'logs'>) => {
     const newQueryType = option.value || 'metrics';
-    onChange({ 
-      ...query, 
+    onChange({
+      ...query,
       queryType: newQueryType,
       // Clear the other query field when switching types to avoid confusion
-      ...(newQueryType === 'logs' ? { queryText: '' } : { logQuery: '' })
+      ...(newQueryType === 'logs' ? { queryText: '' } : { logQuery: '' }),
     });
   };
 
@@ -86,14 +96,10 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     <Stack gap={2} direction="column">
       {/* Query Type Selector */}
       <InlineFieldRow>
-        <InlineField 
-          label="Query Type" 
-          labelWidth={14}
-          tooltip="Select whether to query metrics or logs"
-        >
+        <InlineField label="Query Type" labelWidth={14} tooltip="Select whether to query metrics or logs">
           <Select
             options={queryTypeOptions}
-            value={queryTypeOptions.find(opt => opt.value === currentQueryType)}
+            value={queryTypeOptions.find((opt) => opt.value === currentQueryType)}
             onChange={onQueryTypeChange}
             width={20}
             placeholder="Select query type"
@@ -103,20 +109,20 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
       {/* Render appropriate editor based on query type */}
       {currentQueryType === 'logs' ? (
-        <LogsQueryEditor 
-          query={query} 
-          onChange={onChange} 
-          onRunQuery={onRunQuery} 
-          datasource={datasource} 
-          {...restProps} 
+        <LogsQueryEditor
+          query={query}
+          onChange={onChange}
+          onRunQuery={onRunQuery}
+          datasource={datasource}
+          {...restProps}
         />
       ) : (
-        <MetricsQueryEditor 
-          query={query} 
-          onChange={onChange} 
-          onRunQuery={onRunQuery} 
-          datasource={datasource} 
-          {...restProps} 
+        <MetricsQueryEditor
+          query={query}
+          onChange={onChange}
+          onRunQuery={onRunQuery}
+          datasource={datasource}
+          {...restProps}
         />
       )}
     </Stack>
@@ -127,20 +133,14 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
  * MetricsQueryEditor component - the existing query editor for metrics queries
  * Extracted from the main QueryEditor to enable conditional rendering
  */
-function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
+function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...restProps }: Props) {
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
-  
+
   // Detect if we're in Explore mode
-  const isExploreMode = window.location.pathname.includes('/explore') || 
-                       (restProps as any).app === 'explore' ||
-                       (restProps as any).context === 'explore';
-  
-  console.log('MetricsQueryEditor mode detection:', {
-    pathname: window.location.pathname,
-    isExploreMode,
-    restProps: Object.keys(restProps as any),
-  });
+  const isExploreMode = window.location.pathname.includes('/explore') || app === CoreApp.Explore;
+
+  // Debug logging removed for production
 
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
@@ -151,14 +151,24 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     { label: 'Auto', value: 'auto', description: 'Only includes unique labels' },
     { label: 'Custom', value: 'custom', description: 'Provide a naming template' },
   ];
-  
+
   // Ref to track autocomplete state for Monaco keyboard handler
   const autocompleteStateRef = useRef({ isOpen: false, selectedIndex: 0, suggestions: [] as CompletionItem[] });
 
+  // Ref to collect Monaco disposables for cleanup on unmount
+  const disposablesRef = useRef<monacoType.IDisposable[]>([]);
+
+  // Cleanup Monaco event listeners and editor on unmount
+  useEffect(() => {
+    return () => {
+      disposablesRef.current.forEach((d) => d.dispose());
+      disposablesRef.current = [];
+      editorRef.current = null;
+    };
+  }, []);
+
   // Define handleItemSelect before the hook initialization to avoid circular dependency
   const handleItemSelect = async (item: CompletionItem) => {
-    console.log('=== handleItemSelect START ===');
-    
     // Get CURRENT values from Monaco editor (not from React state which may be stale)
     let currentValue = '';
     let currentCursorPosition = 0;
@@ -170,13 +180,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         currentCursorPosition = model.getOffsetAt(position);
       }
     }
-
-    console.log('handleItemSelect called:', {
-      itemKind: item.kind,
-      itemLabel: item.label,
-      currentValue,
-      currentCursorPosition,
-    });
 
     // Call backend to compute the completion
     try {
@@ -194,8 +197,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         .toPromise();
 
       const result = (response as any).data as { newQuery: string; newCursorPosition: number };
-      
-      console.log('Backend completion result:', result);
 
       // Update the query with the backend result, preserving Explore mode metadata
       onChange({ ...enhancedQuery, queryText: result.newQuery });
@@ -209,7 +210,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
             const position = model.getPositionAt(result.newCursorPosition);
             editorRef.current.setPosition(position);
           }
-
         }
       }, 15);
 
@@ -217,11 +217,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
       autocomplete.onClose();
       return;
     } catch (error) {
-      console.error('Backend completion failed:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
       // Fall back to old logic if backend fails
     }
 
@@ -251,56 +246,31 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
       const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
       const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
       // Cursor must be after '{' and before '}' (or no closing brace yet)
-      inGroupingContext = currentCursorPosition > byBraceStart && 
-                         (closeBraceAfterBy === -1 || currentCursorPosition <= closeBraceAfterBy);
-      
-      console.log('Grouping context check:', {
-        byMatch: byMatch[0],
-        byBraceStart,
-        closeBraceAfterBy,
-        currentCursorPosition,
-        inGroupingContext,
-        itemKind: item.kind,
-      });
+      inGroupingContext =
+        currentCursorPosition > byBraceStart &&
+        (closeBraceAfterBy === -1 || currentCursorPosition <= closeBraceAfterBy);
     }
 
     // For grouping_tag context, ALWAYS use the grouping logic
     if (item.kind === 'grouping_tag') {
-      console.log('Grouping tag selected:', {
-        currentValue,
-        currentCursorPosition,
-        byMatch: byMatch ? byMatch[0] : null,
-        insertValue,
-      });
-      
       // Force grouping context handling
       if (byMatch) {
         const byBraceStart = byMatch.index! + byMatch[0].length - 1;
         const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
         const groupingEnd = closeBraceAfterBy === -1 ? currentValue.length : closeBraceAfterBy;
-        
+
         const groupingContent = currentValue.substring(byBraceStart + 1, groupingEnd);
         const relativePos = currentCursorPosition - (byBraceStart + 1);
-        
-        console.log('Grouping tag (forced):', {
-          byBraceStart,
-          closeBraceAfterBy,
-          groupingEnd,
-          groupingContent,
-          relativePos,
-          insertValue,
-        });
-        
+
         // Always insert at current position for grouping tags
         start = currentCursorPosition;
         end = currentCursorPosition;
-        
+
         // Add comma if there's already content and we're not right after a comma
         if (groupingContent.trim().length > 0 && relativePos > 0 && groupingContent[relativePos - 1] !== ',') {
           insertValue = ',' + insertValue;
         }
       } else {
-        console.error('Grouping tag selected but no byMatch found!');
         // Fallback: insert at cursor position
         start = currentCursorPosition;
         end = currentCursorPosition;
@@ -327,58 +297,42 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
       const byBraceStart = byMatch.index! + byMatch[0].length - 1; // Position of '{'
       const closeBraceAfterBy = currentValue.indexOf('}', byBraceStart);
       const groupingEnd = closeBraceAfterBy === -1 ? currentValue.length : closeBraceAfterBy;
-      
+
       // Get content inside braces
       const groupingContent = currentValue.substring(byBraceStart + 1, groupingEnd);
       const relativePos = currentCursorPosition - (byBraceStart + 1);
-      
-      console.log('Grouping tag replacement:', {
-        groupingContent,
-        relativePos,
-        byBraceStart,
-        groupingEnd,
-      });
-      
+
       // Check if cursor is right after comma or at start
       if (relativePos === 0 || (relativePos > 0 && groupingContent[relativePos - 1] === ',')) {
         // Insert mode - just insert at current position
         start = currentCursorPosition;
         end = currentCursorPosition;
-        console.log('Insert mode - cursor after comma or at start');
       } else {
         // Find token boundaries within grouping section
         let tokenStart = relativePos;
         let tokenEnd = relativePos;
-        
+
         // Move backwards to find start (stop at comma or beginning)
         while (tokenStart > 0 && groupingContent[tokenStart - 1] !== ',') {
           tokenStart--;
         }
-        
+
         // Move forwards to find end (stop at comma or end)
         while (tokenEnd < groupingContent.length && groupingContent[tokenEnd] !== ',') {
           tokenEnd++;
         }
-        
+
         const currentToken = groupingContent.substring(tokenStart, tokenEnd).trim();
-        
-        console.log('Token boundaries:', {
-          tokenStart,
-          tokenEnd,
-          currentToken,
-        });
-        
+
         // If cursor is at end of token, append with comma
         if (currentToken.length > 0 && relativePos === tokenEnd) {
           start = currentCursorPosition;
           end = currentCursorPosition;
           insertValue = ',' + insertValue;
-          console.log('Append mode - adding comma');
         } else {
           // Replace the token
           start = byBraceStart + 1 + tokenStart;
           end = byBraceStart + 1 + tokenEnd;
-          console.log('Replace mode - replacing token');
         }
       }
     } else {
@@ -398,16 +352,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     const newValue = currentValue.substring(0, start) + insertValue + currentValue.substring(end);
 
     // Debug log to understand what's being replaced
-    console.log('Token replacement:', {
-      original: currentValue,
-      start,
-      end,
-      replacing: currentValue.substring(start, end),
-      insertValue,
-      result: newValue,
-      inGroupingContext,
-      itemKind: item.kind,
-    });
 
     // Store the desired cursor position before the state update
     const newCursorPos = start + insertValue.length;
@@ -428,8 +372,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           const position = model.getPositionAt(newCursorPos);
           editorRef.current.setPosition(position);
         }
-
-
       }
       // Do NOT run query automatically after insertion - user decides when to run
       // This prevents re-rendering that moves cursor to end
@@ -443,7 +385,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
   // Initialize autocomplete hook with datasource UID and selection callback
   const autocomplete = useQueryAutocomplete({
     datasourceUid: datasource.uid || '',
-    onSelect: handleItemSelect
+    onSelect: handleItemSelect,
   });
 
   // Keep the ref updated with current autocomplete state
@@ -471,8 +413,6 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         }
       }
 
-
-
       // Update the cursor position in the UI (for suggestions positioning)
       if (editorRef.current) {
         updateSuggestionsPositionFromEditor(editorRef.current, cursorPos);
@@ -483,15 +423,13 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     }, 0);
   };
 
-
-
   const onLegendModeChange = (option: SelectableValue<'auto' | 'custom'>) => {
     const newMode = option.value || 'auto';
-    onChange({ 
-      ...enhancedQuery, 
+    onChange({
+      ...enhancedQuery,
       legendMode: newMode,
       // Clear template when switching to auto
-      legendTemplate: newMode === 'auto' ? '' : enhancedQuery.legendTemplate || ''
+      legendTemplate: newMode === 'auto' ? '' : enhancedQuery.legendTemplate || '',
     });
   };
 
@@ -559,10 +497,10 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       // Close autocomplete popup before query execution (Requirements 2.2)
       autocomplete.onClose();
-      
+
       // Execute the query
       onRunQuery();
-      
+
       // Maintain focus on CodeEditor (Requirements 2.3)
       setTimeout(() => {
         if (editorRef.current) {
@@ -572,7 +510,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
     });
 
     // Intercept keyboard events to handle autocomplete navigation
-    editor.onKeyDown((e) => {
+    const keyDownDisposable = editor.onKeyDown((e) => {
       // Only intercept if autocomplete is open (use ref to get current state)
       if (!autocompleteStateRef.current.isOpen) {
         return;
@@ -612,8 +550,10 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
       }
     });
 
+    disposablesRef.current.push(keyDownDisposable);
+
     // Track cursor position changes
-    editor.onDidChangeCursorPosition((e) => {
+    const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
       const model = editor.getModel();
       if (model) {
         const offset = model.getOffsetAt(e.position);
@@ -621,44 +561,44 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         updateSuggestionsPositionFromEditor(editor, offset);
       }
     });
+    disposablesRef.current.push(cursorDisposable);
   };
 
   const { queryText, legendMode = 'auto', legendTemplate = '' } = query;
 
   // Add visualization type hints for Explore mode
-  const enhancedQuery = isExploreMode ? {
-    ...query,
-    // Add metadata for Explore mode visualization hints
-    meta: {
-      ...query.meta,
-      preferredVisualisationType: 'graph' as const, // Default to graph for time series data
-      exploreMode: true,
-    }
-  } : query;
+  const enhancedQuery = isExploreMode
+    ? {
+        ...query,
+        // Add metadata for Explore mode visualization hints
+        meta: {
+          ...query.meta,
+          preferredVisualisationType: 'graph' as const, // Default to graph for time series data
+          exploreMode: true,
+        },
+      }
+    : query;
 
   return (
     <Stack gap={2} direction="column">
       {/* Query field with native Grafana styling */}
       <InlineFieldRow>
-        <InlineField 
-          label="Query" 
-          labelWidth={14}
-          grow
-          tooltip="Enter your Datadog query"
-        >
+        <InlineField label="Query" labelWidth={14} grow tooltip="Enter your Datadog query">
           <div style={{ position: 'relative', width: '100%' }}>
             {/* Variable Examples button positioned next to query field */}
-            <div style={{ 
-              position: 'absolute', 
-              top: '-2px', 
-              right: '0px', 
-              zIndex: 10 
-            }}>
+            <div
+              style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '0px',
+                zIndex: 10,
+              }}
+            >
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowHelp(!showHelp)}
-                icon={showHelp ? "angle-up" : "question-circle"}
+                icon={showHelp ? 'angle-up' : 'question-circle'}
               >
                 {showHelp ? 'Hide Help' : 'Variable Examples'}
               </Button>
@@ -708,15 +648,17 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
             {/* Display variable information */}
             {hasVariablePlaceholders(queryText || '') && (
-              <div style={{ 
-                marginTop: '8px', 
-                padding: '8px', 
-                backgroundColor: theme.colors.background.secondary,
-                border: `1px solid ${theme.colors.border.weak}`,
-                borderRadius: theme.shape.radius.default,
-                fontSize: theme.typography.size.sm,
-                color: theme.colors.text.secondary
-              }}>
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '8px',
+                  backgroundColor: theme.colors.background.secondary,
+                  border: `1px solid ${theme.colors.border.weak}`,
+                  borderRadius: theme.shape.radius.default,
+                  fontSize: theme.typography.size.sm,
+                  color: theme.colors.text.secondary,
+                }}
+              >
                 <Icon name="info-circle" size="sm" style={{ marginRight: '4px' }} />
                 Variables detected: {extractVariableNames(queryText || '').join(', ')}
                 <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
@@ -852,13 +794,15 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
             {/* Loading indicator */}
             {autocomplete.state.isLoading && (
-              <div style={{
-                position: 'absolute',
-                right: '10px',
-                top: '10px',
-                fontSize: theme.typography.size.sm,
-                color: theme.colors.text.secondary
-              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '10px',
+                  fontSize: theme.typography.size.sm,
+                  color: theme.colors.text.secondary,
+                }}
+              >
                 Loading...
               </div>
             )}
@@ -868,29 +812,21 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
       {/* Variable Help Component */}
       {showHelp && (
-        <QueryEditorHelp 
+        <QueryEditorHelp
           onClickExample={(exampleQuery) => {
             onChange({ ...query, ...exampleQuery });
             setShowHelp(false); // Hide help after selecting an example
-          }} 
+          }}
         />
       )}
 
       {/* Options Section - Collapsible */}
-      <Collapse 
-        label="Options" 
-        isOpen={optionsOpen} 
-        onToggle={() => setOptionsOpen(!optionsOpen)}
-      >
+      <Collapse label="Options" isOpen={optionsOpen} onToggle={() => setOptionsOpen(!optionsOpen)}>
         <InlineFieldRow>
-          <InlineField 
-            label="Legend" 
-            labelWidth={14}
-            tooltip="Configure how series names are displayed in the legend"
-          >
+          <InlineField label="Legend" labelWidth={14} tooltip="Configure how series names are displayed in the legend">
             <Select
               options={legendModeOptions}
-              value={legendModeOptions.find(opt => opt.value === legendMode)}
+              value={legendModeOptions.find((opt) => opt.value === legendMode)}
               onChange={onLegendModeChange}
               width={20}
               placeholder="Select legend mode"
@@ -901,11 +837,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
         {/* Custom legend template field - only show when Custom is selected */}
         {legendMode === 'custom' && (
           <InlineFieldRow>
-            <InlineField 
-              label="" 
-              labelWidth={14}
-              grow
-            >
+            <InlineField label="" labelWidth={14} grow>
               <Input
                 value={legendTemplate}
                 onChange={onLegendTemplateChange}
@@ -918,8 +850,8 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
 
         {/* Interval override field */}
         <InlineFieldRow>
-          <InlineField 
-            label="Interval" 
+          <InlineField
+            label="Interval"
             labelWidth={14}
             tooltip="Override the query interval in milliseconds. Leave empty for auto-calculated interval."
           >

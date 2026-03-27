@@ -5,7 +5,6 @@ import { generateSuggestions, generateLogsSuggestions, groupSuggestions } from '
 import { validateQuery } from '../utils/queryValidator';
 import { validateLogsQuery } from '../utils/logsQueryValidator';
 import { getBackendSrv } from '@grafana/runtime';
-import { variableInterpolationService } from '../utils/variableInterpolation';
 import { LogsCompletionItemProvider } from '../utils/autocomplete/logsCompletionProvider';
 
 const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
@@ -42,7 +41,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
   // Validate datasource UID is provided
   if (!datasourceUid) {
-    console.warn('useQueryAutocomplete: datasourceUid is required but not provided');
   }
 
   // Initialize logs completion provider for context-aware suggestions
@@ -60,37 +58,52 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
     validationError: undefined,
   });
 
-  // Track current query for context and suggestion regeneration
+  // Debounce timer
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const currentQueryRef = useRef<string>('');
   const currentCursorRef = useRef<number>(0);
   const contextRef = useRef<QueryContext | null>(null);
 
-  // Debounce timer
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Track mount status to prevent state updates after unmount
+  const isMountedRef = useRef(true);
+
+  // AbortController ref for cancelling in-flight fetch requests
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   /**
    * Fetch suggestions from backend endpoints and update state
    */
   const fetchAndUpdateSuggestions = useCallback(
     async (context: QueryContext, queryText: string) => {
+      // Cancel any previous in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      if (!isMountedRef.current) {
+        return;
+      }
       setState((prev: AutocompleteState) => ({ ...prev, isLoading: true, error: undefined }));
 
       const timeoutHandle = setTimeout(() => {
         // Timeout - abort the fetch
-        setState((prev: AutocompleteState) => ({
-          ...prev,
-          isLoading: false,
-          error: 'Suggestions request timeout',
-          suggestions: [],
-          isOpen: true,
-        }));
-      }, 2000); // 2-second timeout
+        controller.abort();
+        if (isMountedRef.current) {
+          setState((prev: AutocompleteState) => ({
+            ...prev,
+            isLoading: false,
+            error: 'Suggestions request timeout',
+            suggestions: [],
+            isOpen: true,
+          }));
+        }
+      }, 5000); // 5-second timeout
 
       try {
         // Validate query based on query type
-        const validationResult = queryType === 'logs' 
-          ? validateLogsQuery(queryText)
-          : validateQuery(queryText);
+        const validationResult = queryType === 'logs' ? validateLogsQuery(queryText) : validateQuery(queryText);
 
         // Fetch data based on query type - metrics for metrics queries, logs data for logs queries
         let metrics: string[] = [];
@@ -99,7 +112,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let logsLevels: string[] = [];
         let logsFields: string[] = [];
         let logsTags: string[] = [];
-        
+
         if (queryType === 'metrics') {
           // Fetch metric names from backend (existing pattern)
           try {
@@ -117,7 +130,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             } else if (err.status === 404) {
               throw new Error('Endpoint not found (backend not available)');
             } else {
-              console.warn('Failed to fetch metrics:', metricsError);
               // Continue with empty metrics if backend call fails
               metrics = [];
             }
@@ -125,11 +137,31 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         } else if (queryType === 'logs') {
           // Fetch logs services, sources, levels, fields, and tags from backend (reusing existing patterns)
           const logsEndpoints = [
-            { name: 'services', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`, target: 'logsServices' },
-            { name: 'sources', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`, target: 'logsSources' },
-            { name: 'levels', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/levels`, target: 'logsLevels' },
-            { name: 'fields', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/fields`, target: 'logsFields' },
-            { name: 'tags', url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/tags`, target: 'logsTags' }
+            {
+              name: 'services',
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/services`,
+              target: 'logsServices',
+            },
+            {
+              name: 'sources',
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/sources`,
+              target: 'logsSources',
+            },
+            {
+              name: 'levels',
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/levels`,
+              target: 'logsLevels',
+            },
+            {
+              name: 'fields',
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/fields`,
+              target: 'logsFields',
+            },
+            {
+              name: 'tags',
+              url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/tags`,
+              target: 'logsTags',
+            },
           ];
 
           // Fetch all logs autocomplete data in parallel for better performance
@@ -149,7 +181,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
               } else if (err.status === 404) {
                 throw new Error(`Logs ${endpoint.name} endpoint not found (backend not available)`);
               } else {
-                console.warn(`Failed to fetch logs ${endpoint.name}:`, error);
                 // Continue with empty data if backend call fails
                 return { target: endpoint.target, data: [] };
               }
@@ -158,9 +189,9 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
           // Wait for all logs data to be fetched
           const logsResults = await Promise.all(logsPromises);
-          
+
           // Assign results to appropriate variables
-          logsResults.forEach(result => {
+          logsResults.forEach((result) => {
             switch (result.target) {
               case 'logsServices':
                 logsServices = result.data;
@@ -183,7 +214,13 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         // Fetch tags for the metric if in tag context or grouping_tag context
         let tags: string[] = [];
-        if ((context.contextType === 'tag' || context.contextType === 'tag_value' || context.contextType === 'grouping_tag' || context.contextType === 'filter_tag_key') && context.metricName) {
+        if (
+          (context.contextType === 'tag' ||
+            context.contextType === 'tag_value' ||
+            context.contextType === 'grouping_tag' ||
+            context.contextType === 'filter_tag_key') &&
+          context.metricName
+        ) {
           try {
             const tagsResponse = await getBackendSrv()
               .fetch({
@@ -199,7 +236,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             } else if (err.status === 404) {
               throw new Error('Endpoint not found (backend not available)');
             } else {
-              console.warn('Failed to fetch tags:', tagsError);
               // Continue with metrics-only suggestions if tags fail
               tags = [];
             }
@@ -224,7 +260,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             } else if (err.status === 404) {
               throw new Error('Endpoint not found (backend not available)');
             } else {
-              console.warn('Failed to fetch tag values:', tagValuesError);
               // Continue with empty tag values if backend call fails
               tagValues = [];
             }
@@ -247,10 +282,8 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             if (err.status === 401) {
               throw new Error('Datadog credentials invalid');
             } else if (err.status === 404) {
-              console.warn('Logs tag values endpoint not found');
               logsTagValues = [];
             } else {
-              console.warn('Failed to fetch logs tag values:', tagValuesError);
               logsTagValues = [];
             }
           }
@@ -258,7 +291,10 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
 
         // Fetch specific field values for logs contexts (service values, source values, etc.)
         let logsFieldValues: string[] = [];
-        if (queryType === 'logs' && ['logs_service', 'logs_source', 'logs_level', 'logs_host', 'logs_env'].includes(context.contextType)) {
+        if (
+          queryType === 'logs' &&
+          ['logs_service', 'logs_source', 'logs_level', 'logs_host', 'logs_env'].includes(context.contextType)
+        ) {
           try {
             let fieldName = '';
             switch (context.contextType) {
@@ -278,7 +314,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 fieldName = 'env';
                 break;
             }
-            
+
             if (fieldName) {
               const fieldValuesResponse = await getBackendSrv()
                 .fetch({
@@ -293,7 +329,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             if (err.status === 401) {
               throw new Error('Datadog credentials invalid');
             } else if (err.status === 404) {
-              console.warn('Logs field values endpoint not found, using cached data');
               // Fall back to using the general lists we already fetched
               switch (context.contextType) {
                 case 'logs_service':
@@ -312,7 +347,6 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                   break;
               }
             } else {
-              console.warn('Failed to fetch logs field values:', fieldValuesError);
               // Fall back to using the general lists we already fetched
               switch (context.contextType) {
                 case 'logs_service':
@@ -349,12 +383,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           logsProvider.updateLevels(logsLevels);
           logsProvider.updateFields(logsFields);
           logsProvider.updateTagNames(logsTags);
-          
+
           // Update tag values if we fetched them for a specific tag
           if (logsTagValues.length > 0 && context.nearestFacet) {
             logsProvider.updateTagValues(context.nearestFacet, logsTagValues);
           }
-          
+
           // If we have specific field values for the current context, use them
           if (logsFieldValues.length > 0) {
             switch (context.contextType) {
@@ -375,51 +409,45 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
                 break;
             }
           }
-          
+
           // Use context-aware completion provider for enhanced suggestions
           suggestions = logsProvider.getContextSpecificSuggestions(queryText, context.cursorPosition, context);
         }
-        
-        console.log('Suggestions generated:', {
-          queryType,
-          contextType: context.contextType,
-          currentToken: context.currentToken,
-          metricsCount: metrics.length,
-          tagsCount: tags.length,
-          tagValuesCount: tagValues.length,
-          logsServicesCount: logsServices.length,
-          logsSourcesCount: logsSources.length,
-          logsTagsCount: logsTags.length,
-          logsTagValuesCount: logsTagValues.length,
-          suggestionsCount: suggestions.length,
-          suggestions: suggestions.slice(0, 5), // First 5 for debugging
-        });
-        
+
         // Group suggestions by category
         const groupedSuggestions = groupSuggestions(suggestions);
 
-        setState((prev: AutocompleteState) => ({
-          ...prev,
-          isLoading: false,
-          suggestions,
-          groupedSuggestions,
-          selectedIndex: 0,
-          isOpen: suggestions.length > 0,
-          validationError: validationResult.isValid ? undefined : validationResult.errors[0]?.message,
-        }));
+        clearTimeout(timeoutHandle);
+        if (isMountedRef.current) {
+          setState((prev: AutocompleteState) => ({
+            ...prev,
+            isLoading: false,
+            suggestions,
+            groupedSuggestions,
+            selectedIndex: 0,
+            isOpen: suggestions.length > 0,
+            validationError: validationResult.isValid ? undefined : validationResult.errors[0]?.message,
+          }));
+        }
       } catch (error) {
         clearTimeout(timeoutHandle);
+        // Ignore abort errors - these are expected when a new request supersedes the old one
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
         const errorMessage = error instanceof Error ? error.message : 'Failed to fetch suggestions';
-        setState((prev: AutocompleteState) => ({
-          ...prev,
-          isLoading: false,
-          error: errorMessage,
-          suggestions: [],
-          isOpen: true, // Keep open to show error
-        }));
+        if (isMountedRef.current) {
+          setState((prev: AutocompleteState) => ({
+            ...prev,
+            isLoading: false,
+            error: errorMessage,
+            suggestions: [],
+            isOpen: true, // Keep open to show error
+          }));
+        }
       }
     },
-    [datasourceUid]
+    [datasourceUid, queryType]
   );
 
   /**
@@ -435,34 +463,10 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         clearTimeout(debounceTimerRef.current);
       }
 
-      // Check if query contains variables for better context analysis
-      const hasVariables = variableInterpolationService.hasVariables(queryText);
-      let contextQuery = queryText;
-      
-      if (hasVariables) {
-        // For autocomplete context analysis, we need to understand the structure
-        // even with variables present. We'll use the original query for parsing
-        // but log that variables are present for debugging
-        console.log('Query contains variables:', {
-          queryText,
-          variables: variableInterpolationService.extractVariableNames(queryText)
-        });
-      }
-
       // Parse query to get context based on query type
-      const context = queryType === 'logs' 
-        ? parseLogsQuery(contextQuery, cursorPosition)
-        : parseQuery(contextQuery, cursorPosition);
+      const context =
+        queryType === 'logs' ? parseLogsQuery(queryText, cursorPosition) : parseQuery(queryText, cursorPosition);
       contextRef.current = context;
-
-      console.log('onInput - context detected:', {
-        queryText,
-        cursorPosition,
-        contextType: context.contextType,
-        currentToken: context.currentToken,
-        metricName: context.metricName,
-        hasVariables,
-      });
 
       // Set debounce timer for API call
       debounceTimerRef.current = setTimeout(() => {
@@ -470,7 +474,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
       }, debounceMs);
     },
     [debounceMs, fetchAndUpdateSuggestions]
-  );;
+  );
 
   /**
    * Handle keyboard navigation and selection
@@ -506,8 +510,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           event.preventDefault();
           setState((prev: AutocompleteState) => ({
             ...prev,
-            selectedIndex:
-              prev.selectedIndex === 0 ? prev.suggestions.length - 1 : prev.selectedIndex - 1,
+            selectedIndex: prev.selectedIndex === 0 ? prev.suggestions.length - 1 : prev.selectedIndex - 1,
             hoveredIndex: null, // Reset hover when using keyboard
           }));
           break;
@@ -538,14 +541,17 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * Handle suggestion item selection
    * This is typically called when user clicks or presses Enter on a suggestion
    */
-  const onItemSelect = useCallback((item: CompletionItem) => {
-    // Call the provided selection callback if available
-    if (onSelect) {
-      onSelect(item);
-    }
-    // Close the autocomplete menu
-    setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
-  }, [onSelect]);
+  const onItemSelect = useCallback(
+    (item: CompletionItem) => {
+      // Call the provided selection callback if available
+      if (onSelect) {
+        onSelect(item);
+      }
+      // Close the autocomplete menu
+      setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
+    },
+    [onSelect]
+  );
 
   /**
    * Close autocomplete menu
@@ -570,9 +576,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * Handle mouse click on a suggestion item
    * Selects the item and closes the autocomplete menu
    */
-  const onMouseClick = useCallback((item: CompletionItem) => {
-    onItemSelect(item);
-  }, [onItemSelect]);
+  const onMouseClick = useCallback(
+    (item: CompletionItem) => {
+      onItemSelect(item);
+    },
+    [onItemSelect]
+  );
 
   /**
    * Navigate up in the suggestion list
@@ -613,19 +622,14 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    * Uses setState with function to get current state, avoiding stale closures
    */
   const onSelectCurrent = useCallback(() => {
-    console.log('onSelectCurrent called');
     setState((prev: AutocompleteState) => {
-      console.log('onSelectCurrent setState:', { isOpen: prev.isOpen, suggestionsLength: prev.suggestions.length, selectedIndex: prev.selectedIndex });
       if (!prev.isOpen || prev.suggestions.length === 0) {
-        console.log('onSelectCurrent: autocomplete not open or no suggestions');
         return prev;
       }
       const selectedItem = prev.suggestions[prev.selectedIndex];
-      console.log('onSelectCurrent: selectedItem:', selectedItem);
       if (selectedItem) {
         // Call onItemSelect which will handle the callback and close the menu
         // Do this outside setState to avoid stale closure issues
-        console.log('onSelectCurrent: calling onItemSelect via setTimeout');
         setTimeout(() => onItemSelect(selectedItem), 0);
       }
       return { ...prev, isOpen: false };
@@ -637,9 +641,14 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
    */
   useEffect(() => {
     return () => {
-      // Cancel pending requests
+      isMountedRef.current = false;
+      // Cancel pending debounce timer
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      // Abort any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
   }, []);
