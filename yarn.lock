@@ -709,10 +709,10 @@
     tslib "2.8.1"
     typescript "5.9.2"
 
-"@grafana/e2e-selectors@13.0.0-23499763764":
-  version "13.0.0-23499763764"
-  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-23499763764.tgz#9aa8d2bfbb23b7b5e34ed5214b3fb1197ea74291"
-  integrity sha512-lQ3Z3j36o218Fjgsfvygwj+wlkOejMq8np+TRCxbaTEluV/063a2vHkZK9jiMsUB1kESzobneLh21T6v1wTp+Q==
+"@grafana/e2e-selectors@13.0.0-23624974663":
+  version "13.0.0-23624974663"
+  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.0.0-23624974663.tgz#05e9700741907d406f6caf2bfa2087ea182e67e5"
+  integrity sha512-Bk9EQ63t5MJZL2BPe+WJ8PAUvb1x7/DD2DIQxm+i7ZTVlAYuP5SlnvBkWzUoKgiVerCbrYY6C3OCIUjUAgQoKA==
   dependencies:
     semver "^7.7.0"
     tslib "2.8.1"
@@ -755,11 +755,11 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.4.9"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.9.tgz#6b6d8f962485ef8405132ca26e38a9b64fd08985"
-  integrity sha512-35bwb/+l75drXJpZyAQ/uUSHqI6vTvD6fAcbzJneoBKkzrGfKj7s+5txSrSasrJACN5z1t+sRELjnN8luyhClA==
+  version "3.4.10"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.4.10.tgz#21a33e89313653aec11ca2c61896313185a6bc56"
+  integrity sha512-0UizoFjx0IsFjnyIGeSvZxKSWRK2mZfg7IulXvXr12vxiURyv/Oji0YED3Nd/EfsDCox1wOIfbST3l9xM/1Thw==
   dependencies:
-    "@grafana/e2e-selectors" "13.0.0-23499763764"
+    "@grafana/e2e-selectors" "13.0.0-23624974663"
     semver "^7.5.4"
     uuid "^13.0.0"
     yaml "^2.3.4"
@@ -7040,7 +7040,7 @@ react-custom-scrollbars-2@4.5.0:
     prop-types "^15.5.10"
     raf "^3.1.0"
 
-"react-data-grid@github:grafana/react-data-grid#a10c748f40edc538425b458af4e471a8262ec4ed":
+react-data-grid@grafana/react-data-grid#a10c748f40edc538425b458af4e471a8262ec4ed:
   version "7.0.0-beta.56"
   resolved "https://codeload.github.com/grafana/react-data-grid/tar.gz/a10c748f40edc538425b458af4e471a8262ec4ed"
   dependencies:
