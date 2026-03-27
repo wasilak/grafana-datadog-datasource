@@ -69,6 +69,9 @@
     "node": ">=22"
   },
   "packageManager": "yarn@1.22.22",
+  "resolutions": {
+    "flatted": "^3.4.2"
+  },
   "dependencies": {
     "@datadog/datadog-api-client": "^1.21.0",
     "@emotion/css": "11.13.5",
@@ -76,6 +79,7 @@
     "@grafana/runtime": "^12.3.0",
     "@grafana/schema": "^12.3.0",
     "@grafana/ui": "^12.3.0",
+    "flat-cache": "^6.1.22",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   }
