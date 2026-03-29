@@ -1,171 +1,49 @@
-# This GitHub Action automates the process of building Grafana plugins.
-# (For more information, see https://github.com/grafana/plugin-actions/blob/main/build-plugin/README.md)
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*' # Run workflow on version tags, e.g. v1.0.0.
-  # allow manual runs from Actions UI for diagnostics or ad-hoc releases
-  workflow_dispatch: {}
-
-permissions: read-all
-
-jobs:
-  release:
-    permissions:
-      contents: write
-    # increase timeout to give builds more time while we diagnose CI instability
-    timeout-minutes: 60
-    env:
-      ACTIONS_RUNNER_DEBUG: 'true'
-      ACTIONS_STEP_DEBUG: 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Start CI resource monitor (background)
-        run: |
-          echo "Starting background CI monitor to /tmp/ci-monitor.log"
-          nohup bash -c '\
-            while true; do \
-              date >> /tmp/ci-monitor.log; \
-              echo "--- ps aux (top) ---" >> /tmp/ci-monitor.log; \
-              ps aux --sort=-%cpu | head -20 >> /tmp/ci-monitor.log; \
-              echo "--- vmstat 1 5 ---" >> /tmp/ci-monitor.log; \
-              vmstat 1 5 >> /tmp/ci-monitor.log 2>&1; \
-              echo "--- df -h ---" >> /tmp/ci-monitor.log; \
-              df -h >> /tmp/ci-monitor.log; \
-              sleep 10; \
-            done' &
-
-      - name: Install production dependencies and prune golang folders
-        run: |
-          echo "Installing production deps (yarn)"
-          rm -rf node_modules || true
-          yarn --frozen-lockfile --production || yarn install --production --frozen-lockfile
-          echo "Pruning any 'golang' directories inside node_modules to avoid go-manifest conflicts"
-          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
-          echo "Check for remaining golang dirs (should be none):"
-          find node_modules -type d -name golang || true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-
-      - name: Build frontend
-        run: |
-          echo "Running frontend build"
-          yarn run build
-
-      - name: Check for backend
-        id: check-for-backend
-        run: |
-          if [ -f "Magefile.go" ]; then echo "has-backend=true" >> $GITHUB_OUTPUT; fi
-
-      - name: Test backend (coverage)
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: magefile/mage-action@v3.1.0
-        with:
-          version: latest
-          args: coverage
-
-      - name: Prune any lingering golang folders before backend build
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        run: |
-          echo "Pruning any 'golang' directories inside node_modules before backend build"
-          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
-          echo "Verify no golang dirs remain:"
-          find node_modules -type d -name golang || true
-
-      - name: Build backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: magefile/mage-action@v3.1.0
-        with:
-          version: latest
-          args: buildAll
-
-      - name: Filter node_modules entries from manifest (workaround for SDK bug)
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        run: |
-          echo "Filtering node_modules entries from dist/go_plugin_build_manifest (upgrade-safe workaround; remove if SDK adds exclusion support)"
-          if [ -f dist/go_plugin_build_manifest ]; then
-            awk -F':' '!/node_modules\// && !/node_modules\\/ { print $0 }' dist/go_plugin_build_manifest > dist/go_plugin_build_manifest.filtered
-            cp dist/go_plugin_build_manifest dist/go_plugin_build_manifest.unfiltered || true
-            mv dist/go_plugin_build_manifest.filtered dist/go_plugin_build_manifest
-          else
-            echo "No dist/go_plugin_build_manifest found — nothing to filter."
-          fi
-
-      - name: Post-build: ensure no node_modules golang files and check go manifest
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        run: |
-          echo "Final prune: removing any node_modules/**/golang dirs"
-          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
-
-          echo "If backend build produced a go_plugin_build_manifest, inspect it for node_modules entries"
-          if [ -f dist/go_plugin_build_manifest ]; then
-            echo "dist/go_plugin_build_manifest contents:"; sed -n '1,200p' dist/go_plugin_build_manifest || true
-            echo "Searching for node_modules in manifest..."
-            if rg -n "node_modules" dist/go_plugin_build_manifest; then
-              echo "ERROR: go_plugin_build_manifest contains node_modules paths — this will cause validator failures"
-              exit 1
-            else
-              echo "No node_modules entries found in go_plugin_build_manifest"
-            fi
-          else
-            echo "No dist/go_plugin_build_manifest found — ok"
-          fi
-
-      - name: Package plugin
-        id: package-plugin
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
-          export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
-          export GRAFANA_PLUGIN_ARTIFACT=${GRAFANA_PLUGIN_ID}-${GRAFANA_PLUGIN_VERSION}.zip
-          export GRAFANA_PLUGIN_ARTIFACT_SHA1SUM=${GRAFANA_PLUGIN_ARTIFACT}.sha1
-
-          echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
-          echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
-          echo "archive=${GRAFANA_PLUGIN_ARTIFACT}" >> $GITHUB_OUTPUT
-          echo "archive-sha1sum=${GRAFANA_PLUGIN_ARTIFACT_SHA1SUM}" >> $GITHUB_OUTPUT
-
-          mv dist "$GRAFANA_PLUGIN_ID"
-          zip "$GRAFANA_PLUGIN_ARTIFACT" "$GRAFANA_PLUGIN_ID" -r
-          sha1sum "$GRAFANA_PLUGIN_ARTIFACT" | cut -f1 -d' ' > "$GRAFANA_PLUGIN_ARTIFACT_SHA1SUM"
-        shell: bash
-
-      - name: Inspect built archives and workspace for golang files
-        if: always()
-        run: |
-          echo "Checking workspace for any remaining 'golang' directories in node_modules"
-          find . -path '*/node_modules/*/golang/*' -print || true
-          echo "Checking for any .go files under node_modules"
-          find . -type f -name '*.go' -path '*/node_modules/*' -print || true
-
-          echo "Looking for produced zip archives and inspecting contents for node_modules golang or .go files"
-          for z in $(find . -maxdepth 4 -name '*.zip' -print); do
-            echo "Archive: $z"
-            unzip -l "$z" | rg -E "node_modules/.*/golang|\\.go" || echo "no golang/.go entries in $z"
-          done || true
-
-      - name: Collect CI diagnostics (always)
-        if: always()
-        run: |
-          echo "\n=== /tmp/ci-monitor.log tail ===\n"
-          if [ -f /tmp/ci-monitor.log ]; then tail -n 200 /tmp/ci-monitor.log; else echo "no monitor log found"; fi
-          echo "\n=== ps snapshot ===\n"
-          ps aux --sort=-%cpu | head -50 || true
-          echo "\n=== df -h ===\n"
-          df -h || true
-          echo "\n=== vmstat ===\n"
-          vmstat 1 5 || true
+90:             echo "Searching for node_modules in manifest..."
+91:             if rg -n "node_modules" dist/go_plugin_build_manifest; then
+92:               echo "ERROR: go_plugin_build_manifest contains node_modules paths - this will cause validator failures"
+93:               exit 1
+94:             else
+95:               echo "No node_modules entries found in go_plugin_build_manifest"
+96:             fi
+97:           else
+98:             echo "No dist/go_plugin_build_manifest found - ok"
+99:            fi
+100:       - name: Package plugin
+101:         id: package-plugin
+102:         run: |
+103:           sudo apt-get update && sudo apt-get install -y jq
+104:           export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
+105:           export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
+106:           export GRAFANA_PLUGIN_ARTIFACT=${GRAFANA_PLUGIN_ID}-${GRAFANA_PLUGIN_VERSION}.zip
+107:           export GRAFANA_PLUGIN_ARTIFACT_SHA1SUM=${GRAFANA_PLUGIN_ARTIFACT}.sha1
+108:           echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
+109:           echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
+110:           echo "archive=${GRAFANA_PLUGIN_ARTIFACT}" >> $GITHUB_OUTPUT
+111:           echo "archive-sha1sum=${GRAFANA_PLUGIN_ARTIFACT_SHA1SUM}" >> $GITHUB_OUTPUT
+112:           mv dist "$GRAFANA_PLUGIN_ID"
+113:           zip "$GRAFANA_PLUGIN_ARTIFACT" "$GRAFANA_PLUGIN_ID" -r
+114:           sha1sum "$GRAFANA_PLUGIN_ARTIFACT" | cut -f1 -d' ' > "$GRAFANA_PLUGIN_ARTIFACT_SHA1SUM"
+115:         shell: bash
+116:       - name: Inspect built archives and workspace for golang files
+117:         if: always()
+118:         run: |
+119:           echo "Checking workspace for any remaining 'golang' directories in node_modules"
+120:           find . -path '*/node_modules/*/golang/*' -print || true
+121:           echo "Checking for any .go files under node_modules"
+122:           find . -type f -name '*.go' -path '*/node_modules/*' -print || true
+123:           echo "Looking for produced zip archives and inspecting contents for node_modules golang or .go files"
+124:           for z in $(find . -maxdepth 4 -name '*.zip' -print); do
+125:             echo "Archive: $z"
+126:             unzip -l "$z" | rg -E "node_modules/.*/golang|\.go" || echo "no golang/.go entries in $z"
+127:           done || true
+128:       - name: Collect CI diagnostics (always)
+129:         if: always()
+130:         run: |
+131:           echo "\n=== /tmp/ci-monitor.log tail ===\n"
+132:           if [ -f /tmp/ci-monitor.log ]; then tail -n 200 /tmp/ci-monitor.log; else echo "no monitor log found"; fi
+133:           echo "\n=== ps snapshot ===\n"
+134:           ps aux --sort=-%cpu | head -50 || true
+135:           echo "\n=== df -h ===\n"
+136:           df -h || true
+137:           echo "\n=== vmstat ===\n"
+138:           vmstat 1 5 || true
