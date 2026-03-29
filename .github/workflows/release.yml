@@ -13,11 +13,31 @@ jobs:
   release:
     permissions:
       contents: write
+    # increase timeout to give builds more time while we diagnose CI instability
+    timeout-minutes: 60
+    env:
+      ACTIONS_RUNNER_DEBUG: 'true'
+      ACTIONS_STEP_DEBUG: 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Start CI resource monitor (background)
+        run: |
+          echo "Starting background CI monitor to /tmp/ci-monitor.log"
+          nohup bash -c '\
+            while true; do \
+              date >> /tmp/ci-monitor.log; \
+              echo "--- ps aux (top) ---" >> /tmp/ci-monitor.log; \
+              ps aux --sort=-%cpu | head -20 >> /tmp/ci-monitor.log; \
+              echo "--- vmstat 1 5 ---" >> /tmp/ci-monitor.log; \
+              vmstat 1 5 >> /tmp/ci-monitor.log 2>&1; \
+              echo "--- df -h ---" >> /tmp/ci-monitor.log; \
+              df -h >> /tmp/ci-monitor.log; \
+              sleep 10; \
+            done' &
 
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
@@ -28,3 +48,15 @@ jobs:
         # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
         # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
         # grafana_token: ${{ secrets.GRAFANA_API_KEY }}
+
+      - name: Collect CI diagnostics (always)
+        if: always()
+        run: |
+          echo "\n=== /tmp/ci-monitor.log tail ===\n"
+          if [ -f /tmp/ci-monitor.log ]; then tail -n 200 /tmp/ci-monitor.log; else echo "no monitor log found"; fi
+          echo "\n=== ps snapshot ===\n"
+          ps aux --sort=-%cpu | head -50 || true
+          echo "\n=== df -h ===\n"
+          df -h || true
+          echo "\n=== vmstat ===\n"
+          vmstat 1 5 || true
