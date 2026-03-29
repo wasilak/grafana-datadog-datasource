@@ -41,6 +41,15 @@ jobs:
               sleep 10; \
             done' &
 
+      - name: Install production dependencies and prune golang folders
+        run: |
+          echo "Installing production deps (yarn)"
+          yarn --frozen-lockfile --production || yarn install --production --frozen-lockfile
+          echo "Pruning any 'golang' directories inside node_modules to avoid go-manifest conflicts"
+          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
+          echo "Check for remaining golang dirs (should be none):"
+          find node_modules -type d -name golang || true
+
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
           go-version: '1.25'
