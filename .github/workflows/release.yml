@@ -44,21 +44,105 @@ jobs:
       - name: Install production dependencies and prune golang folders
         run: |
           echo "Installing production deps (yarn)"
+          rm -rf node_modules || true
           yarn --frozen-lockfile --production || yarn install --production --frozen-lockfile
           echo "Pruning any 'golang' directories inside node_modules to avoid go-manifest conflicts"
           find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
           echo "Check for remaining golang dirs (should be none):"
           find node_modules -type d -name golang || true
 
-      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25'
-          node-version: '22'
-        # Uncomment to enable plugin signing
-        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
-        # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        # grafana_token: ${{ secrets.GRAFANA_API_KEY }}
+
+      - name: Build frontend
+        run: |
+          echo "Running frontend build"
+          yarn run build
+
+      - name: Check for backend
+        id: check-for-backend
+        run: |
+          if [ -f "Magefile.go" ]; then echo "has-backend=true" >> $GITHUB_OUTPUT; fi
+
+      - name: Test backend (coverage)
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        uses: magefile/mage-action@v3.1.0
+        with:
+          version: latest
+          args: coverage
+
+      - name: Prune any lingering golang folders before backend build
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        run: |
+          echo "Pruning any 'golang' directories inside node_modules before backend build"
+          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
+          echo "Verify no golang dirs remain:"
+          find node_modules -type d -name golang || true
+
+      - name: Build backend
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        uses: magefile/mage-action@v3.1.0
+        with:
+          version: latest
+          args: buildAll
+
+      - name: Filter node_modules entries from manifest (workaround for SDK bug)
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        run: |
+          echo "Filtering node_modules entries from dist/go_plugin_build_manifest (upgrade-safe workaround; remove if SDK adds exclusion support)"
+          if [ -f dist/go_plugin_build_manifest ]; then
+            awk -F':' '!/node_modules\// && !/node_modules\\/ { print $0 }' dist/go_plugin_build_manifest > dist/go_plugin_build_manifest.filtered
+            cp dist/go_plugin_build_manifest dist/go_plugin_build_manifest.unfiltered || true
+            mv dist/go_plugin_build_manifest.filtered dist/go_plugin_build_manifest
+          else
+            echo "No dist/go_plugin_build_manifest found — nothing to filter."
+          fi
+
+      - name: Post-build: ensure no node_modules golang files and check go manifest
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        run: |
+          echo "Final prune: removing any node_modules/**/golang dirs"
+          find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
+
+          echo "If backend build produced a go_plugin_build_manifest, inspect it for node_modules entries"
+          if [ -f dist/go_plugin_build_manifest ]; then
+            echo "dist/go_plugin_build_manifest contents:"; sed -n '1,200p' dist/go_plugin_build_manifest || true
+            echo "Searching for node_modules in manifest..."
+            if rg -n "node_modules" dist/go_plugin_build_manifest; then
+              echo "ERROR: go_plugin_build_manifest contains node_modules paths — this will cause validator failures"
+              exit 1
+            else
+              echo "No node_modules entries found in go_plugin_build_manifest"
+            fi
+          else
+            echo "No dist/go_plugin_build_manifest found — ok"
+          fi
+
+      - name: Package plugin
+        id: package-plugin
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
+          export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
+          export GRAFANA_PLUGIN_ARTIFACT=${GRAFANA_PLUGIN_ID}-${GRAFANA_PLUGIN_VERSION}.zip
+          export GRAFANA_PLUGIN_ARTIFACT_SHA1SUM=${GRAFANA_PLUGIN_ARTIFACT}.sha1
+
+          echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
+          echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
+          echo "archive=${GRAFANA_PLUGIN_ARTIFACT}" >> $GITHUB_OUTPUT
+          echo "archive-sha1sum=${GRAFANA_PLUGIN_ARTIFACT_SHA1SUM}" >> $GITHUB_OUTPUT
+
+          mv dist "$GRAFANA_PLUGIN_ID"
+          zip "$GRAFANA_PLUGIN_ARTIFACT" "$GRAFANA_PLUGIN_ID" -r
+          sha1sum "$GRAFANA_PLUGIN_ARTIFACT" | cut -f1 -d' ' > "$GRAFANA_PLUGIN_ARTIFACT_SHA1SUM"
+        shell: bash
 
       - name: Inspect built archives and workspace for golang files
         if: always()
