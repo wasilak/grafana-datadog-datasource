@@ -60,6 +60,20 @@ jobs:
         # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
         # grafana_token: ${{ secrets.GRAFANA_API_KEY }}
 
+      - name: Inspect built archives and workspace for golang files
+        if: always()
+        run: |
+          echo "Checking workspace for any remaining 'golang' directories in node_modules"
+          find . -path '*/node_modules/*/golang/*' -print || true
+          echo "Checking for any .go files under node_modules"
+          find . -type f -name '*.go' -path '*/node_modules/*' -print || true
+
+          echo "Looking for produced zip archives and inspecting contents for node_modules golang or .go files"
+          for z in $(find . -maxdepth 4 -name '*.zip' -print); do
+            echo "Archive: $z"
+            unzip -l "$z" | rg -E "node_modules/.*/golang|\\.go" || echo "no golang/.go entries in $z"
+          done || true
+
       - name: Collect CI diagnostics (always)
         if: always()
         run: |
