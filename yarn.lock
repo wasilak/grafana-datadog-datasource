@@ -755,9 +755,7 @@
     yaml "^2.3.4"
 
 "@grafana/runtime@^12.3.0":
-  version "12.4.2"
-  resolved "https://registry.yarnpkg.com/@grafana/runtime/-/runtime-12.4.2.tgz#58e3dbec5870b658c30024baad8d50b8ead434ac"
-  integrity sha512-EKXEBwQ+sCQUyxt4phYRICCQCzRNPLcM5WvkiKMfpm9DQxgHLUQ9hX8HPptdN/BTzlWolOcQnwMYmcbWTMmCoA==
+  version "12.4.3"
   dependencies:
     "@grafana/data" "12.4.2"
     "@grafana/e2e-selectors" "12.4.2"
