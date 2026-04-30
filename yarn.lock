@@ -745,9 +745,9 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.6.1"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.6.1.tgz#af7e772ab3636831fd6d693a5f7a6b62f4c53715"
-  integrity sha512-BQAEMk2yVymYA2cKbHEuGDqXwZ5MwWnCD+293QJgMey3G6ao4PbiZTaZ/c5BVyfWxLOZ3izqay0F7eU0Ncty9Q==
+  version "3.7.0"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.7.0.tgz#eb96e6c8ce47c940cb0351bd913ba29448e1b2c4"
+  integrity sha512-VtpB/nqS/VayY5M4R5jK2NCHIjGx5iFMUvEjS+BTNYEOJZN0y+9xRCKfGT6rMHXZV375lhEMFn7c5tIFCUBQ6w==
   dependencies:
     "@grafana/e2e-selectors" "13.1.0-24448182242"
     semver "^7.5.4"
@@ -8499,9 +8499,9 @@ uuid@11.1.0:
   integrity sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==
 
 uuid@^13.0.0:
-  version "13.0.0"
-  resolved "https://registry.yarnpkg.com/uuid/-/uuid-13.0.0.tgz#263dc341b19b4d755eb8fe36b78d95a6b65707e8"
-  integrity sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w==
+  version "13.0.1"
+  resolved "https://registry.yarnpkg.com/uuid/-/uuid-13.0.1.tgz#a026d548852d0cb9ddbbfa18b39b3a6bc7b62217"
+  integrity sha512-9ezox2roIft6ExBVTVqibSd5dc5/47Sw/uY6b4SjQUT2TzQ0tltNquWA46y4xPQmdZYqvnio22SgWd41M86+jw==
 
 uwrap@0.1.2:
   version "0.1.2"
