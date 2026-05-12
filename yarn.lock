@@ -727,14 +727,14 @@
     tslib "2.8.1"
     typescript "5.9.2"
 
-"@grafana/e2e-selectors@13.1.0-24448182242":
-  version "13.1.0-24448182242"
-  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.1.0-24448182242.tgz#b74c928bbe762fd491aac106817717ebcd50993d"
-  integrity sha512-C8VxaFh4PGWhPBOwol3Fo0UBp1//7XNnjg7WG+t3p0P8Q2cw5HZ2NgQt1OFq9radjmWEc3DJQZvxoelI4TIOJA==
+"@grafana/e2e-selectors@13.1.0-25644485979":
+  version "13.1.0-25644485979"
+  resolved "https://registry.yarnpkg.com/@grafana/e2e-selectors/-/e2e-selectors-13.1.0-25644485979.tgz#f0b1312e1ad713f5280df2a6a69c9fc463a36b1a"
+  integrity sha512-2H+veZBayawey47iUTb5N69QK5KYHxzspe8uaauvLH7aSsjeyzH6nFubLkOVxz1JUOVtVrwOaH+libUwSaPMXw==
   dependencies:
     semver "^7.7.0"
     tslib "2.8.1"
-    typescript "5.9.2"
+    typescript "6.0.2"
 
 "@grafana/eslint-config@^9.0.0":
   version "9.0.0"
@@ -773,11 +773,11 @@
     react-i18next "^15.0.0"
 
 "@grafana/plugin-e2e@^3.0.3":
-  version "3.7.1"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.7.1.tgz#8e23c829ea66cb249bc66bf5812449e10e12e475"
-  integrity sha512-g6LgZWhNuNmMAYGf0b0VM+11HIj37A09amk5hj3oVss5ZNPs8KvF32o3KWl2Vk+wXaZF9nxAEaAtX5Y6dWIJ/A==
+  version "3.7.2"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.7.2.tgz#0c22c198c3b20c28835d145add4f332b045cdb28"
+  integrity sha512-T9dFmkSRbae6SMaR3RoVpSa5zx8QBZ7NUBezZuCkUpDKR0bjsaHF6qVZn6QWxEkxNhLETLWusI29j0znNBjdPg==
   dependencies:
-    "@grafana/e2e-selectors" "13.1.0-24448182242"
+    "@grafana/e2e-selectors" "13.1.0-25644485979"
     semver "^7.5.4"
     uuid "^13.0.0"
     yaml "^2.3.4"
@@ -8563,6 +8563,11 @@ typescript@5.9.2:
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.9.2.tgz#d93450cddec5154a2d5cabe3b8102b83316fb2a6"
   integrity sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==
 
+typescript@6.0.2:
+  version "6.0.2"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-6.0.2.tgz#0b1bfb15f68c64b97032f3d78abbf98bdbba501f"
+  integrity sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ==
+
 typescript@~6.0.0:
   version "6.0.3"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-6.0.3.tgz#90251dc007916e972786cb94d74d15b185577d21"
@@ -9025,9 +9030,9 @@ yaml@^1.10.0:
   integrity sha512-vIYeF1u3CjlhAFekPPAk2h/Kv4T3mAkMox5OymRiJQB0spDP10LHvt+K7G9Ny6NuuMAb25/6n1qyUjAcGNf/AA==
 
 yaml@^2.3.4:
-  version "2.8.4"
-  resolved "https://registry.yarnpkg.com/yaml/-/yaml-2.8.4.tgz#4b5f411dd25f9544914d8673d4da7f29248e5e2e"
-  integrity sha512-ml/JPOj9fOQK8RNnWojA67GbZ0ApXAUlN2UQclwv2eVgTgn7O9gg9o7paZWKMp4g0H3nTLtS9LVzhkpOFIKzog==
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/yaml/-/yaml-2.9.0.tgz#78274afd93598a1dfdd6130df6a566defcbf9aa4"
+  integrity sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
 
 yargs-parser@^21.1.1:
   version "21.1.1"
