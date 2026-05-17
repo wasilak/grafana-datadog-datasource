@@ -41,11 +41,10 @@ jobs:
               sleep 10; \
             done' &
 
-      - name: Install production dependencies and prune golang folders
+      - name: Install dependencies and prune golang folders
         run: |
-          echo "Installing production deps (yarn)"
           rm -rf node_modules || true
-          yarn --frozen-lockfile --production || yarn install --production --frozen-lockfile
+          yarn --frozen-lockfile || yarn install --frozen-lockfile
           echo "Pruning any 'golang' directories inside node_modules to avoid go-manifest conflicts"
           find node_modules -type d -name golang -prune -print -exec rm -rf {} + || true
           echo "Check for remaining golang dirs (should be none):"
