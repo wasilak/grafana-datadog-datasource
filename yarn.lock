@@ -2314,9 +2314,9 @@
   integrity sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==
 
 "@types/node@*", "@types/node@>=13.7.0", "@types/node@~25":
-  version "25.8.0"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.8.0.tgz#d13033397d1c186876bed4c9b9d7f3f962097eb3"
-  integrity sha512-TCFSk8IZh+iLX1xtksoBVtdmgL+1IX0fC9BeU4QqFSuNdN/K+HUlhqOzEmSYYpZUVsLYcPqc9KX+60iDuninSQ==
+  version "25.9.0"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.9.0.tgz#4823e66e0f486bfd8d9019fb445fbbb9e6f77348"
+  integrity sha512-AOQwYUNolgy3VosiRqXrACUXTN8nJUtPl7FJXMqZVyxiiCLhQuG3jXKvCS1ALr+Y2OmZhzzLVlYPEqJaiqkaJQ==
   dependencies:
     undici-types ">=7.24.0 <7.24.7"
 
@@ -6934,8 +6934,9 @@ react-custom-scrollbars-2@4.5.0:
     prop-types "^15.5.10"
     raf "^3.1.0"
 
-"react-data-grid@github:grafana/react-data-grid#a10c748f40edc538425b458af4e471a8262ec4ed":
+react-data-grid@grafana/react-data-grid#a10c748f40edc538425b458af4e471a8262ec4ed:
   version "7.0.0-beta.56"
+  uid a10c748f40edc538425b458af4e471a8262ec4ed
   resolved "https://codeload.github.com/grafana/react-data-grid/tar.gz/a10c748f40edc538425b458af4e471a8262ec4ed"
   dependencies:
     clsx "^2.0.0"
