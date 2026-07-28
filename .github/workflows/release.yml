@@ -22,7 +22,7 @@ jobs:
       ACTIONS_STEP_DEBUG: 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
