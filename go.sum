@@ -80,6 +80,8 @@ github.com/grafana/grafana-plugin-sdk-go v0.296.0 h1:FawDVKOv+BPknq6UdQJMGZqbWCV
 github.com/grafana/grafana-plugin-sdk-go v0.296.0/go.mod h1:DWmZQakZl3peJdyqUTqNr95n0+BqrwfZBBwuWZhJTyY=
 github.com/grafana/grafana-plugin-sdk-go v0.296.1 h1:7J0tGnR6u+RIT3XCX/T93Fb9BRQR0aHh6gYAYaAy1dw=
 github.com/grafana/grafana-plugin-sdk-go v0.296.1/go.mod h1:DWmZQakZl3peJdyqUTqNr95n0+BqrwfZBBwuWZhJTyY=
+github.com/grafana/grafana-plugin-sdk-go v0.296.2 h1:HNNKhkGnkMxPqT/5hYcHLfjsPEa1UiCX5S8QbXe+JfM=
+github.com/grafana/grafana-plugin-sdk-go v0.296.2/go.mod h1:wa5kuCUBrsZhCInGSf4cAmkt4YLDQtTLoRKuxCsMn+4=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
 github.com/grafana/otel-profiling-go v0.5.1/go.mod h1:ftN/t5A/4gQI19/8MoWurBEtC6gFw8Dns1sJZ9W4Tls=
 github.com/grafana/otel-profiling-go v0.6.0 h1:W7lOZaJj4IJISXMcM1UBk3fJF3tzF2OD6MJBJaQp1H8=
