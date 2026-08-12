@@ -378,9 +378,9 @@
   integrity sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==
 
 "@datadog/datadog-api-client@^1.21.0":
-  version "1.61.0"
-  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.61.0.tgz#1bcca376fa871576e544f9dde4e2bab08ede2391"
-  integrity sha512-/XxikGkaYBBYdvBJDYu3bVjoOHK198RkTlhV05xSdfgCdXSDpAm7Vm6UJdbakuN+LD7V5f+OQrlPjJmmSauBDg==
+  version "1.62.0"
+  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.62.0.tgz#1b73770203ddcf5f445338b2550471b1d4175122"
+  integrity sha512-c6ezeWU8x4JeVM3/aKN+s96W+GcrGqtPXhh+xtPixxMZpw/jZDZ2fUNHeScbV4v0sJiOYkr7M2Zld0TAD0YCDQ==
   dependencies:
     "@types/buffer-from" "^1.1.0"
     "@types/node" "*"
@@ -2321,9 +2321,9 @@
   integrity sha512-+K1NIO8I+F9/wNulfVvu23QYd0Pe9/OCqRrim4NoYIf1VoEDL90Ve4ClzpyqBLc7NpGGWRvYNCKZ1BE/Jpf8dQ==
 
 "@types/node@*":
-  version "26.1.2"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-26.1.2.tgz#da79708f1f9c6294f4cdec8f455a3032b028808a"
-  integrity sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg==
+  version "26.2.0"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-26.2.0.tgz#5a4875a862fda8fdc57de8faa579bb81ecba1685"
+  integrity sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==
   dependencies:
     undici-types "~8.3.0"
 
