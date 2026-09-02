@@ -428,9 +428,9 @@
   integrity sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==
 
 "@datadog/datadog-api-client@^1.21.0":
-  version "1.62.0"
-  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.62.0.tgz#1b73770203ddcf5f445338b2550471b1d4175122"
-  integrity sha512-c6ezeWU8x4JeVM3/aKN+s96W+GcrGqtPXhh+xtPixxMZpw/jZDZ2fUNHeScbV4v0sJiOYkr7M2Zld0TAD0YCDQ==
+  version "1.63.0"
+  resolved "https://registry.yarnpkg.com/@datadog/datadog-api-client/-/datadog-api-client-1.63.0.tgz#612bafccd878f72f26090f210db28f6282101c04"
+  integrity sha512-YdcHcrxXvBvGJVrGDLaxoFEHBIZYiFItcACzHL3vj3/ghXbkOdWsIkiC6kL+Aqozz4y3ZVTEdMnD/ytmiW1kTQ==
   dependencies:
     "@types/buffer-from" "^1.1.0"
     "@types/node" "*"
