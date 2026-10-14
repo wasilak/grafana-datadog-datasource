@@ -1,23 +1,13 @@
 services:
   grafana:
-    user: root
-    container_name: "wasilak-datadog-datasource"
-
     build:
-      context: ./.config
       args:
         grafana_image: ${GRAFANA_IMAGE:-grafana}
-        grafana_version: ${GRAFANA_VERSION:-12.3.0}
+        grafana_version: ${GRAFANA_VERSION:-13.2.4}
         development: true
         anonymous_auth_enabled: true
     ports:
       - 3000:3000/tcp
-    volumes:
-      - ./dist:/var/lib/grafana/plugins/wasilak-datadog-datasource
-      - .:/root/wasilak-datadog-datasource
-
-    environment:
-      GF_LOG_FILTERS: plugin.wasilak-datadog-datasource:debug
-      GF_LOG_LEVEL: debug
-      GF_DATAPROXY_LOGGING: 1
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: wasilak-datadog-datasource
+    extends:
+      file: .config/docker-compose-base.yaml
+      service: grafana

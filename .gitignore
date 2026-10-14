@@ -38,3 +38,13 @@ wasilak-datadog-datasource*
 # Datadog credentials and provisioning (prevent accidental commits)
 provisioning/datasources/
 **/datadog-credentials.yaml
+
+# Tool caches
+.eslintcache
+
+# e2e test directories
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
