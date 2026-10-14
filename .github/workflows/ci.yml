@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Check types
+        run: yarn run typecheck
+      - name: Lint
+        run: yarn run lint
+      - name: Unit tests
+        run: yarn run test:ci
+      - name: Build frontend
+        run: yarn run build
+
+      - name: Setup Go environment
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+
+      - name: Vet backend
+        run: go vet ./pkg/...
+
+      - name: Test backend
+        uses: magefile/mage-action@v4.0.0
+        with:
+          version: latest
+          args: coverage
+
+      - name: Build backend
+        uses: magefile/mage-action@v4.0.0
+        with:
+          version: latest
+          args: buildAll
+
+      - name: Package plugin
+        id: package
+        run: |
+          PLUGIN_ID=$(jq -r .id dist/plugin.json)
+          PLUGIN_VERSION=$(jq -r .info.version dist/plugin.json)
+          ARCHIVE=${PLUGIN_ID}-${PLUGIN_VERSION}.zip
+          mv dist "$PLUGIN_ID"
+          zip "$ARCHIVE" "$PLUGIN_ID" -r
+          echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate plugin
+        run: |
+          docker run --pull=always \
+            -v "$PWD/${ARCHIVE}:/archive.zip" \
+            grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
+        env:
+          ARCHIVE: ${{ steps.package.outputs.archive }}
