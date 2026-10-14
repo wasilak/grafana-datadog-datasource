@@ -213,7 +213,7 @@ export function LogsQueryEditorHelp({ onClickExample }: LogsQueryEditorHelpProps
     <Card>
       <Card.Heading>Datadog Logs Search Syntax</Card.Heading>
       <Card.Description>
-        Click any example to insert it into your logs query. Use Datadog's search syntax to filter and find logs.
+        Click any example to insert it into your logs query. Use Datadog&apos;s search syntax to filter and find logs.
       </Card.Description>
       
       <div style={{ padding: theme.spacing(2) }}>
@@ -488,7 +488,7 @@ export function LogsQueryEditorHelp({ onClickExample }: LogsQueryEditorHelpProps
                 fontFamily: theme.typography.fontFamilyMonospace,
                 color: theme.colors.primary.text 
               }}>
-                "phrase"
+                &quot;phrase&quot;
               </code>
               <span style={{ 
                 marginLeft: theme.spacing(1),

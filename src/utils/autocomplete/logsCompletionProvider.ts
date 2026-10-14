@@ -377,8 +377,8 @@ export class LogsCompletionItemProvider {
           const aStartsWith = a.label.toLowerCase().startsWith(token);
           const bStartsWith = b.label.toLowerCase().startsWith(token);
           
-          if (aStartsWith && !bStartsWith) return -1;
-          if (!aStartsWith && bStartsWith) return 1;
+          if (aStartsWith && !bStartsWith) {return -1;}
+          if (!aStartsWith && bStartsWith) {return 1;}
         }
 
         // Finally sort alphabetically

@@ -314,7 +314,7 @@ export function QueryEditorHelp({ onClickExample }: QueryEditorHelpProps) {
                 fontSize: theme.typography.bodySmall.fontSize,
                 color: theme.colors.text.secondary
               }}>
-                - JSON array format (["value1","value2","value3"])
+                - JSON array format ([&quot;value1&quot;,&quot;value2&quot;,&quot;value3&quot;])
               </span>
             </div>
             
