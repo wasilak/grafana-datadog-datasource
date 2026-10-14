@@ -56,7 +56,7 @@ jobs:
         uses: magefile/mage-action@v4.0.0
         with:
           version: latest
-          args: -v buildAll
+          args: -v buildAllSequential
 
       - name: Package plugin
         id: package

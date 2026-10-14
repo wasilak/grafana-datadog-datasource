@@ -19,13 +19,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # Builds frontend + backend for all platforms (mage buildAll), packages the zip,
+      # Builds frontend + backend for all platforms, packages the zip,
       # fails if package.json version doesn't match the tag, and creates a draft release.
+      # buildAllSequential (see Magefile.go) avoids the parallel buildAll running out of memory.
       - id: build
         uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.1
         with:
           go-version: '1.27'
           node-version: '24'
+          backend-target: buildAllSequential
         # Uncomment to enable plugin signing
         # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
         # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
