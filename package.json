@@ -44,7 +44,6 @@
     "eslint-plugin-jsdoc": "~65.3.4",
     "eslint-plugin-react": "^7.33.0",
     "eslint-plugin-react-hooks": "~7.1.0",
-    "eslint-webpack-plugin": "^6.0.0",
     "fork-ts-checker-webpack-plugin": "~9",
     "glob": "~13.0.0",
     "identity-obj-proxy": "3.0.0",
@@ -74,6 +73,7 @@
   },
   "packageManager": "yarn@1.22.22",
   "resolutions": {
+    "basic-ftp": "^6.2.3",
     "flatted": "^3.4.2"
   },
   "dependencies": {
