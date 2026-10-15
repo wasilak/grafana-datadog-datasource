@@ -68,10 +68,9 @@ jobs:
           zip "$ARCHIVE" "$PLUGIN_ID" -r
           echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
 
+      # Same validator version and flags as the release (grafana/plugin-actions/package-plugin),
+      # so anything that would block a release fails here first.
       - name: Validate plugin
-        run: |
-          docker run --pull=always \
-            -v "$PWD/${ARCHIVE}:/archive.zip" \
-            grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
+        run: npx -y @grafana/plugin-validator@0.49.13 -sourceCodeUri file://./ "$ARCHIVE"
         env:
           ARCHIVE: ${{ steps.package.outputs.archive }}
