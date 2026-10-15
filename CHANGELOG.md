@@ -1,3 +1,24 @@
+## [0.7.1] - 2026-10-15
+
+### 🐛 Bug Fixes
+
+- Use setTimeout return type for debounce timer ref
+- Stop logging API and App key prefixes
+- Stop logging resource request headers and bodies
+
+### 🚜 Refactor
+
+- Replace deprecated rxjs, theme and DataQuery APIs
+- Replace deprecated Select with Combobox
+- Move variable editor to CustomVariableSupport
+
+### 📚 Documentation
+
+- Publish missing logs docs and fix broken links
+
+### ⚙️ Miscellaneous Tasks
+
+- *(backend)* Fix golangci-lint findings and gofmt
 ## [0.7.0] - 2026-10-14
 
 ### 🐛 Bug Fixes
