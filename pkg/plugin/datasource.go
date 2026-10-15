@@ -1331,13 +1331,10 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
 
-	// CRITICAL DEBUG: Log all incoming requests with ERROR level to ensure visibility
-	logger.Error("CRITICAL DEBUG - CallResource received request",
+	logger.Debug("CallResource received request",
 		"method", req.Method,
 		"path", req.Path,
-		"bodyLength", len(req.Body),
-		"body", string(req.Body),
-		"headers", req.Headers)
+		"bodyLength", len(req.Body))
 
 	// Route requests to appropriate handlers
 	switch {
