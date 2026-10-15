@@ -59,7 +59,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
   });
 
   // Debounce timer
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentQueryRef = useRef<string>('');
   const currentCursorRef = useRef<number>(0);
   const contextRef = useRef<QueryContext | null>(null);
