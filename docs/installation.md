@@ -10,7 +10,7 @@ Add to your Grafana configuration:
 
 ```bash
 # Install plugin
-GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
+GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip
 
 # Allow unsigned plugins (required)
 GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
@@ -22,16 +22,16 @@ Restart Grafana and the plugin will be automatically installed.
 
 1. **Download the latest release**:
    ```bash
-   wget https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip
+   wget https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip
    ```
 
 2. **Extract to plugins directory**:
    ```bash
    # Default Grafana plugins directory
-   sudo unzip wasilak-datadog-datasource-v0.4.2.zip -d /var/lib/grafana/plugins/
+   sudo unzip wasilak-datadog-datasource-0.7.1.zip -d /var/lib/grafana/plugins/
    
    # Or custom plugins directory
-   unzip wasilak-datadog-datasource-v0.4.2.zip -d /path/to/grafana/plugins/
+   unzip wasilak-datadog-datasource-0.7.1.zip -d /path/to/grafana/plugins/
    ```
 
 3. **Configure Grafana**:
@@ -55,7 +55,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     environment:
-      - GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
+      - GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
     ports:
       - "3000:3000"
@@ -72,7 +72,7 @@ volumes:
 docker run -d \
   --name grafana \
   -p 3000:3000 \
-  -e "GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource" \
+  -e "GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip" \
   -e "GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource" \
   grafana/grafana:latest
 ```
@@ -83,7 +83,7 @@ docker run -d \
 FROM grafana/grafana:latest
 
 # Install plugin during build
-ENV GF_INSTALL_PLUGINS="https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource"
+ENV GF_PLUGINS_PREINSTALL_SYNC="wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip"
 ENV GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS="wasilak-datadog-datasource"
 
 # Optional: Pre-configure datasource
@@ -98,7 +98,7 @@ COPY datasource.yaml /etc/grafana/provisioning/datasources/
 # values.yaml
 grafana:
   env:
-    GF_INSTALL_PLUGINS: "https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource"
+    GF_PLUGINS_PREINSTALL_SYNC: "wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip"
     GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: "wasilak-datadog-datasource"
   
   # Optional: Provision datasource
@@ -137,8 +137,8 @@ spec:
       - name: grafana
         image: grafana/grafana:latest
         env:
-        - name: GF_INSTALL_PLUGINS
-          value: "https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource"
+        - name: GF_PLUGINS_PREINSTALL_SYNC
+          value: "wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip"
         - name: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS
           value: "wasilak-datadog-datasource"
         ports:
@@ -156,7 +156,7 @@ If using a custom plugins directory:
 export GF_PATHS_PLUGINS="/custom/plugins/path"
 
 # Extract plugin
-unzip wasilak-datadog-datasource-v0.4.2.zip -d $GF_PATHS_PLUGINS/
+unzip wasilak-datadog-datasource-0.7.1.zip -d $GF_PATHS_PLUGINS/
 
 # Configure Grafana
 echo "GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource" >> /etc/grafana/grafana.ini
