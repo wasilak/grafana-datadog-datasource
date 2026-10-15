@@ -243,17 +243,3 @@ function isValidTagKey(tagKey: string): boolean {
   return keyRegex.test(tagKey);
 }
 
-/**
- * Get a human-friendly summary of validation errors
- */
-export function getValidationSummary(result: ValidationResult): string {
-  if (result.isValid) {
-    return 'Query is valid';
-  }
-
-  if (result.errors.length === 1) {
-    return result.errors[0].message;
-  }
-
-  return `${result.errors.length} errors found`;
-}
