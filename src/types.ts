@@ -1,5 +1,6 @@
-import { DataSourceJsonData } from '@grafana/data';
+import { DataSourceJsonData, QueryEditorProps } from '@grafana/data';
 import { DataQuery } from '@grafana/schema';
+import type { DataSource } from './datasource';
 
 export interface JSONParsingConfig {
   enabled: boolean;
@@ -93,13 +94,16 @@ export interface MyVariableQuery {
 }
 
 /**
- * Props interface for VariableQueryEditor component
+ * Variable query as Grafana stores it. `query` holds a readable summary,
+ * which Grafana shows as the variable's definition in the variables list.
  */
-export interface VariableQueryEditorProps {
-  query: MyVariableQuery | string | any; // Grafana can pass different formats
-  onChange: (query: MyVariableQuery, definition: string) => void;
-  datasource?: any; // Grafana datasource instance
-}
+export type DatadogVariableQuery = MyVariableQuery & DataQuery & { query?: string };
+
+/**
+ * Props interface for VariableQueryEditor component. Older dashboards can
+ * still pass the query as a JSON string, which the editor parses.
+ */
+export type VariableQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions, DatadogVariableQuery>;
 
 /**
  * Variable response from backend resource handlers

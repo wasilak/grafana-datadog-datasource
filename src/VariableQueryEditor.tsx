@@ -257,8 +257,9 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         definition = newState.rawQuery || 'unknown query';
     }
     
-    // Call onChange with both the query object and definition string
-    onChange(newState, definition);
+    // Grafana shows the `query` field as the variable's definition
+    const refId = typeof query === 'object' && query?.refId ? query.refId : 'A';
+    onChange({ ...newState, refId, query: definition });
   };
 
   // Handle query type change

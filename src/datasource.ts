@@ -16,6 +16,7 @@ import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
 import { migrateJsonParsingConfiguration } from './utils/jsonParsingMigration';
+import { DatadogVariableSupport } from './variables';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery>, DataSourceWithSupplementaryQueriesSupport<MyQuery> {
   // Enable annotation support
@@ -23,6 +24,7 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
 
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
+    this.variables = new DatadogVariableSupport(this);
   }
 
   getDefaultQuery(_: CoreApp): Partial<MyQuery> {
