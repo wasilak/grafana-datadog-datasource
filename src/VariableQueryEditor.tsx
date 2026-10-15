@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { InlineField, Select, Input, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { SelectableValue } from '@grafana/data';
 import { MyVariableQuery, VariableQueryEditorProps, CompletionItem } from './types';
@@ -118,10 +118,11 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
   });
 
   // Update state when query prop changes (for external updates)
-  useEffect(() => {
-    const newState = parseQuery(query);
-    setState(newState);
-  }, [query]);
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (query !== prevQuery) {
+    setPrevQuery(query);
+    setState(parseQuery(query));
+  }
 
   // Check if a value is a regex pattern (wrapped in forward slashes)
   const isRegexPattern = (value: string): boolean => {
@@ -464,24 +465,24 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
       {showValidationWarning && (
         <Alert title="Required Fields" severity="warning">
           <strong>Empty fields detected:</strong> Please fill in all required fields before running the query.<br/>
-          Use specific values (e.g., "system.cpu"), regex patterns (e.g., "/^system\./"), or "*" for all values.
+          Use specific values (e.g., &quot;system.cpu&quot;), regex patterns (e.g., &quot;/^system\./&quot;), or &quot;*&quot; for all values.
         </Alert>
       )}
 
       {/* Show helpful information */}
       {state.queryType === 'metrics' && (
         <Alert title="Smart Filtering" severity="info">
-          <strong>Autocomplete:</strong> Type metric names (e.g., "system.cpu") for suggestions<br/>
+          <strong>Autocomplete:</strong> Type metric names (e.g., &quot;system.cpu&quot;) for suggestions<br/>
           <strong>Regex:</strong> Use /pattern/ for advanced filtering (e.g., /^system\.cpu\./ for CPU metrics)<br/>
-          <strong>Wildcard:</strong> Use '*' for all metrics
+          <strong>Wildcard:</strong> Use &apos;*&apos; for all metrics
         </Alert>
       )}
 
       {state.queryType === 'tag_keys' && (
         <Alert title="Smart Filtering" severity="info">
           <strong>Metric Name:</strong> Type for autocomplete or use /regex/ for pattern matching<br/>
-          <strong>Tag Key Filter:</strong> Type for autocomplete or use /regex/ (e.g., /^host/ for keys starting with 'host')<br/>
-          <strong>Wildcard:</strong> Use '*' for all values
+          <strong>Tag Key Filter:</strong> Type for autocomplete or use /regex/ (e.g., /^host/ for keys starting with &apos;host&apos;)<br/>
+          <strong>Wildcard:</strong> Use &apos;*&apos; for all values
         </Alert>
       )}
 
@@ -489,8 +490,8 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         <Alert title="Smart Filtering" severity="info">
           <strong>Independent Fields:</strong> Metric and tag key selections are independent<br/>
           <strong>Autocomplete:</strong> Type in any field for suggestions<br/>
-          <strong>Regex:</strong> Use /pattern/ for advanced filtering (e.g., /prod.*/ for values starting with 'prod')<br/>
-          <strong>Wildcard:</strong> Use '*' for all values
+          <strong>Regex:</strong> Use /pattern/ for advanced filtering (e.g., /prod.*/ for values starting with &apos;prod&apos;)<br/>
+          <strong>Wildcard:</strong> Use &apos;*&apos; for all values
         </Alert>
       )}
 

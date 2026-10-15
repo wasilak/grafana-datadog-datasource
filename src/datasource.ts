@@ -8,10 +8,10 @@ import {
   DataSourceWithSupplementaryQueriesSupport,
   SupplementaryQueryType,
   SupplementaryQueryOptions,
-  DataQueryRequest
+  DataQueryRequest,
+  DataSourceWithQueryModificationSupport
 } from '@grafana/data';
-import { DataSourceWithBackend, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
-import { DataSourceWithQueryModificationSupport } from '@grafana/data';
+import { DataSourceWithBackend, getBackendSrv } from '@grafana/runtime';
 
 import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, MyVariableQuery } from './types';
 import { variableInterpolationService } from './utils/variableInterpolation';
@@ -20,7 +20,6 @@ import { migrateJsonParsingConfiguration } from './utils/jsonParsingMigration';
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> implements DataSourceWithQueryModificationSupport<MyQuery>, DataSourceWithSupplementaryQueriesSupport<MyQuery> {
   // Enable annotation support
   annotations = {};
-  private templateSrv = getTemplateSrv();
 
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
@@ -79,7 +78,8 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   private detectQueryType(query: MyQuery): 'logs' | 'metrics' {
     // If queryType is explicitly set, use it
     if (query.queryType) {
-      return query.queryType;
+      // 'logs-volume' is the supplementary histogram query for logs
+      return query.queryType === 'metrics' ? 'metrics' : 'logs';
     }
 
     // If logQuery is provided, treat as logs query

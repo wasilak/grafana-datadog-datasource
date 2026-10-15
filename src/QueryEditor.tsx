@@ -30,7 +30,7 @@ type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
  * @returns True if the query contains variables
  */
 function hasVariablePlaceholders(queryText: string): boolean {
-  if (!queryText) return false;
+  if (!queryText) {return false;}
   // Check for both ${variable:format} and $variable patterns
   return /\$\{[^}]+\}|\$[a-zA-Z_][a-zA-Z0-9_]*/.test(queryText);
 }
@@ -41,7 +41,7 @@ function hasVariablePlaceholders(queryText: string): boolean {
  * @returns Array of variable names found
  */
 function extractVariableNames(queryText: string): string[] {
-  if (!queryText) return [];
+  if (!queryText) {return [];}
 
   const variables: string[] = [];
 
@@ -71,7 +71,6 @@ function extractVariableNames(queryText: string): string[] {
 }
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
-  const theme = useTheme2();
 
   // Query type options
   const queryTypeOptions: Array<SelectableValue<'metrics' | 'logs'>> = [
@@ -814,7 +813,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
       {showHelp && (
         <QueryEditorHelp
           onClickExample={(exampleQuery) => {
-            onChange({ ...query, ...exampleQuery });
+            onChange({ ...query, ...(exampleQuery as Partial<MyQuery>) });
             setShowHelp(false); // Hide help after selecting an example
           }}
         />

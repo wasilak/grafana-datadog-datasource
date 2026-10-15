@@ -22,7 +22,7 @@ let concurrentRequests = 0;
 export async function fetchMetricsFromDatadog(
   apiKey: string,
   appKey: string,
-  site: string = 'datadoghq.com'
+  site = 'datadoghq.com'
 ): Promise<string[]> {
   const cacheKey = `metrics_${site}`;
 
@@ -93,7 +93,7 @@ export async function fetchTagsForMetric(
   metricName: string,
   apiKey: string,
   appKey: string,
-  site: string = 'datadoghq.com'
+  site = 'datadoghq.com'
 ): Promise<string[]> {
   const cacheKey = `tags_${metricName}_${site}`;
 

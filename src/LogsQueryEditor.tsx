@@ -17,13 +17,6 @@ type LogsQueryEditorProps = QueryEditorProps<DataSource, MyQuery, MyDataSourceOp
  * Requirements: 3.1, 3.2
  */
 export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: LogsQueryEditorProps) {
-  // Wrapper for onRunQuery that includes validation
-  const handleRunQuery = () => {
-    if (canExecuteQuery()) {
-      onRunQuery();
-    }
-    // If validation fails, the error messages are already displayed
-  };
   const theme = useTheme2();
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
 

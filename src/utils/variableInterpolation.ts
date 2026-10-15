@@ -85,9 +85,9 @@ export class VariableInterpolationService {
         }
 
         // Get variable values and apply logs-safe formatting
-        const values = Array.isArray(variable.current?.value) 
-          ? variable.current.value 
-          : [variable.current?.value].filter(Boolean);
+        // Dashboard variables keep their value under `current`; scoped vars hold it directly
+        const value = 'current' in variable ? variable.current?.value : 'value' in variable ? variable.value : undefined;
+        const values = Array.isArray(value) ? value : [value].filter(Boolean);
         
         return this.formatMultiValueForLogs(values, 'logs');
       });

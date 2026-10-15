@@ -5,7 +5,8 @@ import { QueryFixAction, QueryFixType } from '@grafana/data';
 class MockDataSource {
   detectQueryType(query: MyQuery): 'logs' | 'metrics' {
     if (query.queryType) {
-      return query.queryType;
+      // 'logs-volume' is the supplementary histogram query for logs
+      return query.queryType === 'metrics' ? 'metrics' : 'logs';
     }
     if (query.logQuery) {
       return 'logs';

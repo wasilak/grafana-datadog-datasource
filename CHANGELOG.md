@@ -1,3 +1,64 @@
+## [0.7.0] - 2026-10-14
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.292.1 (#715)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.62.0 (#749)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.294.0 (#750)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.295.0 (#767)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.0 (#769)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.1 (#770)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.63.0 (#773)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.2 (#778)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.64.0 (#782)
+- *(deps)* Update module github.com/stretchr/testify to v1.12.0 (#785)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.3 (#787)
+- *(deps)* Update module github.com/stretchr/testify to v1.12.1 (#789)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.4 (#799)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.65.0 (#810)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.296.5 (#833)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.66.0 (#847)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.297.0 (#861)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.67.0 (#877)
+- Resolve type check and lint errors
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix release packaging and add PR checks
+## [0.6.3] - 2026-05-17
+
+### 🚀 Features
+
+- *(ci)* Create GitHub release with auto-generated notes on tag push
+## [0.6.1] - 2026-05-17
+
+### 🐛 Bug Fixes
+
+- Resolve security vulnerabilities in Go and JS dependencies
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.57.0 (#638)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.58.0 (#655)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.59.0 (#664)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.60.0 (#697)
+- *(ci)* Restore complete release workflow and fix YAML syntax error
+- *(ci)* Install all deps (not just production) for frontend build
+
+### ⚙️ Miscellaneous Tasks
+
+- Update build-plugin action to v1.2.0
+- Add diagnostics and increase timeout to investigate runner disconnects
+- Install production deps and prune node_modules golang folders to avoid go-manifest errors
+## [0.6.0] - 2026-03-27
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.285.0 (#516)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.54.0 (#519)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.286.0 (#530)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.287.0 (#553)
+- *(deps)* Update module github.com/grafana/grafana-plugin-sdk-go to v0.288.0 (#563)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.55.0 (#576)
+- *(deps)* Update module github.com/datadog/datadog-api-client-go/v2 to v2.56.0 (#607)
+- Stability improvements, singleton API client, bounded LRU cache, and build fixes
 ## [0.5.2] - 2026-01-12
 
 ### 🐛 Bug Fixes

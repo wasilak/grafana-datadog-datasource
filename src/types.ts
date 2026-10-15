@@ -25,9 +25,14 @@ export interface MyQuery extends DataQuery {
   // Query options
   interval?: number;   // Override interval in milliseconds
   // Logs query fields
-  queryType?: 'logs' | 'metrics'; // Query type - defaults to 'metrics'
+  queryType?: 'logs' | 'metrics' | 'logs-volume'; // Query type - defaults to 'metrics'; 'logs-volume' is the supplementary histogram query
   logQuery?: string;   // Logs search query
   indexes?: string[];  // Target log indexes
+  // Logs pagination fields
+  pageSize?: number;
+  currentPage?: number;
+  totalPages?: number;
+  nextCursor?: string;
   // JSON parsing configuration
   jsonParsing?: JSONParsingConfig;
   // Explore mode metadata for visualization hints
@@ -148,12 +153,13 @@ export interface CompletionItem {
 /**
  * Query context for autocomplete - what part of the query the cursor is in
  */
-export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'logs_search' | 'logs_facet' | 'logs_service' | 'logs_source' | 'logs_level' | 'logs_host' | 'logs_env' | 'unknown';
+export type ContextType = 'metric' | 'aggregation' | 'aggregator' | 'tag' | 'tag_value' | 'grouping_tag' | 'filter_tag_key' | 'filter_tag_value' | 'logs_search' | 'logs_facet' | 'logs_service' | 'logs_source' | 'logs_level' | 'logs_host' | 'logs_env' | 'logs_tag' | 'logs_tag_value' | 'unknown';
 
 export interface QueryContext {
   contextType: ContextType;
   metricName?: string;
   tagKey?: string; // For filter_tag_value context - the tag key being edited
+  nearestFacet?: string; // For logs_tag_value context - the facet whose value is being edited
   existingTags: Set<string>;
   currentToken: string;
   lineContent: string;

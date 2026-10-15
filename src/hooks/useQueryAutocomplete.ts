@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AutocompleteState, QueryContext, CompletionItem } from '../types';
 import { parseQuery, parseLogsQuery } from '../utils/autocomplete/parser';
-import { generateSuggestions, generateLogsSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
+import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/suggestions';
 import { validateQuery } from '../utils/queryValidator';
 import { validateLogsQuery } from '../utils/logsQueryValidator';
 import { getBackendSrv } from '@grafana/runtime';
@@ -426,7 +426,11 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             groupedSuggestions,
             selectedIndex: 0,
             isOpen: suggestions.length > 0,
-            validationError: validationResult.isValid ? undefined : validationResult.errors[0]?.message,
+            validationError: validationResult.isValid
+              ? undefined
+              : 'errors' in validationResult
+                ? validationResult.errors[0]?.message
+                : validationResult.error,
           }));
         }
       } catch (error) {
@@ -473,7 +477,23 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         fetchAndUpdateSuggestions(context, queryText);
       }, debounceMs);
     },
-    [debounceMs, fetchAndUpdateSuggestions]
+    [debounceMs, fetchAndUpdateSuggestions, queryType]
+  );
+
+  /**
+   * Handle suggestion item selection
+   * This is typically called when user clicks or presses Enter on a suggestion
+   */
+  const onItemSelect = useCallback(
+    (item: CompletionItem) => {
+      // Call the provided selection callback if available
+      if (onSelect) {
+        onSelect(item);
+      }
+      // Close the autocomplete menu
+      setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
+    },
+    [onSelect]
   );
 
   /**
@@ -534,23 +554,7 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           return;
       }
     },
-    [state.isOpen, state.selectedIndex, state.suggestions]
-  );
-
-  /**
-   * Handle suggestion item selection
-   * This is typically called when user clicks or presses Enter on a suggestion
-   */
-  const onItemSelect = useCallback(
-    (item: CompletionItem) => {
-      // Call the provided selection callback if available
-      if (onSelect) {
-        onSelect(item);
-      }
-      // Close the autocomplete menu
-      setState((prev: AutocompleteState) => ({ ...prev, isOpen: false }));
-    },
-    [onSelect]
+    [state.isOpen, state.selectedIndex, state.suggestions, onItemSelect]
   );
 
   /**
