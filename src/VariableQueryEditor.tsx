@@ -509,7 +509,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
             maxHeight: '200px',
             overflowY: 'auto',
             color: theme.colors.text.primary,
-            fontSize: theme.typography.size.sm,
+            fontSize: theme.typography.bodySmall.fontSize,
             top: `${suggestionsPosition.top}px`,
             left: `${suggestionsPosition.left}px`,
           }}

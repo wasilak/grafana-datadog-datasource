@@ -14,6 +14,7 @@ import {
 } from '@grafana/ui';
 import { QueryEditorProps, SelectableValue, CoreApp } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
+import { lastValueFrom } from 'rxjs';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
@@ -182,8 +183,8 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
 
     // Call backend to compute the completion
     try {
-      const response = await getBackendSrv()
-        .fetch({
+      const response = await lastValueFrom(
+        getBackendSrv().fetch({
           url: `/api/datasources/uid/${datasource.uid}/resources/autocomplete/complete`,
           method: 'POST',
           data: {
@@ -193,7 +194,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
             itemKind: item.kind || 'unknown',
           },
         })
-        .toPromise();
+      );
 
       const result = (response as any).data as { newQuery: string; newCursorPosition: number };
 
@@ -654,7 +655,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   backgroundColor: theme.colors.background.secondary,
                   border: `1px solid ${theme.colors.border.weak}`,
                   borderRadius: theme.shape.radius.default,
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   color: theme.colors.text.secondary,
                 }}
               >
@@ -687,7 +688,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   maxHeight: '200px',
                   overflowY: 'auto',
                   color: theme.colors.text.primary,
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   top: `${suggestionsPosition.top}px`,
                   left: `${suggestionsPosition.left}px`,
                 }}
@@ -702,7 +703,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                         <div
                           style={{
                             padding: '4px 12px',
-                            fontSize: theme.typography.size.xs,
+                            fontSize: theme.typography.pxToRem(10),
                             fontWeight: theme.typography.fontWeightMedium,
                             color: theme.colors.text.secondary,
                             backgroundColor: theme.colors.background.secondary,
@@ -798,7 +799,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   position: 'absolute',
                   right: '10px',
                   top: '10px',
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   color: theme.colors.text.secondary,
                 }}
               >
