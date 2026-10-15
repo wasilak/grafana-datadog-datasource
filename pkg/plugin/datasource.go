@@ -2349,8 +2349,8 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 	logger.Info("Complete request", "query", completeReq.Query, "cursor", completeReq.CursorPosition, "item", completeReq.SelectedItem, "kind", completeReq.ItemKind)
 
 	// Determine where to insert based on item kind and cursor position
-	newQuery := completeReq.Query
-	newCursorPos := completeReq.CursorPosition
+	var newQuery string
+	var newCursorPos int
 	selectedItem := completeReq.SelectedItem
 
 	switch completeReq.ItemKind {
@@ -2439,13 +2439,6 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
 			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
 		} else {
-			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
-			if closeBracePos == -1 {
-				closeBracePos = len(completeReq.Query)
-			} else {
-				closeBracePos += openBracePos
-			}
-
 			// Insert tag: at cursor position
 			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
 			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
@@ -2851,12 +2844,10 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 			data := metricsResp.GetData()
 			matchingMetrics := []string{}
 
-			if data != nil {
-				for _, config := range data {
-					metricName := extractMetricName(config)
-					if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
-						matchingMetrics = append(matchingMetrics, metricName)
-					}
+			for _, config := range data {
+				metricName := extractMetricName(config)
+				if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
+					matchingMetrics = append(matchingMetrics, metricName)
 				}
 			}
 
@@ -3386,18 +3377,16 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 			data := metricsResp.GetData()
 			matchingMetrics := []string{}
 
-			if data != nil {
-				for _, config := range data {
-					var metricName string
-					if config.Metric != nil {
-						metricName = config.Metric.GetId()
-					} else if config.MetricTagConfiguration != nil {
-						metricName = config.MetricTagConfiguration.GetId()
-					}
+			for _, config := range data {
+				var metricName string
+				if config.Metric != nil {
+					metricName = config.Metric.GetId()
+				} else if config.MetricTagConfiguration != nil {
+					metricName = config.MetricTagConfiguration.GetId()
+				}
 
-					if metricName != "" && matchesFilter(metricName, tagValuesReq.MetricName) {
-						matchingMetrics = append(matchingMetrics, metricName)
-					}
+				if metricName != "" && matchesFilter(metricName, tagValuesReq.MetricName) {
+					matchingMetrics = append(matchingMetrics, metricName)
 				}
 			}
 
@@ -3606,36 +3595,33 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 			// Process metrics from this page
 			data := resp.GetData()
-			if data != nil {
+			for _, config := range data {
+				if metricsProcessed >= maxMetricsToProcess {
+					break
+				}
 
-				for _, config := range data {
-					if metricsProcessed >= maxMetricsToProcess {
-						break
+				metricName := extractMetricName(config)
+
+				if metricName != "" {
+					metricsProcessed++
+
+					// Fetch tags for this specific metric
+					tagsResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
+					if err != nil {
+						logger.Debug("Failed to fetch tags for metric", "metric", metricName, "error", err, "traceID", traceID)
+						continue
 					}
 
-					metricName := extractMetricName(config)
+					// Extract tag keys from the tags
+					tagsData := tagsResp.GetData()
+					if tagsData.Id != nil {
+						attributes := tagsData.GetAttributes()
+						allTags := attributes.GetTags()
+						metricTagKeys := extractTagKeysFromTags(allTags)
 
-					if metricName != "" {
-						metricsProcessed++
-
-						// Fetch tags for this specific metric
-						tagsResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
-						if err != nil {
-							logger.Debug("Failed to fetch tags for metric", "metric", metricName, "error", err, "traceID", traceID)
-							continue
-						}
-
-						// Extract tag keys from the tags
-						tagsData := tagsResp.GetData()
-						if tagsData.Id != nil {
-							attributes := tagsData.GetAttributes()
-							allTags := attributes.GetTags()
-							metricTagKeys := extractTagKeysFromTags(allTags)
-
-							// Add to set
-							for _, key := range metricTagKeys {
-								tagKeysSet[key] = true
-							}
+						// Add to set
+						for _, key := range metricTagKeys {
+							tagKeysSet[key] = true
 						}
 					}
 				}
@@ -3878,12 +3864,6 @@ func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallRes
 
 	logger.Info("LogsLevelsHandler called", "traceID", traceID, "path", req.Path)
 
-	// Reuse existing timeout configuration (2 seconds for autocomplete)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_levels"
 	cacheTTL := 30 * time.Second
@@ -3955,12 +3935,6 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 	startTime := time.Now()
 
 	logger.Info("LogsFieldsHandler called", "traceID", traceID, "path", req.Path)
-
-	// Reuse existing timeout configuration (2 seconds for autocomplete)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_fields"

@@ -198,7 +198,7 @@ func (h *MetricsHandler) executeQueries(ctx context.Context) (*backend.QueryData
 		logger.Error("Failed to parse metrics response", "error", err)
 		// Return error for all queries
 		for refID := range h.queryModels {
-			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest, 
+			response.Responses[refID] = backend.ErrDataResponse(backend.StatusBadRequest,
 				fmt.Sprintf("Failed to process metrics response: %v", err))
 		}
 		return response, nil

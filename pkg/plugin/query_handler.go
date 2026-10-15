@@ -11,7 +11,7 @@ import (
 type QueryHandler interface {
 	// processQuery processes a single query and prepares it for execution
 	processQuery(q *QueryModel) error
-	
+
 	// executeQueries executes all processed queries and returns the response
 	executeQueries(ctx context.Context) (*backend.QueryDataResponse, error)
 }
@@ -22,7 +22,7 @@ type QueryType string
 const (
 	// MetricsQueryType represents Datadog metrics queries
 	MetricsQueryType QueryType = "metrics"
-	
+
 	// LogsQueryType represents Datadog logs queries
 	// Note: logs-volume queries are also handled by LogsHandler since volume
 	// is calculated from log entries (no separate API call needed)
@@ -43,12 +43,12 @@ func detectQueryType(qm *QueryModel) QueryType {
 			return MetricsQueryType
 		}
 	}
-	
+
 	// Infer from query content
 	if qm.LogQuery != "" {
 		return LogsQueryType
 	}
-	
+
 	// Default to metrics for backward compatibility
 	return MetricsQueryType
 }

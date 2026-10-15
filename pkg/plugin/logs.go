@@ -1599,11 +1599,6 @@ func (d *Datasource) validateLogEntry(entry LogEntry, index int) []string {
 		errors = append(errors, fmt.Sprintf("Entry %d: missing or invalid timestamp", index))
 	}
 
-	// Body can be empty, but we should log it for debugging
-	if entry.Body == "" {
-		// This is not an error, just a debug note
-	}
-
 	// Validate severity if present
 	if entry.Severity != "" {
 		validLevels := map[string]bool{
