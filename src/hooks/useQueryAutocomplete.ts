@@ -5,6 +5,7 @@ import { generateSuggestions, groupSuggestions } from '../utils/autocomplete/sug
 import { validateQuery } from '../utils/queryValidator';
 import { validateLogsQuery } from '../utils/logsQueryValidator';
 import { getBackendSrv } from '@grafana/runtime';
+import { lastValueFrom } from 'rxjs';
 import { LogsCompletionItemProvider } from '../utils/autocomplete/logsCompletionProvider';
 
 const DEFAULT_DEBOUNCE_MS = 1000; // 1s for debugging (normally 400ms)
@@ -116,12 +117,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         if (queryType === 'metrics') {
           // Fetch metric names from backend (existing pattern)
           try {
-            const metricsResponse = await getBackendSrv()
-              .fetch({
+            const metricsResponse = await lastValueFrom(
+              getBackendSrv().fetch({
                 url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/metrics`,
                 method: 'GET',
               })
-              .toPromise();
+            );
             metrics = (metricsResponse as any).data as string[];
           } catch (metricsError) {
             const err = metricsError as any;
@@ -167,12 +168,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           // Fetch all logs autocomplete data in parallel for better performance
           const logsPromises = logsEndpoints.map(async (endpoint) => {
             try {
-              const response = await getBackendSrv()
-                .fetch({
+              const response = await lastValueFrom(
+                getBackendSrv().fetch({
                   url: endpoint.url,
                   method: 'GET',
                 })
-                .toPromise();
+              );
               return { target: endpoint.target, data: (response as any).data as string[] };
             } catch (error) {
               const err = error as any;
@@ -222,12 +223,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
           context.metricName
         ) {
           try {
-            const tagsResponse = await getBackendSrv()
-              .fetch({
+            const tagsResponse = await lastValueFrom(
+              getBackendSrv().fetch({
                 url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/tags/${context.metricName}`,
                 method: 'GET',
               })
-              .toPromise();
+            );
             tags = (tagsResponse as any).data as string[];
           } catch (tagsError) {
             const err = tagsError as any;
@@ -246,12 +247,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let tagValues: string[] = [];
         if (context.contextType === 'filter_tag_value' && context.metricName && context.tagKey) {
           try {
-            const tagValuesResponse = await getBackendSrv()
-              .fetch({
+            const tagValuesResponse = await lastValueFrom(
+              getBackendSrv().fetch({
                 url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/tag-values/${context.metricName}/${context.tagKey}`,
                 method: 'GET',
               })
-              .toPromise();
+            );
             tagValues = (tagValuesResponse as any).data as string[];
           } catch (tagValuesError) {
             const err = tagValuesError as any;
@@ -270,12 +271,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
         let logsTagValues: string[] = [];
         if (queryType === 'logs' && context.contextType === 'logs_tag_value' && context.nearestFacet) {
           try {
-            const tagValuesResponse = await getBackendSrv()
-              .fetch({
+            const tagValuesResponse = await lastValueFrom(
+              getBackendSrv().fetch({
                 url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/tag-values/${encodeURIComponent(context.nearestFacet)}`,
                 method: 'GET',
               })
-              .toPromise();
+            );
             logsTagValues = (tagValuesResponse as any).data as string[];
           } catch (tagValuesError) {
             const err = tagValuesError as any;
@@ -316,12 +317,12 @@ export function useQueryAutocomplete(options: UseQueryAutocompleteOptions): UseQ
             }
 
             if (fieldName) {
-              const fieldValuesResponse = await getBackendSrv()
-                .fetch({
+              const fieldValuesResponse = await lastValueFrom(
+                getBackendSrv().fetch({
                   url: `/api/datasources/uid/${datasourceUid}/resources/autocomplete/logs/field-values/${fieldName}`,
                   method: 'GET',
                 })
-                .toPromise();
+              );
               logsFieldValues = (fieldValuesResponse as any).data as string[];
             }
           } catch (fieldValuesError) {

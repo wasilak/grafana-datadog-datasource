@@ -7,13 +7,15 @@ import {
   useTheme2,
   Button,
   Icon,
-  Select,
+  Combobox,
+  ComboboxOption,
   InlineField,
   InlineFieldRow,
   Collapse,
 } from '@grafana/ui';
-import { QueryEditorProps, SelectableValue, CoreApp } from '@grafana/data';
+import { QueryEditorProps, CoreApp } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
+import { lastValueFrom } from 'rxjs';
 import type * as monacoType from 'monaco-editor/esm/vs/editor/editor.api';
 import { DataSource } from './datasource';
 import { MyDataSourceOptions, MyQuery, CompletionItem } from './types';
@@ -73,7 +75,7 @@ function extractVariableNames(queryText: string): string[] {
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
 
   // Query type options
-  const queryTypeOptions: Array<SelectableValue<'metrics' | 'logs'>> = [
+  const queryTypeOptions: Array<ComboboxOption<'metrics' | 'logs'>> = [
     { label: 'Metrics', value: 'metrics', description: 'Query Datadog metrics and time series data' },
     { label: 'Logs', value: 'logs', description: 'Search and analyze Datadog logs' },
   ];
@@ -81,7 +83,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
   // Get current query type, defaulting to 'metrics'
   const currentQueryType = query.queryType || 'metrics';
 
-  const onQueryTypeChange = (option: SelectableValue<'metrics' | 'logs'>) => {
+  const onQueryTypeChange = (option: ComboboxOption<'metrics' | 'logs'>) => {
     const newQueryType = option.value || 'metrics';
     onChange({
       ...query,
@@ -96,9 +98,9 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
       {/* Query Type Selector */}
       <InlineFieldRow>
         <InlineField label="Query Type" labelWidth={14} tooltip="Select whether to query metrics or logs">
-          <Select
+          <Combobox
             options={queryTypeOptions}
-            value={queryTypeOptions.find((opt) => opt.value === currentQueryType)}
+            value={queryTypeOptions.find((opt) => opt.value === currentQueryType) ?? null}
             onChange={onQueryTypeChange}
             width={20}
             placeholder="Select query type"
@@ -146,7 +148,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   // Legend mode options
-  const legendModeOptions: Array<SelectableValue<'auto' | 'custom'>> = [
+  const legendModeOptions: Array<ComboboxOption<'auto' | 'custom'>> = [
     { label: 'Auto', value: 'auto', description: 'Only includes unique labels' },
     { label: 'Custom', value: 'custom', description: 'Provide a naming template' },
   ];
@@ -182,8 +184,8 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
 
     // Call backend to compute the completion
     try {
-      const response = await getBackendSrv()
-        .fetch({
+      const response = await lastValueFrom(
+        getBackendSrv().fetch({
           url: `/api/datasources/uid/${datasource.uid}/resources/autocomplete/complete`,
           method: 'POST',
           data: {
@@ -193,7 +195,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
             itemKind: item.kind || 'unknown',
           },
         })
-        .toPromise();
+      );
 
       const result = (response as any).data as { newQuery: string; newCursorPosition: number };
 
@@ -422,7 +424,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
     }, 0);
   };
 
-  const onLegendModeChange = (option: SelectableValue<'auto' | 'custom'>) => {
+  const onLegendModeChange = (option: ComboboxOption<'auto' | 'custom'>) => {
     const newMode = option.value || 'auto';
     onChange({
       ...enhancedQuery,
@@ -654,7 +656,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   backgroundColor: theme.colors.background.secondary,
                   border: `1px solid ${theme.colors.border.weak}`,
                   borderRadius: theme.shape.radius.default,
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   color: theme.colors.text.secondary,
                 }}
               >
@@ -687,7 +689,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   maxHeight: '200px',
                   overflowY: 'auto',
                   color: theme.colors.text.primary,
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   top: `${suggestionsPosition.top}px`,
                   left: `${suggestionsPosition.left}px`,
                 }}
@@ -702,7 +704,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                         <div
                           style={{
                             padding: '4px 12px',
-                            fontSize: theme.typography.size.xs,
+                            fontSize: theme.typography.pxToRem(10),
                             fontWeight: theme.typography.fontWeightMedium,
                             color: theme.colors.text.secondary,
                             backgroundColor: theme.colors.background.secondary,
@@ -798,7 +800,7 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
                   position: 'absolute',
                   right: '10px',
                   top: '10px',
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   color: theme.colors.text.secondary,
                 }}
               >
@@ -823,9 +825,9 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
       <Collapse label="Options" isOpen={optionsOpen} onToggle={() => setOptionsOpen(!optionsOpen)}>
         <InlineFieldRow>
           <InlineField label="Legend" labelWidth={14} tooltip="Configure how series names are displayed in the legend">
-            <Select
+            <Combobox
               options={legendModeOptions}
-              value={legendModeOptions.find((opt) => opt.value === legendMode)}
+              value={legendMode}
               onChange={onLegendModeChange}
               width={20}
               placeholder="Select legend mode"

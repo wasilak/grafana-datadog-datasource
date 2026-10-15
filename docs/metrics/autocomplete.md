@@ -376,5 +376,5 @@ avg:system.cpu.user{*} by {host}  # Autocomplete works here
 
 - [Query Editor](query-editor.md) - Complete query editor guide
 - [Getting Started](../getting-started.md) - Basic query building
-- [Examples](../examples/queries.md) - Real-world query patterns
+- [Examples](../examples/metrics-queries.md) - Real-world query patterns
 - [Troubleshooting](../advanced/troubleshooting.md) - Solving common issues

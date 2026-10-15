@@ -385,6 +385,6 @@ Legend templates affect alert notifications:
 ## 🔗 Related Documentation
 
 - [Query Editor](query-editor.md) - Building queries with grouping
-- [Variables](variables.md) - Dashboard-level variables
-- [Examples](../examples/queries.md) - More legend examples
+- [Variables](../features/variables.md) - Dashboard-level variables
+- [Examples](../examples/metrics-queries.md) - More legend examples
 - [Troubleshooting](../advanced/troubleshooting.md) - Solving legend issues

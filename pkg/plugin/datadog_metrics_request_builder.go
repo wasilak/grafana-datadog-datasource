@@ -25,7 +25,7 @@ func NewDatadogMetricsRequestBuilder(apiKey, appKey, site string) *DatadogMetric
 	if site == "" {
 		site = "datadoghq.com" // Default to US
 	}
-	
+
 	return &DatadogMetricsRequestBuilder{
 		apiKey:  apiKey,
 		appKey:  appKey,
@@ -36,11 +36,11 @@ func NewDatadogMetricsRequestBuilder(apiKey, appKey, site string) *DatadogMetric
 
 // MetricsQueryRequestParams contains parameters for metrics query requests
 type MetricsQueryRequestParams struct {
-	From           int64                        // Unix timestamp in milliseconds
-	To             int64                        // Unix timestamp in milliseconds
-	Queries        []datadogV2.TimeseriesQuery  // Metrics queries
-	Formulas       []datadogV2.QueryFormula     // Optional formulas
-	Interval       *int64                       // Optional interval override
+	From     int64                       // Unix timestamp in milliseconds
+	To       int64                       // Unix timestamp in milliseconds
+	Queries  []datadogV2.TimeseriesQuery // Metrics queries
+	Formulas []datadogV2.QueryFormula    // Optional formulas
+	Interval *int64                      // Optional interval override
 }
 
 // BuildTimeseriesQueryRequest creates a Datadog Timeseries Formula Query Request
@@ -50,15 +50,15 @@ func (b *DatadogMetricsRequestBuilder) BuildTimeseriesQueryRequest(params Metric
 	if params.From <= 0 || params.To <= 0 {
 		return datadogV2.TimeseriesFormulaQueryRequest{}, fmt.Errorf("invalid time range: from=%d, to=%d", params.From, params.To)
 	}
-	
+
 	if params.To <= params.From {
 		return datadogV2.TimeseriesFormulaQueryRequest{}, fmt.Errorf("invalid time range: to (%d) must be after from (%d)", params.To, params.From)
 	}
-	
+
 	if len(params.Queries) == 0 && len(params.Formulas) == 0 {
 		return datadogV2.TimeseriesFormulaQueryRequest{}, fmt.Errorf("at least one query or formula is required")
 	}
-	
+
 	// Create the request body for metrics queries
 	body := datadogV2.TimeseriesFormulaQueryRequest{
 		Data: datadogV2.TimeseriesFormulaRequest{
@@ -70,17 +70,17 @@ func (b *DatadogMetricsRequestBuilder) BuildTimeseriesQueryRequest(params Metric
 			},
 		},
 	}
-	
+
 	// Add formulas if provided
 	if len(params.Formulas) > 0 {
 		body.Data.Attributes.Formulas = params.Formulas
 	}
-	
+
 	// Add interval override if provided
 	if params.Interval != nil && *params.Interval > 0 {
 		body.Data.Attributes.Interval = params.Interval
 	}
-	
+
 	return body, nil
 }
 
@@ -96,7 +96,7 @@ func (b *DatadogMetricsRequestBuilder) BuildListTagConfigurationsRequest() (*dat
 	// Create optional parameters for the API call
 	// This can be extended in the future to support filtering, pagination, etc.
 	optionalParams := datadogV2.NewListTagConfigurationsOptionalParameters()
-	
+
 	return optionalParams, nil
 }
 
@@ -107,12 +107,12 @@ func (b *DatadogMetricsRequestBuilder) BuildListTagsByMetricNameRequest(params M
 	if params.MetricName == "" {
 		return "", fmt.Errorf("metric name is required")
 	}
-	
+
 	// Check if metric name is a regex pattern (not supported by this API)
 	if len(params.MetricName) >= 2 && params.MetricName[0] == '/' && params.MetricName[len(params.MetricName)-1] == '/' {
 		return "", fmt.Errorf("regex patterns are not supported for ListTagsByMetricName API")
 	}
-	
+
 	return params.MetricName, nil
 }
 
@@ -121,11 +121,11 @@ func (b *DatadogMetricsRequestBuilder) ValidateCredentials() error {
 	if b.apiKey == "" {
 		return fmt.Errorf("DD-API-KEY is required")
 	}
-	
+
 	if b.appKey == "" {
 		return fmt.Errorf("DD-APPLICATION-KEY is required")
 	}
-	
+
 	return nil
 }
 
@@ -154,7 +154,7 @@ func (b *DatadogMetricsRequestBuilder) CreateDatadogContext(ctx context.Context)
 			Key: b.appKey,
 		},
 	})
-	
+
 	return ddCtx
 }
 
@@ -172,20 +172,20 @@ func (b *DatadogMetricsRequestBuilder) ProcessQueryText(queryText string) (strin
 	if queryText == "" {
 		return "", fmt.Errorf("query text cannot be empty")
 	}
-	
+
 	// Apply the same query processing logic as the existing implementation
 	lowerQuery := strings.ToLower(queryText)
-	
+
 	hasGroupByClause := strings.Contains(lowerQuery, " by ")
 	hasBooleanOperators := strings.Contains(lowerQuery, " in ") ||
 		strings.Contains(lowerQuery, " or ") ||
 		strings.Contains(lowerQuery, " and ") ||
 		strings.Contains(lowerQuery, " not in ")
-	
+
 	// Add "by {*}" if no grouping clause and no boolean operators
 	if !hasGroupByClause && !hasBooleanOperators {
 		queryText = queryText + " by {*}"
 	}
-	
+
 	return queryText, nil
 }

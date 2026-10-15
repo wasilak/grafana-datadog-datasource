@@ -296,7 +296,7 @@ avg:system.cpu.user{host:$host}
 ## 📚 Migration Resources
 
 ### Documentation
-- [Query Examples](examples/queries.md) - Common query patterns
+- [Query Examples](examples/metrics-queries.md) - Common query patterns
 - [Variables Guide](features/variables.md) - Variable configuration
 - [Performance Guide](advanced/performance.md) - Optimization tips
 

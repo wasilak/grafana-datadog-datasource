@@ -2,6 +2,7 @@ import React, { ChangeEvent, useState } from 'react';
 import { InlineField, Input, SecretInput, Button, Alert } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
+import { lastValueFrom } from 'rxjs';
 import { MyDataSourceOptions, MySecureJsonData } from './types';
 
 interface Props extends DataSourcePluginOptionsEditorProps<MyDataSourceOptions, MySecureJsonData> {}
@@ -98,12 +99,12 @@ export function ConfigEditor(props: Props) {
     setTestStatus('loading');
     setTestMessage('');
     try {
-      const response = await getBackendSrv()
-        .fetch({
+      const response = await lastValueFrom(
+        getBackendSrv().fetch({
           url: `/api/datasources/uid/${options.uid}/health`,
           method: 'GET',
         })
-        .toPromise();
+      );
       const data = (response as any).data;
       if (data?.status === 'OK') {
         setTestStatus('success');

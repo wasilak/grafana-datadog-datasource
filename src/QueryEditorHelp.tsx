@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Card, Stack, useTheme2 } from '@grafana/ui';
-import { DataQuery } from '@grafana/data';
+import { DataQuery } from '@grafana/schema';
 import { MyQuery, VariableExample } from './types';
 
 interface QueryEditorHelpProps {

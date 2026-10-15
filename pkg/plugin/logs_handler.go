@@ -13,11 +13,11 @@ import (
 // Created new LogsHandler for logs-specific processing
 // Requirements: 1.1, 6.1, 6.2
 type LogsHandler struct {
-	datasource     *Datasource
-	reqQueries     []backend.DataQuery
-	logsQueries    []QueryModel
-	queryModels    map[string]QueryModel
-	ddCtx          context.Context
+	datasource  *Datasource
+	reqQueries  []backend.DataQuery
+	logsQueries []QueryModel
+	queryModels map[string]QueryModel
+	ddCtx       context.Context
 }
 
 // NewLogsHandler creates a new LogsHandler instance

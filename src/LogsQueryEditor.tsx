@@ -426,7 +426,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                   maxHeight: '200px',
                   overflowY: 'auto',
                   color: theme.colors.text.primary,
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   top: `${suggestionsPosition.top}px`,
                   left: `${suggestionsPosition.left}px`,
                 }}
@@ -441,7 +441,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                         <div
                           style={{
                             padding: '4px 12px',
-                            fontSize: theme.typography.size.xs,
+                            fontSize: theme.typography.pxToRem(10),
                             fontWeight: theme.typography.fontWeightMedium,
                             color: theme.colors.text.secondary,
                             backgroundColor: theme.colors.background.secondary,
@@ -532,7 +532,7 @@ export function LogsQueryEditor({ query, onChange, onRunQuery, datasource, ...re
                   position: 'absolute',
                   right: '10px',
                   top: '10px',
-                  fontSize: theme.typography.size.sm,
+                  fontSize: theme.typography.bodySmall.fontSize,
                   color: theme.colors.text.secondary,
                 }}
               >

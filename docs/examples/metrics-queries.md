@@ -576,7 +576,7 @@ avg:system.cpu.user{*} by {host,service,env,version,datacenter}
 
 ## 🔗 Related Documentation
 
-- [Query Editor](../features/query-editor.md) - Building queries with autocomplete
-- [Formulas](../features/formulas.md) - Mathematical expressions
+- [Query Editor](../metrics/query-editor.md) - Building queries with autocomplete
+- [Formulas](../metrics/formulas.md) - Mathematical expressions
 - [Variables](../features/variables.md) - Dynamic queries
 - [Performance](../advanced/performance.md) - Query optimization

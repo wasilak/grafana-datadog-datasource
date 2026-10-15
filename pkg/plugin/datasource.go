@@ -617,22 +617,13 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	response := backend.NewQueryDataResponse()
 
 	// Get API credentials from secure JSON data
-	apiKey, appKey, site, credErr := d.validateCredentials()
+	_, _, site, credErr := d.validateCredentials()
 	if credErr != nil {
 		logger.Error("Invalid credentials", "error", credErr)
 		return response, credErr
 	}
 
 	logger.Info("QueryData called", "site", site)
-	apiKeyPrefix := ""
-	if len(apiKey) > 8 {
-		apiKeyPrefix = apiKey[:8]
-	}
-	appKeyPrefix := ""
-	if len(appKey) > 8 {
-		appKeyPrefix = appKey[:8]
-	}
-	logger.Info("Using API Key and App Key for authentication", "apiKeyPrefix", apiKeyPrefix, "appKeyPrefix", appKeyPrefix)
 
 	// Set the site and API keys in context using the shared helper
 	ddCtx, err := d.GetDatadogContext(ctx)
@@ -1340,13 +1331,10 @@ func (d *Datasource) processTimeseriesResponse(resp *datadogV2.TimeseriesFormula
 func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	logger := log.New()
 
-	// CRITICAL DEBUG: Log all incoming requests with ERROR level to ensure visibility
-	logger.Error("CRITICAL DEBUG - CallResource received request",
+	logger.Debug("CallResource received request",
 		"method", req.Method,
 		"path", req.Path,
-		"bodyLength", len(req.Body),
-		"body", string(req.Body),
-		"headers", req.Headers)
+		"bodyLength", len(req.Body))
 
 	// Route requests to appropriate handlers
 	switch {
@@ -1785,7 +1773,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 	logger := log.New()
 
 	// Get API credentials from secure JSON data
-	apiKey, appKey, site, credErr := d.validateCredentials()
+	_, _, site, credErr := d.validateCredentials()
 	if credErr != nil {
 		logger.Error("CheckHealth: invalid credentials", "error", credErr)
 		return &backend.CheckHealthResult{
@@ -1794,26 +1782,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 		}, nil
 	}
 
-	// Log credentials info (without exposing full keys)
-	apiKeyPrefix := ""
-	if len(apiKey) >= 8 {
-		apiKeyPrefix = apiKey[:8]
-	} else if len(apiKey) > 0 {
-		apiKeyPrefix = apiKey
-	}
-	appKeyPrefix := ""
-	if len(appKey) >= 8 {
-		appKeyPrefix = appKey[:8]
-	} else if len(appKey) > 0 {
-		appKeyPrefix = appKey
-	}
-
-	logger.Info("CheckHealth: starting health check",
-		"site", site,
-		"apiKeyLen", len(apiKey),
-		"appKeyLen", len(appKey),
-		"apiKeyPrefix", apiKeyPrefix,
-		"appKeyPrefix", appKeyPrefix)
+	logger.Info("CheckHealth: starting health check", "site", site)
 
 	// Build per-request context (credentials + site) and reuse singleton client
 	ddCtx, err := d.GetDatadogContext(ctx)
@@ -2377,8 +2346,8 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 	logger.Info("Complete request", "query", completeReq.Query, "cursor", completeReq.CursorPosition, "item", completeReq.SelectedItem, "kind", completeReq.ItemKind)
 
 	// Determine where to insert based on item kind and cursor position
-	newQuery := completeReq.Query
-	newCursorPos := completeReq.CursorPosition
+	var newQuery string
+	var newCursorPos int
 	selectedItem := completeReq.SelectedItem
 
 	switch completeReq.ItemKind {
@@ -2467,13 +2436,6 @@ func (d *Datasource) CompleteHandler(ctx context.Context, req *backend.CallResou
 			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
 			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
 		} else {
-			closeBracePos := strings.Index(completeReq.Query[openBracePos:], "}")
-			if closeBracePos == -1 {
-				closeBracePos = len(completeReq.Query)
-			} else {
-				closeBracePos += openBracePos
-			}
-
 			// Insert tag: at cursor position
 			newQuery = completeReq.Query[:completeReq.CursorPosition] + selectedItem + ":" + completeReq.Query[completeReq.CursorPosition:]
 			newCursorPos = completeReq.CursorPosition + len(selectedItem) + 1
@@ -2879,12 +2841,10 @@ func (d *Datasource) VariableTagKeysHandler(ctx context.Context, req *backend.Ca
 			data := metricsResp.GetData()
 			matchingMetrics := []string{}
 
-			if data != nil {
-				for _, config := range data {
-					metricName := extractMetricName(config)
-					if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
-						matchingMetrics = append(matchingMetrics, metricName)
-					}
+			for _, config := range data {
+				metricName := extractMetricName(config)
+				if metricName != "" && matchesFilter(metricName, tagKeysReq.MetricName) {
+					matchingMetrics = append(matchingMetrics, metricName)
 				}
 			}
 
@@ -3414,18 +3374,16 @@ func (d *Datasource) VariableTagValuesHandler(ctx context.Context, req *backend.
 			data := metricsResp.GetData()
 			matchingMetrics := []string{}
 
-			if data != nil {
-				for _, config := range data {
-					var metricName string
-					if config.Metric != nil {
-						metricName = config.Metric.GetId()
-					} else if config.MetricTagConfiguration != nil {
-						metricName = config.MetricTagConfiguration.GetId()
-					}
+			for _, config := range data {
+				var metricName string
+				if config.Metric != nil {
+					metricName = config.Metric.GetId()
+				} else if config.MetricTagConfiguration != nil {
+					metricName = config.MetricTagConfiguration.GetId()
+				}
 
-					if metricName != "" && matchesFilter(metricName, tagValuesReq.MetricName) {
-						matchingMetrics = append(matchingMetrics, metricName)
-					}
+				if metricName != "" && matchesFilter(metricName, tagValuesReq.MetricName) {
+					matchingMetrics = append(matchingMetrics, metricName)
 				}
 			}
 
@@ -3634,36 +3592,33 @@ func (d *Datasource) VariableAllTagsHandler(ctx context.Context, req *backend.Ca
 
 			// Process metrics from this page
 			data := resp.GetData()
-			if data != nil {
+			for _, config := range data {
+				if metricsProcessed >= maxMetricsToProcess {
+					break
+				}
 
-				for _, config := range data {
-					if metricsProcessed >= maxMetricsToProcess {
-						break
+				metricName := extractMetricName(config)
+
+				if metricName != "" {
+					metricsProcessed++
+
+					// Fetch tags for this specific metric
+					tagsResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
+					if err != nil {
+						logger.Debug("Failed to fetch tags for metric", "metric", metricName, "error", err, "traceID", traceID)
+						continue
 					}
 
-					metricName := extractMetricName(config)
+					// Extract tag keys from the tags
+					tagsData := tagsResp.GetData()
+					if tagsData.Id != nil {
+						attributes := tagsData.GetAttributes()
+						allTags := attributes.GetTags()
+						metricTagKeys := extractTagKeysFromTags(allTags)
 
-					if metricName != "" {
-						metricsProcessed++
-
-						// Fetch tags for this specific metric
-						tagsResp, _, err := metricsApi.ListTagsByMetricName(fetchCtx, metricName)
-						if err != nil {
-							logger.Debug("Failed to fetch tags for metric", "metric", metricName, "error", err, "traceID", traceID)
-							continue
-						}
-
-						// Extract tag keys from the tags
-						tagsData := tagsResp.GetData()
-						if tagsData.Id != nil {
-							attributes := tagsData.GetAttributes()
-							allTags := attributes.GetTags()
-							metricTagKeys := extractTagKeysFromTags(allTags)
-
-							// Add to set
-							for _, key := range metricTagKeys {
-								tagKeysSet[key] = true
-							}
+						// Add to set
+						for _, key := range metricTagKeys {
+							tagKeysSet[key] = true
 						}
 					}
 				}
@@ -3906,12 +3861,6 @@ func (d *Datasource) LogsLevelsHandler(ctx context.Context, req *backend.CallRes
 
 	logger.Info("LogsLevelsHandler called", "traceID", traceID, "path", req.Path)
 
-	// Reuse existing timeout configuration (2 seconds for autocomplete)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
-
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_levels"
 	cacheTTL := 30 * time.Second
@@ -3983,12 +3932,6 @@ func (d *Datasource) LogsFieldsHandler(ctx context.Context, req *backend.CallRes
 	startTime := time.Now()
 
 	logger.Info("LogsFieldsHandler called", "traceID", traceID, "path", req.Path)
-
-	// Reuse existing timeout configuration (2 seconds for autocomplete)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Acquire semaphore slot (reusing existing concurrency limiting - max 5 concurrent requests)
 
 	// Check cache first (30 second TTL for autocomplete data)
 	cacheKey := "logs_fields"
