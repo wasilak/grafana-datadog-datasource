@@ -403,5 +403,5 @@ avg:system.disk.used{env:$env} by {host}
 - [Autocomplete Guide](autocomplete.md) - Detailed autocomplete features
 - [Formulas & Expressions](formulas.md) - Mathematical operations
 - [Legend Configuration](legends.md) - Custom series naming
-- [Variables](variables.md) - Dynamic dashboards
-- [Query Examples](../examples/queries.md) - Real-world patterns
+- [Variables](../features/variables.md) - Dynamic dashboards
+- [Query Examples](../examples/metrics-queries.md) - Real-world patterns

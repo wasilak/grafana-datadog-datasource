@@ -440,6 +440,6 @@ Use dashboard variables in base queries:
 ## 🔗 Related Documentation
 
 - [Query Editor](query-editor.md) - Building base queries
-- [Variables](variables.md) - Dynamic formulas
-- [Examples](../examples/queries.md) - More formula examples
+- [Variables](../features/variables.md) - Dynamic formulas
+- [Examples](../examples/metrics-queries.md) - More formula examples
 - [Performance](../advanced/performance.md) - Optimization tips

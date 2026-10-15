@@ -500,7 +500,7 @@ We value all types of contributions:
 - [Development Setup](setup.md)
 - [Architecture Overview](architecture.md)
 - [API Reference](api.md)
-- [User Documentation](../README.md)
+- [User Documentation](../../README.md)
 
 ### External Resources
 - [Grafana Plugin Development](https://grafana.com/docs/grafana/latest/developers/plugins/)
