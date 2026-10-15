@@ -40,7 +40,7 @@ An **unofficial** Grafana datasource plugin for Datadog metrics and logs with ad
 
 ## 📋 Requirements
 
-- **Grafana**: Version 9.0+ (recommended: 10.0+)
+- **Grafana**: Version 12.3 or newer (tested on 13.2)
 - **Datadog Account**: Paid subscription with API access
 - **API Credentials**: API Key and Application Key
 - **Supported Platforms**: Linux, macOS, Windows (x86-64, ARM64)
@@ -106,7 +106,7 @@ An **unofficial** Grafana datasource plugin for Datadog metrics and logs with ad
 
 ```bash
 # Environment variable installation
-GF_INSTALL_PLUGINS=https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.4.2/wasilak-datadog-datasource-v0.4.2.zip;wasilak-datadog-datasource
+GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip
 
 # Allow unsigned plugins (required for localhost)
 GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource
