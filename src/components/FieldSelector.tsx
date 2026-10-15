@@ -1,6 +1,5 @@
 import React from 'react';
-import { Select, InlineField, Alert } from '@grafana/ui';
-import { SelectableValue } from '@grafana/data';
+import { Combobox, ComboboxOption, InlineField, Alert } from '@grafana/ui';
 
 export interface FieldOption {
   value: string;
@@ -41,18 +40,15 @@ export function FieldSelector({
   validationError
 }: FieldSelectorProps) {
   
-  // Convert FieldOption[] to SelectableValue[] for Grafana Select component
-  const selectOptions: Array<SelectableValue<string>> = options.map(option => ({
+  // Convert FieldOption[] to ComboboxOption[] for Grafana Combobox component
+  const selectOptions: Array<ComboboxOption<string>> = options.map(option => ({
     value: option.value,
     label: option.label,
     description: option.description
   }));
 
-  // Find the current selected option
-  const selectedOption = selectOptions.find(option => option.value === value);
-
   // Handle selection change
-  const handleChange = (option: SelectableValue<string>) => {
+  const handleChange = (option: ComboboxOption<string>) => {
     if (option?.value) {
       onChange(option.value);
     }
@@ -71,16 +67,14 @@ export function FieldSelector({
         required={required}
         invalid={!!showValidationError}
       >
-        <Select
+        <Combobox
           width={width}
-          value={selectedOption}
+          value={value || null}
           options={selectOptions}
           onChange={handleChange}
           placeholder={placeholder}
           disabled={disabled}
           invalid={!!showValidationError}
-          // Add visual feedback for configuration changes
-          className={value ? 'field-selector-configured' : 'field-selector-empty'}
         />
       </InlineField>
       

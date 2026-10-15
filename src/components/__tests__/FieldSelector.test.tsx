@@ -4,10 +4,10 @@ import { FieldSelector, FieldOption } from '../FieldSelector';
 
 // Mock Grafana UI components
 jest.mock('@grafana/ui', () => ({
-  Select: ({ value, options, onChange, placeholder, disabled, invalid, width, ...props }: any) => (
+  Combobox: ({ value, options, onChange, placeholder, disabled, invalid, width, ...props }: any) => (
     <select
       data-testid="field-selector"
-      value={value?.value || ''}
+      value={value ?? ''}
       onChange={(e) => {
         const selectedOption = options.find((opt: any) => opt.value === e.target.value);
         if (selectedOption) {

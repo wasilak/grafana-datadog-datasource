@@ -1,11 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { InlineField, Select, Input, Stack, Alert, useTheme2 } from '@grafana/ui';
-import { SelectableValue } from '@grafana/data';
+import { InlineField, Combobox, ComboboxOption, Input, Stack, Alert, useTheme2 } from '@grafana/ui';
 import { MyVariableQuery, VariableQueryEditorProps, CompletionItem } from './types';
 import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 
 // Query type options for the dropdown
-const QUERY_TYPE_OPTIONS: Array<SelectableValue<MyVariableQuery['queryType']>> = [
+const QUERY_TYPE_OPTIONS: Array<ComboboxOption<MyVariableQuery['queryType']>> = [
   {
     label: 'Metrics',
     value: 'metrics',
@@ -263,7 +262,7 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
   };
 
   // Handle query type change
-  const onQueryTypeChange = (option: SelectableValue<MyVariableQuery['queryType']>) => {
+  const onQueryTypeChange = (option: ComboboxOption<MyVariableQuery['queryType']>) => {
     if (option.value) {
       // Close any open autocomplete
       autocomplete.onClose();
@@ -296,9 +295,9 @@ export const VariableQueryEditor = ({ query, onChange, datasource }: VariableQue
         labelWidth={20} 
         tooltip="Select the type of data to query for this variable"
       >
-        <Select
+        <Combobox
           options={QUERY_TYPE_OPTIONS}
-          value={QUERY_TYPE_OPTIONS.find(opt => opt.value === state.queryType)}
+          value={state.queryType}
           onChange={onQueryTypeChange}
           width={30}
         />
