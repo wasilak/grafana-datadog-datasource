@@ -617,22 +617,13 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	response := backend.NewQueryDataResponse()
 
 	// Get API credentials from secure JSON data
-	apiKey, appKey, site, credErr := d.validateCredentials()
+	_, _, site, credErr := d.validateCredentials()
 	if credErr != nil {
 		logger.Error("Invalid credentials", "error", credErr)
 		return response, credErr
 	}
 
 	logger.Info("QueryData called", "site", site)
-	apiKeyPrefix := ""
-	if len(apiKey) > 8 {
-		apiKeyPrefix = apiKey[:8]
-	}
-	appKeyPrefix := ""
-	if len(appKey) > 8 {
-		appKeyPrefix = appKey[:8]
-	}
-	logger.Info("Using API Key and App Key for authentication", "apiKeyPrefix", apiKeyPrefix, "appKeyPrefix", appKeyPrefix)
 
 	// Set the site and API keys in context using the shared helper
 	ddCtx, err := d.GetDatadogContext(ctx)
@@ -1785,7 +1776,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 	logger := log.New()
 
 	// Get API credentials from secure JSON data
-	apiKey, appKey, site, credErr := d.validateCredentials()
+	_, _, site, credErr := d.validateCredentials()
 	if credErr != nil {
 		logger.Error("CheckHealth: invalid credentials", "error", credErr)
 		return &backend.CheckHealthResult{
@@ -1794,26 +1785,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 		}, nil
 	}
 
-	// Log credentials info (without exposing full keys)
-	apiKeyPrefix := ""
-	if len(apiKey) >= 8 {
-		apiKeyPrefix = apiKey[:8]
-	} else if len(apiKey) > 0 {
-		apiKeyPrefix = apiKey
-	}
-	appKeyPrefix := ""
-	if len(appKey) >= 8 {
-		appKeyPrefix = appKey[:8]
-	} else if len(appKey) > 0 {
-		appKeyPrefix = appKey
-	}
-
-	logger.Info("CheckHealth: starting health check",
-		"site", site,
-		"apiKeyLen", len(apiKey),
-		"appKeyLen", len(appKey),
-		"apiKeyPrefix", apiKeyPrefix,
-		"appKeyPrefix", appKeyPrefix)
+	logger.Info("CheckHealth: starting health check", "site", site)
 
 	// Build per-request context (credentials + site) and reuse singleton client
 	ddCtx, err := d.GetDatadogContext(ctx)
