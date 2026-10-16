@@ -49,7 +49,7 @@ jobs:
       - name: Lint backend
         uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: v2.14.0
+          version: v2.15.0
           args: ./pkg/...
 
       - name: Test backend
