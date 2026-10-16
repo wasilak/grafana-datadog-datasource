@@ -13,6 +13,22 @@ export interface JSONParsingConfig {
   };
 }
 
+/**
+ * Log Analytics compute, shaped like Datadog's v2 query API
+ */
+export interface LogAnalyticsCompute {
+  aggregation: string; // count, cardinality, pc75-pc99, sum, min, max, avg
+  metric?: string;     // The measure, e.g. @duration_ms
+}
+
+/**
+ * Log Analytics group-by, shaped like Datadog's v2 query API
+ */
+export interface LogAnalyticsGroupBy {
+  facet: string;  // e.g. @http.status_code or service
+  limit?: number; // Top groups to return (Datadog default: 10)
+}
+
 export interface MyQuery extends DataQuery {
   queryText?: string;
   // Legend configuration
@@ -27,9 +43,13 @@ export interface MyQuery extends DataQuery {
   // Query options
   interval?: number;   // Override interval in milliseconds
   // Logs query fields
-  queryType?: 'logs' | 'metrics' | 'logs-volume'; // Query type - defaults to 'metrics'; 'logs-volume' is the supplementary histogram query
+  queryType?: 'logs' | 'metrics' | 'logs-volume' | 'log-analytics'; // Query type - defaults to 'metrics'; 'logs-volume' is the supplementary histogram query
   logQuery?: string;   // Logs search query
   indexes?: string[];  // Target log indexes
+  // Log Analytics query fields
+  compute?: LogAnalyticsCompute;
+  groupBy?: LogAnalyticsGroupBy[];
+  responseFormat?: 'timeseries' | 'scalar'; // 'scalar' returns one value per group over the whole time range
   // Logs pagination fields
   pageSize?: number;
   currentPage?: number;

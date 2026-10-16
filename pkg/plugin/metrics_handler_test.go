@@ -23,6 +23,7 @@ func newTestMetricsHandler(t *testing.T, queries map[string]QueryModel, order ..
 	h := NewMetricsHandler(&Datasource{}, reqQueries, context.Background(), nil)
 	for _, refID := range order {
 		qm := queries[refID]
+		qm.RefID = refID
 		require.NoError(t, h.processQuery(&qm))
 	}
 	return h

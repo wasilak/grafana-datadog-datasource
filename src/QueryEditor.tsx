@@ -23,6 +23,7 @@ import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { QueryEditorHelp } from './QueryEditorHelp';
 import { LogsQueryEditor } from './LogsQueryEditor';
+import { LogAnalyticsQueryEditor } from './LogAnalyticsQueryEditor';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -75,21 +76,23 @@ function extractVariableNames(queryText: string): string[] {
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
 
   // Query type options
-  const queryTypeOptions: Array<ComboboxOption<'metrics' | 'logs'>> = [
+  const queryTypeOptions: Array<ComboboxOption<'metrics' | 'logs' | 'log-analytics'>> = [
     { label: 'Metrics', value: 'metrics', description: 'Query Datadog metrics and time series data' },
     { label: 'Logs', value: 'logs', description: 'Search and analyze Datadog logs' },
+    { label: 'Log Analytics', value: 'log-analytics', description: 'Count and aggregate logs, over time or per group' },
   ];
 
   // Get current query type, defaulting to 'metrics'
   const currentQueryType = query.queryType || 'metrics';
 
-  const onQueryTypeChange = (option: ComboboxOption<'metrics' | 'logs'>) => {
+  const onQueryTypeChange = (option: ComboboxOption<'metrics' | 'logs' | 'log-analytics'>) => {
     const newQueryType = option.value || 'metrics';
     onChange({
       ...query,
       queryType: newQueryType,
-      // Clear the other query field when switching types to avoid confusion
-      ...(newQueryType === 'logs' ? { queryText: '' } : { logQuery: '' }),
+      // Clear the other query field when switching types to avoid confusion;
+      // Logs and Log Analytics share the logs search
+      ...(newQueryType === 'metrics' ? { logQuery: '' } : { queryText: '' }),
     });
   };
 
@@ -117,6 +120,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           datasource={datasource}
           {...restProps}
         />
+      ) : currentQueryType === 'log-analytics' ? (
+        <LogAnalyticsQueryEditor query={query} onChange={onChange} onRunQuery={onRunQuery} />
       ) : (
         <MetricsQueryEditor
           query={query}
