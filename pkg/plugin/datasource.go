@@ -457,6 +457,8 @@ type QueryModel struct {
 	Compute        *datadogV2.EventsCompute  `json:"compute,omitempty"`        // Aggregation and measure, e.g. pc95 of @duration_ms
 	GroupBy        []datadogV2.EventsGroupBy `json:"groupBy,omitempty"`        // Facets to group by
 	ResponseFormat string                    `json:"responseFormat,omitempty"` // "timeseries" (default) or "scalar"
+	// Metrics scalar query field: how each series is reduced over the time range
+	Aggregator string `json:"aggregator,omitempty"` // avg (default), sum, min, max, last, ...
 	// RefID is copied from the backend query in QueryData
 	RefID string `json:"-"`
 	// JSON parsing configuration

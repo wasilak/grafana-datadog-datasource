@@ -50,6 +50,7 @@ export interface MyQuery extends DataQuery {
   compute?: LogAnalyticsCompute;
   groupBy?: LogAnalyticsGroupBy[];
   responseFormat?: 'timeseries' | 'scalar'; // 'scalar' returns one value per group over the whole time range
+  aggregator?: string; // Metrics scalar queries: how each series is reduced over the time range (avg, sum, min, max, last)
   // Logs pagination fields
   pageSize?: number;
   currentPage?: number;

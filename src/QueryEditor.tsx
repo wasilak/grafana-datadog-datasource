@@ -23,7 +23,7 @@ import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { QueryEditorHelp } from './QueryEditorHelp';
 import { LogsQueryEditor } from './LogsQueryEditor';
-import { LogAnalyticsQueryEditor } from './LogAnalyticsQueryEditor';
+import { LogAnalyticsQueryEditor, responseFormatOptions } from './LogAnalyticsQueryEditor';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -151,6 +151,15 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+
+  // Datadog's aggregators for metrics scalar queries
+  const aggregatorOptions: Array<ComboboxOption<string>> = [
+    { label: 'avg', value: 'avg' },
+    { label: 'sum', value: 'sum' },
+    { label: 'min', value: 'min' },
+    { label: 'max', value: 'max' },
+    { label: 'last', value: 'last' },
+  ];
 
   // Legend mode options
   const legendModeOptions: Array<ComboboxOption<'auto' | 'custom'>> = [
@@ -853,6 +862,32 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
             </InlineField>
           </InlineFieldRow>
         )}
+
+        <InlineFieldRow>
+          <InlineField
+            label="Format"
+            labelWidth={14}
+            tooltip="Timeseries for values over time, or Scalar for one value per group over the whole time range"
+          >
+            <Combobox
+              options={responseFormatOptions}
+              value={query.responseFormat ?? 'timeseries'}
+              onChange={(option) => onChange({ ...query, responseFormat: option.value })}
+              width={20}
+            />
+          </InlineField>
+          {query.responseFormat === 'scalar' && (
+            <InlineField label="Aggregator" tooltip="How each series is reduced over the time range">
+              <Combobox
+                options={aggregatorOptions}
+                value={query.aggregator ?? 'avg'}
+                onChange={(option) => onChange({ ...query, aggregator: option.value })}
+                createCustomValue
+                width={20}
+              />
+            </InlineField>
+          )}
+        </InlineFieldRow>
 
         {/* Interval override field */}
         <InlineFieldRow>

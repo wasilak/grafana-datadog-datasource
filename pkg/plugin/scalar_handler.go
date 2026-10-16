@@ -67,13 +67,18 @@ func (h *ScalarHandler) executeQueries(ctx context.Context) (*backend.QueryDataR
 func (h *ScalarHandler) executeQuery(qm *QueryModel) backend.DataResponse {
 	logger := log.New()
 
+	query := metricsScalarQuery(qm)
+	if qm.QueryType == LogAnalyticsQueryType {
+		query = logAnalyticsScalarQuery(qm)
+	}
+
 	body := datadogV2.ScalarFormulaQueryRequest{
 		Data: datadogV2.ScalarFormulaRequest{
 			Type: datadogV2.SCALARFORMULAREQUESTTYPE_SCALAR_REQUEST,
 			Attributes: datadogV2.ScalarFormulaRequestAttributes{
 				From:    h.from,
 				To:      h.to,
-				Queries: []datadogV2.ScalarQuery{logAnalyticsScalarQuery(qm)},
+				Queries: []datadogV2.ScalarQuery{query},
 			},
 		},
 	}
@@ -106,6 +111,23 @@ func (h *ScalarHandler) executeQuery(qm *QueryModel) backend.DataResponse {
 	}
 
 	return backend.DataResponse{Frames: data.Frames{h.scalarFrame(&resp, qm)}}
+}
+
+// metricsScalarQuery builds the scalar query for a metrics query. The query
+// text is sent as written, as Datadog's own widgets do, so an ungrouped query
+// keeps its meaning of a single row.
+func metricsScalarQuery(qm *QueryModel) datadogV2.ScalarQuery {
+	aggregator := datadogV2.METRICSAGGREGATOR_AVG
+	if qm.Aggregator != "" {
+		aggregator = datadogV2.MetricsAggregator(qm.Aggregator)
+	}
+	name := qm.RefID
+	return datadogV2.ScalarQuery{MetricsScalarQuery: &datadogV2.MetricsScalarQuery{
+		DataSource: datadogV2.METRICSDATASOURCE_METRICS,
+		Query:      qm.QueryText,
+		Aggregator: aggregator,
+		Name:       &name,
+	}}
 }
 
 // scalarFrame turns a scalar response into a table frame: one string column

@@ -31,7 +31,8 @@ const aggregationOptions: Array<ComboboxOption<string>> = [
   { label: 'pc99', value: 'pc99', description: '99th percentile' },
 ];
 
-const responseFormatOptions: Array<ComboboxOption<'timeseries' | 'scalar'>> = [
+// Shared with the metrics editor, so both query types offer the same choices
+export const responseFormatOptions: Array<ComboboxOption<'timeseries' | 'scalar'>> = [
   { label: 'Timeseries', value: 'timeseries', description: 'Values over time' },
   { label: 'Scalar', value: 'scalar', description: 'One value per group over the whole time range' },
 ];

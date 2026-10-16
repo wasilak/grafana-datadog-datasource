@@ -220,6 +220,17 @@ Available variables depend on your query's group-by tags:
 
 ## ⚙️ Query Options
 
+### Format
+
+**Timeseries** (default) returns values over time. **Scalar** returns one value per group for the whole time range, for stat, bar gauge and table panels. It uses Datadog's [scalar query API](https://docs.datadoghq.com/api/latest/metrics/#query-scalar-data-across-multiple-products).
+
+With **Scalar**, choose an **Aggregator** to set how each series is reduced: `avg` (default), `sum`, `min`, `max` or `last`. Datadog applies it to the raw data over the whole range, so the result can differ from reducing timeseries points in Grafana. The query is sent as written, so a query without `by` returns a single row. For a row per host:
+
+```bash
+# Errors per host over the time range, as a table (aggregator: sum)
+sum:http.errors{*} by {host}
+```
+
 ### Interval Override
 
 Control the resolution of your queries:

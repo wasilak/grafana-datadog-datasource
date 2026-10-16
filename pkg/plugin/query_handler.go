@@ -44,7 +44,7 @@ func detectQueryType(qm *QueryModel) QueryType {
 			// Volume histogram is calculated from log entries
 			return LogsQueryType
 		case "metrics":
-			return MetricsQueryType
+			return metricsQueryType(qm)
 		case LogAnalyticsQueryType:
 			if qm.ResponseFormat == "scalar" {
 				return ScalarQueryType
@@ -60,5 +60,13 @@ func detectQueryType(qm *QueryModel) QueryType {
 	}
 
 	// Default to metrics for backward compatibility
+	return metricsQueryType(qm)
+}
+
+// metricsQueryType routes a metrics query by its response format
+func metricsQueryType(qm *QueryModel) QueryType {
+	if qm.ResponseFormat == "scalar" {
+		return ScalarQueryType
+	}
 	return MetricsQueryType
 }
