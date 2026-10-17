@@ -18,7 +18,6 @@ import (
 // Requirements: 1.1, 6.1, 6.2
 type MetricsHandler struct {
 	datasource     *Datasource
-	reqQueries     []backend.DataQuery
 	metricsQueries []datadogV2.TimeseriesQuery
 	formulas       []datadogV2.QueryFormula
 	formulaRefIDs  []string
@@ -40,7 +39,6 @@ func NewMetricsHandler(datasource *Datasource, queries []backend.DataQuery, ddCt
 
 	return &MetricsHandler{
 		datasource:     datasource,
-		reqQueries:     queries,
 		metricsQueries: make([]datadogV2.TimeseriesQuery, 0),
 		formulas:       make([]datadogV2.QueryFormula, 0),
 		queryModels:    make(map[string]QueryModel),
@@ -62,23 +60,7 @@ func (h *MetricsHandler) processQuery(qm *QueryModel) error {
 		return nil
 	}
 
-	// Find the corresponding backend query for RefID
-	var refID string
-	for _, q := range h.reqQueries {
-		var tempQM QueryModel
-		if err := json.Unmarshal(q.JSON, &tempQM); err != nil {
-			continue
-		}
-		if tempQM.QueryText == qm.QueryText && tempQM.Type == qm.Type && tempQM.Expression == qm.Expression {
-			refID = q.RefID
-			break
-		}
-	}
-
-	if refID == "" {
-		return fmt.Errorf("could not find RefID for query")
-	}
-
+	refID := qm.RefID
 	h.queryModels[refID] = *qm
 
 	if qm.Type == "math" && qm.Expression != "" {
@@ -90,6 +72,9 @@ func (h *MetricsHandler) processQuery(qm *QueryModel) error {
 		})
 		h.formulaRefIDs = append(h.formulaRefIDs, refID)
 		logger.Debug("Added formula", "refID", refID, "formula", datadogFormula)
+	} else if qm.QueryType == LogAnalyticsQueryType {
+		h.metricsQueries = append(h.metricsQueries, logAnalyticsTimeseriesQuery(qm))
+		logger.Debug("Added Log Analytics query", "refID", refID, "search", qm.LogQuery)
 	} else if qm.QueryText != "" {
 		// This is a regular metrics query - add it to the queries list
 		queryText := qm.QueryText

@@ -450,9 +450,17 @@ type QueryModel struct {
 	// Query options
 	Interval *int64 `json:"interval,omitempty"` // Override interval in milliseconds
 	// Logs query fields
-	QueryType string   `json:"queryType,omitempty"` // "logs", "logs-volume", or "metrics" (defaults to "metrics")
+	QueryType string   `json:"queryType,omitempty"` // "logs", "logs-volume", "log-analytics", or "metrics" (defaults to "metrics")
 	LogQuery  string   `json:"logQuery,omitempty"`  // Logs search query
 	Indexes   []string `json:"indexes,omitempty"`   // Target log indexes
+	// Log Analytics query fields, shaped like Datadog's v2 query API
+	Compute        *datadogV2.EventsCompute  `json:"compute,omitempty"`        // Aggregation and measure, e.g. pc95 of @duration_ms
+	GroupBy        []datadogV2.EventsGroupBy `json:"groupBy,omitempty"`        // Facets to group by
+	ResponseFormat string                    `json:"responseFormat,omitempty"` // "timeseries" (default) or "scalar"
+	// Metrics scalar query field: how each series is reduced over the time range
+	Aggregator string `json:"aggregator,omitempty"` // avg (default), sum, min, max, last, ...
+	// RefID is copied from the backend query in QueryData
+	RefID string `json:"-"`
 	// JSON parsing configuration
 	JSONParsing *JSONParsingConfig `json:"jsonParsing,omitempty"` // JSON parsing configuration for logs
 	// Deprecated: Use LegendMode and LegendTemplate instead
@@ -644,6 +652,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	handlers := make(map[QueryType]QueryHandler)
 	handlers[MetricsQueryType] = NewMetricsHandler(d, req.Queries, ddCtx, metricsApi)
 	handlers[LogsQueryType] = NewLogsHandler(d, req.Queries, ddCtx)
+	handlers[ScalarQueryType] = NewScalarHandler(d, req.Queries, ddCtx, metricsApi)
 
 	// Parse all queries and route to appropriate handlers
 	for _, q := range req.Queries {
@@ -653,6 +662,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 			response.Responses[q.RefID] = backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("failed to parse query: %v", err))
 			continue
 		}
+		qm.RefID = q.RefID
 
 		// Skip hidden queries
 		if qm.Hide {

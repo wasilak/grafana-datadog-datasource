@@ -57,6 +57,7 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     const hasMetricsQuery = !!query.queryText;
     const hasExpressionQuery = query.type === 'math' && !!query.expression;
     const hasLogsQuery = !!query.logQuery;
+    const hasLogAnalyticsQuery = query.queryType === 'log-analytics'; // An empty search means all logs
     
     // For logs queries, perform additional validation
     if (hasLogsQuery && query.logQuery) {
@@ -71,17 +72,17 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
       });
     }
     
-    return hasMetricsQuery || hasExpressionQuery || hasLogsQuery;
+    return hasMetricsQuery || hasExpressionQuery || hasLogsQuery || hasLogAnalyticsQuery;
   }
 
   /**
    * Detects whether a query should be treated as a logs query based on panel context and query properties
    */
-  private detectQueryType(query: MyQuery): 'logs' | 'metrics' {
+  private detectQueryType(query: MyQuery): 'logs' | 'metrics' | 'log-analytics' {
     // If queryType is explicitly set, use it
     if (query.queryType) {
       // 'logs-volume' is the supplementary histogram query for logs
-      return query.queryType === 'metrics' ? 'metrics' : 'logs';
+      return query.queryType === 'logs-volume' ? 'logs' : query.queryType;
     }
 
     // If logQuery is provided, treat as logs query
