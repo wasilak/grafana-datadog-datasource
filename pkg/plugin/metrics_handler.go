@@ -21,6 +21,7 @@ type MetricsHandler struct {
 	reqQueries     []backend.DataQuery
 	metricsQueries []datadogV2.TimeseriesQuery
 	formulas       []datadogV2.QueryFormula
+	formulaRefIDs  []string
 	queryModels    map[string]QueryModel
 	hasFormulas    bool
 	from           int64
@@ -87,6 +88,7 @@ func (h *MetricsHandler) processQuery(qm *QueryModel) error {
 		h.formulas = append(h.formulas, datadogV2.QueryFormula{
 			Formula: datadogFormula,
 		})
+		h.formulaRefIDs = append(h.formulaRefIDs, refID)
 		logger.Debug("Added formula", "refID", refID, "formula", datadogFormula)
 	} else if qm.QueryText != "" {
 		// This is a regular metrics query - add it to the queries list
@@ -164,7 +166,7 @@ func (h *MetricsHandler) executeQueries(ctx context.Context) (*backend.QueryData
 	if err != nil {
 		// Log request body for debugging
 		requestBody, _ := json.MarshalIndent(body, "", "  ")
-		logger.Error("QueryTimeseriesData request body", "request", string(requestBody))
+		logger.Debug("QueryTimeseriesData request body", "request", string(requestBody))
 
 		// Log HTTP response details
 		httpStatus := 0
@@ -193,7 +195,7 @@ func (h *MetricsHandler) executeQueries(ctx context.Context) (*backend.QueryData
 
 	// Process the response and create frames for each query/formula using parser
 	parser := NewMetricsResponseParser(h.datasource)
-	err = parser.ParseTimeseriesResponse(&resp, h.queryModels, response)
+	err = parser.ParseTimeseriesResponse(&resp, h.queryModels, h.responseRefIDs(), response)
 	if err != nil {
 		logger.Error("Failed to parse metrics response", "error", err)
 		// Return error for all queries
@@ -205,4 +207,23 @@ func (h *MetricsHandler) executeQueries(ctx context.Context) (*backend.QueryData
 	}
 
 	return response, nil
+}
+
+// responseRefIDs returns the refID at each query_index of the response.
+// Datadog's query_index points into the formulas when the request has any,
+// and into the queries otherwise. Each query is named after its refID.
+func (h *MetricsHandler) responseRefIDs() []string {
+	if h.hasFormulas {
+		return h.formulaRefIDs
+	}
+	refIDs := make([]string, len(h.metricsQueries))
+	for i, q := range h.metricsQueries {
+		switch {
+		case q.MetricsTimeseriesQuery != nil:
+			refIDs[i] = q.MetricsTimeseriesQuery.GetName()
+		case q.EventsTimeseriesQuery != nil:
+			refIDs[i] = q.EventsTimeseriesQuery.GetName()
+		}
+	}
+	return refIDs
 }

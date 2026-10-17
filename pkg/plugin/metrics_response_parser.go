@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,11 +27,13 @@ func NewMetricsResponseParser(datasource *Datasource) *MetricsResponseParser {
 	}
 }
 
-// ParseTimeseriesResponse processes Datadog timeseries response and creates frames for each query/formula
+// ParseTimeseriesResponse processes Datadog timeseries response and creates frames for each query/formula.
+// queryList holds the refID at each query_index of the response, in request order.
 // Refactored from existing processTimeseriesResponse method
 func (p *MetricsResponseParser) ParseTimeseriesResponse(
 	resp *datadogV2.TimeseriesFormulaQueryResponse,
 	queryModels map[string]QueryModel,
+	queryList []string,
 	response *backend.QueryDataResponse,
 ) error {
 	logger := log.New()
@@ -64,13 +65,6 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 		"timesCount", len(times),
 		"valuesCount", len(values))
 
-	// Map query indices to refIDs for legend formatting
-	queryList := make([]string, 0, len(queryModels))
-	for refID := range queryModels {
-		queryList = append(queryList, refID)
-	}
-	sort.Strings(queryList) // Ensure consistent ordering
-
 	// Group frames by query index (which corresponds to refID)
 	framesByQuery := make(map[int]data.Frames)
 
@@ -84,6 +78,10 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 			continue
 		}
 		queryIndex := int(*s.QueryIndex)
+		if queryIndex < 0 || queryIndex >= len(queryList) {
+			logger.Warn("QueryIndex has no matching query, skipping series", "seriesIndex", i, "queryIndex", queryIndex)
+			continue
+		}
 
 		// Check if we have data for this series index
 		if i >= len(values) {
