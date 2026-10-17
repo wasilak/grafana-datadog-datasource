@@ -3,6 +3,7 @@ package plugin
 import (
 	"testing"
 
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +53,7 @@ func TestParseTimeseriesResponse_NilResponse(t *testing.T) {
 	qm := map[string]QueryModel{"A": {QueryText: "avg:system.cpu.user{*}"}}
 	resp := backend.NewQueryDataResponse()
 
-	err := p.ParseTimeseriesResponse(nil, qm, resp)
+	err := p.ParseTimeseriesResponse(nil, qm, []string{"A"}, resp)
 
 	require.Error(t, err, "nil response should return an error")
 	assert.Contains(t, err.Error(), "nil", "error should mention nil")
@@ -69,7 +70,7 @@ func TestParseTimeseriesResponse_EmptySeries(t *testing.T) {
 
 	ts := newTimeseriesResponse([]datadogV2.TimeseriesResponseSeries{}, nil, nil)
 
-	err := p.ParseTimeseriesResponse(ts, qm, resp)
+	err := p.ParseTimeseriesResponse(ts, qm, []string{"A"}, resp)
 	require.NoError(t, err, "empty series should not return an error")
 
 	// Each refID should receive an empty frame response.
@@ -93,10 +94,40 @@ func TestParseTimeseriesResponse_NilQueryIndex(t *testing.T) {
 		[][]*float64{{&val}},
 	)
 
-	err := p.ParseTimeseriesResponse(ts, qm, resp)
+	err := p.ParseTimeseriesResponse(ts, qm, []string{"A"}, resp)
 
 	// Should return no error — the nil-QueryIndex series is simply skipped.
 	require.NoError(t, err, "nil QueryIndex should be skipped gracefully, not panic")
+}
+
+// Series are matched to queries by Datadog's query_index, which follows the
+// request order, not the alphabetical order of the refIDs (#894).
+func TestParseTimeseriesResponse_MatchesSeriesByRequestOrder(t *testing.T) {
+	p := newTestParser()
+	qm := map[string]QueryModel{
+		"A": {QueryText: "avg:system.load.1{*}"},
+		"B": {QueryText: "avg:system.cpu.user{*}"},
+	}
+	resp := backend.NewQueryDataResponse()
+
+	// The panel lists B first, so B is query_index 0
+	first, second := 1.0, 2.0
+	ts := newTimeseriesResponse(
+		[]datadogV2.TimeseriesResponseSeries{
+			{QueryIndex: datadog.PtrInt32(0)},
+			{QueryIndex: datadog.PtrInt32(1)},
+		},
+		[]int64{1000},
+		[][]*float64{{&first}, {&second}},
+	)
+
+	err := p.ParseTimeseriesResponse(ts, qm, []string{"B", "A"}, resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Responses["B"].Frames, 1)
+	require.Len(t, resp.Responses["A"].Frames, 1)
+	assert.Equal(t, first, resp.Responses["B"].Frames[0].Fields[1].At(0))
+	assert.Equal(t, second, resp.Responses["A"].Frames[0].Fields[1].At(0))
 }
 
 // -------------------------------------------------------------------------
