@@ -1,3 +1,11 @@
+## [0.8.0] - 2026-10-18
+
+### 🚀 Features
+
+- *(logs)* Add Log Analytics queries
+- *(metrics)* Add scalar response format
+
+Thanks to @WardBenjamin for contributing both features (#892).
 ## [0.7.2] - 2026-10-17
 
 ### 🐛 Bug Fixes
