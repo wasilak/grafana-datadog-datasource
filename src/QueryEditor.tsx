@@ -23,6 +23,7 @@ import { useQueryAutocomplete } from './hooks/useQueryAutocomplete';
 import { registerDatadogLanguage } from './utils/autocomplete/syntaxHighlighter';
 import { QueryEditorHelp } from './QueryEditorHelp';
 import { LogsQueryEditor } from './LogsQueryEditor';
+import { LogAnalyticsQueryEditor, responseFormatOptions } from './LogAnalyticsQueryEditor';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -75,21 +76,23 @@ function extractVariableNames(queryText: string): string[] {
 export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restProps }: Props) {
 
   // Query type options
-  const queryTypeOptions: Array<ComboboxOption<'metrics' | 'logs'>> = [
+  const queryTypeOptions: Array<ComboboxOption<'metrics' | 'logs' | 'log-analytics'>> = [
     { label: 'Metrics', value: 'metrics', description: 'Query Datadog metrics and time series data' },
     { label: 'Logs', value: 'logs', description: 'Search and analyze Datadog logs' },
+    { label: 'Log Analytics', value: 'log-analytics', description: 'Count and aggregate logs, over time or per group' },
   ];
 
   // Get current query type, defaulting to 'metrics'
   const currentQueryType = query.queryType || 'metrics';
 
-  const onQueryTypeChange = (option: ComboboxOption<'metrics' | 'logs'>) => {
+  const onQueryTypeChange = (option: ComboboxOption<'metrics' | 'logs' | 'log-analytics'>) => {
     const newQueryType = option.value || 'metrics';
     onChange({
       ...query,
       queryType: newQueryType,
-      // Clear the other query field when switching types to avoid confusion
-      ...(newQueryType === 'logs' ? { queryText: '' } : { logQuery: '' }),
+      // Clear the other query field when switching types to avoid confusion;
+      // Logs and Log Analytics share the logs search
+      ...(newQueryType === 'metrics' ? { logQuery: '' } : { queryText: '' }),
     });
   };
 
@@ -117,6 +120,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, ...restPr
           datasource={datasource}
           {...restProps}
         />
+      ) : currentQueryType === 'log-analytics' ? (
+        <LogAnalyticsQueryEditor query={query} onChange={onChange} onRunQuery={onRunQuery} />
       ) : (
         <MetricsQueryEditor
           query={query}
@@ -146,6 +151,15 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
   const [suggestionsPosition, setSuggestionsPosition] = useState({ top: 0, left: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+
+  // Datadog's aggregators for metrics scalar queries
+  const aggregatorOptions: Array<ComboboxOption<string>> = [
+    { label: 'avg', value: 'avg' },
+    { label: 'sum', value: 'sum' },
+    { label: 'min', value: 'min' },
+    { label: 'max', value: 'max' },
+    { label: 'last', value: 'last' },
+  ];
 
   // Legend mode options
   const legendModeOptions: Array<ComboboxOption<'auto' | 'custom'>> = [
@@ -848,6 +862,32 @@ function MetricsQueryEditor({ query, onChange, onRunQuery, datasource, app, ...r
             </InlineField>
           </InlineFieldRow>
         )}
+
+        <InlineFieldRow>
+          <InlineField
+            label="Format"
+            labelWidth={14}
+            tooltip="Timeseries for values over time, or Scalar for one value per group over the whole time range"
+          >
+            <Combobox
+              options={responseFormatOptions}
+              value={query.responseFormat ?? 'timeseries'}
+              onChange={(option) => onChange({ ...query, responseFormat: option.value })}
+              width={20}
+            />
+          </InlineField>
+          {query.responseFormat === 'scalar' && (
+            <InlineField label="Aggregator" tooltip="How each series is reduced over the time range">
+              <Combobox
+                options={aggregatorOptions}
+                value={query.aggregator ?? 'avg'}
+                onChange={(option) => onChange({ ...query, aggregator: option.value })}
+                createCustomValue
+                width={20}
+              />
+            </InlineField>
+          )}
+        </InlineFieldRow>
 
         {/* Interval override field */}
         <InlineFieldRow>

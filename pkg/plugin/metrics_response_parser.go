@@ -178,6 +178,9 @@ func (p *MetricsResponseParser) ParseTimeseriesResponse(
 func (p *MetricsResponseParser) buildSeriesName(qm QueryModel, labels map[string]string) string {
 	// Build series name using legend configuration (same logic as original)
 	metric := qm.QueryText // Default to the query text if no custom legend
+	if qm.QueryType == LogAnalyticsQueryType {
+		metric = logAnalyticsLabel(&qm)
+	}
 	seriesName := metric
 
 	// Determine legend template based on legend mode
@@ -217,6 +220,12 @@ func (p *MetricsResponseParser) replaceTemplateVariables(template string, labels
 	for key, value := range labels {
 		placeholder := "{{" + key + "}}"
 		result = strings.ReplaceAll(result, placeholder, value)
+		// Log facets come back as "@facet"; accept {{facet}} and {{@facet}} for either spelling
+		if bare, ok := strings.CutPrefix(key, "@"); ok {
+			result = strings.ReplaceAll(result, "{{"+bare+"}}", value)
+		} else {
+			result = strings.ReplaceAll(result, "{{@"+key+"}}", value)
+		}
 	}
 	return result
 }

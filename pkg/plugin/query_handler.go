@@ -27,6 +27,10 @@ const (
 	// Note: logs-volume queries are also handled by LogsHandler since volume
 	// is calculated from log entries (no separate API call needed)
 	LogsQueryType QueryType = "logs"
+
+	// ScalarQueryType represents queries answered with one value per group
+	// over the whole time range (Datadog's scalar endpoint)
+	ScalarQueryType QueryType = "scalar"
 )
 
 // detectQueryType determines the query type based on the QueryModel
@@ -40,6 +44,12 @@ func detectQueryType(qm *QueryModel) QueryType {
 			// Volume histogram is calculated from log entries
 			return LogsQueryType
 		case "metrics":
+			return metricsQueryType(qm)
+		case LogAnalyticsQueryType:
+			if qm.ResponseFormat == "scalar" {
+				return ScalarQueryType
+			}
+			// Timeseries Log Analytics queries share the metrics request
 			return MetricsQueryType
 		}
 	}
@@ -50,5 +60,13 @@ func detectQueryType(qm *QueryModel) QueryType {
 	}
 
 	// Default to metrics for backward compatibility
+	return metricsQueryType(qm)
+}
+
+// metricsQueryType routes a metrics query by its response format
+func metricsQueryType(qm *QueryModel) QueryType {
+	if qm.ResponseFormat == "scalar" {
+		return ScalarQueryType
+	}
 	return MetricsQueryType
 }

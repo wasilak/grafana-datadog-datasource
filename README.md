@@ -79,6 +79,7 @@ An **unofficial** Grafana datasource plugin for Datadog metrics and logs with ad
 
 ### Logs
 - [Getting Started](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/getting-started.md) - Your first logs queries
+- [Log Analytics](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/analytics.md) - Counts, percentiles and unique counts from logs
 - [Autocomplete](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/autocomplete.md) - Context-aware suggestions
 - [JSON Parsing](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/json-parsing.md) - Automatic field parsing and filtering
 - [Correlation](https://github.com/wasilak/grafana-datadog-datasource/blob/main/docs/logs/correlation.md) - Linking logs with metrics
