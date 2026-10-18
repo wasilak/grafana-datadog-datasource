@@ -106,7 +106,7 @@ An **unofficial** Grafana datasource plugin for Datadog metrics and logs with ad
 
 ```bash
 # Environment variable installation
-GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.1@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.1/wasilak-datadog-datasource-0.7.1.zip
+GF_PLUGINS_PREINSTALL_SYNC=wasilak-datadog-datasource@0.7.2@https://github.com/wasilak/grafana-datadog-datasource/releases/download/v0.7.2/wasilak-datadog-datasource-0.7.2.zip
 
 # Allow unsigned plugins (required for localhost)
 GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=wasilak-datadog-datasource

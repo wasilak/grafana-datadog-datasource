@@ -1,3 +1,17 @@
+## [0.7.2] - 2026-10-17
+
+### 🐛 Bug Fixes
+
+- *(metrics)* Match timeseries series to queries in request order
+
+### 📚 Documentation
+
+- Fix install instructions for current releases
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove unused code and lint the backend in CI
+- Use the CHANGELOG.md entry as release notes
 ## [0.7.1] - 2026-10-15
 
 ### 🐛 Bug Fixes
