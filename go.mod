@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/DataDog/datadog-api-client-go/v2 v2.67.0
-	github.com/grafana/grafana-plugin-sdk-go v0.297.0
+	github.com/grafana/grafana-plugin-sdk-go v0.298.0
 	github.com/magefile/mage v1.17.2
 	github.com/stretchr/testify v1.12.1
 )
@@ -41,7 +41,7 @@ require (
 	github.com/jaegertracing/jaeger-idl v0.14.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/mattetti/filebuffer v1.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
