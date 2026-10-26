@@ -70,8 +70,8 @@ github.com/gopherjs/gopherjs v0.0.0-20181103185306-d547d1d9531e h1:JKmoR8x90Iww1
 github.com/gopherjs/gopherjs v0.0.0-20181103185306-d547d1d9531e/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
-github.com/grafana/grafana-plugin-sdk-go v0.297.0 h1:uZlnm720OGH0VaaF3NuuOaJDrxTYx4qu3UHkzKZ+VPM=
-github.com/grafana/grafana-plugin-sdk-go v0.297.0/go.mod h1:OpS1VRORuEz7nFM+bZY+G/pKR1SO8rLARecM+7QaXGE=
+github.com/grafana/grafana-plugin-sdk-go v0.298.0 h1:Pv1QPfBYSykOO9SJmoNm2bQ3uFbtIaKgb74KlpP6OPA=
+github.com/grafana/grafana-plugin-sdk-go v0.298.0/go.mod h1:eOXMD6Vm+bNj2LxwgDLQ5r4ys9XVYnTIW9iBgTVIoH0=
 github.com/grafana/otel-profiling-go v0.7.0 h1:Q6CBLSgAnYmNQNNrj4ipG0S/K/K8iazA9E4kYRzZf0I=
 github.com/grafana/otel-profiling-go v0.7.0/go.mod h1:Gt7LHg3HEfBoU8ZVArhqYaiA65EjcBe3nd3+arX6eMY=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.12 h1:X6OemT2WcLtxdmNukEQuIp0c+efWVI/tBTd0oeWeDHI=
@@ -100,8 +100,8 @@ github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.20.3 h1:zWNoFqq/lSuYQRim3dUXlXeA0IqwuZGicdG5ZTfY5j4=
 github.com/klauspost/compress v1.20.3/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
-github.com/klauspost/cpuid/v2 v2.4.0 h1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV913Dw=
-github.com/klauspost/cpuid/v2 v2.4.0/go.mod h1:19jmZ9mjzoF//ddRSUsv0zfBTJWh3QJh9FNxZTMrGxU=
+github.com/klauspost/cpuid/v2 v2.4.1 h1:I9KxadAkvo+QjtcEE2f2tyfEvmIla/T0m+14PrZNl0U=
+github.com/klauspost/cpuid/v2 v2.4.1/go.mod h1:19jmZ9mjzoF//ddRSUsv0zfBTJWh3QJh9FNxZTMrGxU=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/magefile/mage v1.17.2 h1:fyXVu1eadI8Ap1HCCNgEhJ5McIWiYhLR8uol64ZZc40=
