@@ -960,10 +960,10 @@
     micro-memoize "^4.1.2"
     react-i18next "^17.0.9"
 
-"@grafana/plugin-e2e@^3.0.3":
-  version "3.15.4"
-  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-3.15.4.tgz#102c8289c08da0c5582ddfff0af5e6877f85cdb1"
-  integrity sha512-NC/AA3lajw6OLvi26TMSOkkaOl8uP+Ax5eiRmraZdUbaDKF0FLxBwuKz2qgYCbK7PrWuDoIHrBJ3n1VMGmyjMw==
+"@grafana/plugin-e2e@^4.0.0":
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/@grafana/plugin-e2e/-/plugin-e2e-4.0.0.tgz#bc47c286321918a5a2dbe3619f779269bd4be663"
+  integrity sha512-XtvSaBnLNNwX7Opc04fNf1U1QLA2qWBh5rzStI/JmJ9FG5yR3vs0uHhB+5F4d+HGa6qGnoKxhCUiSRy7TvBIXA==
   dependencies:
     yaml "^2.3.4"
 
