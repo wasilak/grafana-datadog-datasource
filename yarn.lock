@@ -733,13 +733,13 @@
   dependencies:
     "@types/estree" "^1.0.9"
 
-"@es-joy/jsdoccomment@^1.1.0", "@es-joy/jsdoccomment@~1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@es-joy/jsdoccomment/-/jsdoccomment-1.1.0.tgz#368e08e07be1a2dbaa35b640104634e0180e89f7"
-  integrity sha512-DpIIjjhvlQqpQrsDC8x911I/8mx6athyl/Tk9+lIq5UtQrNmh3EtLaDYKeeu58wh5HIzUfRhjy84S4szWZ9q+A==
+"@es-joy/jsdoccomment@^1.1.0", "@es-joy/jsdoccomment@~1.2.0":
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/@es-joy/jsdoccomment/-/jsdoccomment-1.2.0.tgz#d07826de86ddbcadcc4919fa99c125b8f44b2ab1"
+  integrity sha512-EcF8gDd175MRIYEt7ktoe9AUijBba3SSSvnGJ96HQaK1BxjVK8l1QdksVEAY34Lp0byn51FnTszlVMYmD5TI/w==
   dependencies:
     "@types/estree" "^1.0.10"
-    "@typescript-eslint/types" "^8.72.1"
+    "@typescript-eslint/types" "^8.72.2"
     comment-parser "1.4.9"
     esquery "^1.7.0"
     jsdoc-type-pratt-parser "~9.5.0"
@@ -2519,12 +2519,12 @@
     debug "^4.4.3"
     ts-api-utils "^2.5.0"
 
-"@typescript-eslint/types@8.72.1", "@typescript-eslint/types@^8.72.1":
+"@typescript-eslint/types@8.72.1":
   version "8.72.1"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-8.72.1.tgz#067d8f738c294611e33a1425ae43ac9b9c2f24e3"
   integrity sha512-LmE5IhQet1BWOWEXqBrVtBPsMAOQ6Nzk35d+WLh3mk4EUF33sqlfxjio1MdYeSvKSG5skactKKuixBIKXhL4Rw==
 
-"@typescript-eslint/types@8.72.2", "@typescript-eslint/types@^8.72.2":
+"@typescript-eslint/types@8.72.2", "@typescript-eslint/types@^8.72.1", "@typescript-eslint/types@^8.72.2":
   version "8.72.2"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-8.72.2.tgz#202b5f8aabe040fbfb5c4a8783b03aa6fe1fc113"
   integrity sha512-Xfn37OLZx03+PCU7qWx9DTv2FCRh1E6fk2+wONeNY15HXIwtcwuveaSwVpGAUptkNmPQegRxW5JyRel9T7wrog==
@@ -2564,7 +2564,7 @@
     tinyglobby "^0.2.15"
     ts-api-utils "^2.5.0"
 
-"@typescript-eslint/utils@8.72.2":
+"@typescript-eslint/utils@8.72.2", "@typescript-eslint/utils@^8.72.2":
   version "8.72.2"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/utils/-/utils-8.72.2.tgz#4916bd9a3b315e890cb622ed8f777b783c7b6e5b"
   integrity sha512-hv3eRYbpPbbpezuax1EfGrzpa3C4ySgNZkPUkLOWOAjU8HsOKowEDAr8C7nsNl1C+SBSKDpvno6VKHnlhvp9iA==
@@ -2574,7 +2574,7 @@
     "@typescript-eslint/types" "8.72.2"
     "@typescript-eslint/typescript-estree" "8.72.2"
 
-"@typescript-eslint/utils@^8.33.1", "@typescript-eslint/utils@^8.72.1":
+"@typescript-eslint/utils@^8.33.1":
   version "8.72.1"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/utils/-/utils-8.72.1.tgz#f210c1bf4a25aa1306df80c702ed30bbbc9b4d3d"
   integrity sha512-5v5liypurJBFHCBNqh/RjsymAD+VWcE0djuGY/BUqp5fC3Qn+luWDEksjuTtWjPn6i5zQlUtkZCRG/CYG0yCkA==
@@ -3279,9 +3279,9 @@ brace-expansion@^2.0.2:
     balanced-match "^1.0.0"
 
 brace-expansion@^5.0.8:
-  version "5.0.12"
-  resolved "https://registry.yarnpkg.com/brace-expansion/-/brace-expansion-5.0.12.tgz#995fbb4750a77c4d16a7dc942ff2ca6ef8e675ec"
-  integrity sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==
+  version "5.0.13"
+  resolved "https://registry.yarnpkg.com/brace-expansion/-/brace-expansion-5.0.13.tgz#e2d4497370f7e385e6f96b57bd7ff11d77d85851"
+  integrity sha512-Vh3dmFbc4wZeox7M9I/0L9GfFd83Su4+yCck/OF9Gi/P/dAHn0RT7X4K9R7gMNMhDck3DvhR6QXsnQdjjgwNvQ==
   dependencies:
     balanced-match "^4.0.2"
 
@@ -4133,14 +4133,14 @@ eslint-config-prettier@~10:
   integrity sha512-82GZUjRS0p/jganf6q1rEO25VSoHH0hKPCTrgillPjdI/3bgBhAE1QzHrHTizjpRvy6pGAvKjDJtk2pF9NDq8w==
 
 eslint-plugin-jsdoc@~65.4.0:
-  version "65.4.5"
-  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-65.4.5.tgz#19051a3cc2be131aff6c892fdcba0554ce6ab71b"
-  integrity sha512-qQiYrQDTi4b5jO6oy1oeKokbBZC8nRbjZBgjhR9tHE//naMCjjRzprqhd/4jU+Pj2exPeCDdWogg22gxSJSCEg==
+  version "65.4.6"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-65.4.6.tgz#f2bd0d211d27c5789141242effe143e44979ed35"
+  integrity sha512-7a6CDRXEbi8KHMMyR8l4N7T5/gcI04LzeG8w/uEjGEQtzG3PnN0BQrhNf/nDOvlWBB9FeetFMAzu766OswDVaA==
   dependencies:
     "@es-joy/escodegen" "^5.0.1"
-    "@es-joy/jsdoccomment" "~1.1.0"
+    "@es-joy/jsdoccomment" "~1.2.0"
     "@es-joy/resolve.exports" "1.2.0"
-    "@typescript-eslint/utils" "^8.72.1"
+    "@typescript-eslint/utils" "^8.72.2"
     are-docs-informative "^0.1.1"
     comment-parser "1.4.9"
     debug "^4.4.3"
