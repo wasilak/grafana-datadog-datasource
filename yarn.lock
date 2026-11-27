@@ -925,14 +925,14 @@
     semver "^7.7.0"
 
 "@grafana/eslint-config@^10.0.0":
-  version "10.0.0"
-  resolved "https://registry.yarnpkg.com/@grafana/eslint-config/-/eslint-config-10.0.0.tgz#7f8a05b00ec59b997b05520c1d2ef92b5731a4c2"
-  integrity sha512-KdPghPTEkpT1bfph/HLRe0rWJuAEeQMy3wF8xXOHkwhqf/o9IS4d0GT3K/tW0TxXHD0AKZB/OQBo7mZwvvaq7Q==
+  version "10.0.2"
+  resolved "https://registry.yarnpkg.com/@grafana/eslint-config/-/eslint-config-10.0.2.tgz#f60f139a2c1204c3dfa4f70f483e1a0cb90a78b0"
+  integrity sha512-YcfsLZxdahpfq8UVOu4+3lRYkMrGW0yG27v0E464VPNpS9KmihPJfra8Ns2p+OzEKTUM+Kt1CIDPYxWTs2oklQ==
 
 "@grafana/faro-core@^2.13.0":
-  version "2.13.0"
-  resolved "https://registry.yarnpkg.com/@grafana/faro-core/-/faro-core-2.13.0.tgz#2489ba17d56bdd9a84676f1b3057731bb102531d"
-  integrity sha512-Zfmroynd3y/NRghfIYXGCAinIb7mIx8EhGBpC3WUYoJT/4nO/jWvbKBEpELP29Z7g1Ul2TlJwbmNa1yh3x3+uw==
+  version "2.15.0"
+  resolved "https://registry.yarnpkg.com/@grafana/faro-core/-/faro-core-2.15.0.tgz#6e0e645e84cd3d270080a521daadb7d3beef4ea8"
+  integrity sha512-kya8i2FHCKT7oVoh42KY5zUYZmeyPpmAJ5dfAwbv0YYzgakTytPkXD+zYCx17A8LHysQZzl5mz81zsgtDjufUw==
   dependencies:
     "@opentelemetry/api" "^1.9.0"
     "@opentelemetry/otlp-transformer" "^0.223.0"
