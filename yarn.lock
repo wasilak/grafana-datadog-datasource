@@ -2345,9 +2345,9 @@
   integrity sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==
 
 "@types/lodash@^4.17.10", "@types/lodash@^4.17.25":
-  version "4.17.27"
-  resolved "https://registry.yarnpkg.com/@types/lodash/-/lodash-4.17.27.tgz#15fb73275b64dbfe49e2ae8376bb469b352a47a7"
-  integrity sha512-VenMRv/eKNrspX9v3H4dbmjsrnCOYdYBG3kxXKk3dG6X+urBGcj2Prww3xw1U5K4FV/mE4h5GbWd0szEKf+9ew==
+  version "4.17.28"
+  resolved "https://registry.yarnpkg.com/@types/lodash/-/lodash-4.17.28.tgz#44ed30e4af5f2a8ff445d977d605322f2a065374"
+  integrity sha512-2iP9dTMtHQOGZq086o7CyIVz5h3hCS7xqG1dZg3hfbxqcB5/ZaFD+vOp9ebR8YlbCQr84OQjBiv/qgITjHSrYA==
 
 "@types/luxon@^3.0.0":
   version "3.7.6"
@@ -2355,9 +2355,9 @@
   integrity sha512-6KSjliQAXK8ZLgFQO4B7iE4Rpf/B3rItzCFuXezBY/XIAGxOdLd7vRNK9/StRPwiS/yJsVbB7HKpW46B8tcEuQ==
 
 "@types/node@*":
-  version "26.6.6"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-26.6.6.tgz#9ed7b5817e728ed9216ef7c5b7d373fe3b777104"
-  integrity sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==
+  version "26.6.11"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-26.6.11.tgz#17799a1ddc1edfc99222a906a0952b3c9be8794a"
+  integrity sha512-uUyQ2XLEz+EXh34lmS3GhKrkqn/8FU7KUiKRpk347At2bmnMVWss45yz8b4FG/tUtmV1tV/+TVkITItPROyeeQ==
   dependencies:
     undici-types "~8.9.0"
 
